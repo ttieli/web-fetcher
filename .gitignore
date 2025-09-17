@@ -1,0 +1,19 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# OS files
+.DS_Store
+
+# Downloaded content
+*.html
+*.json
+downloaded_*/
+output_*/
+
+# Archive and cleanup
+archive_cleanup/
+*.tar.gz
+
+# Claude
+.claude/
