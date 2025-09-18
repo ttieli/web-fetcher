@@ -2922,8 +2922,8 @@ def extract_internal_links(html: str, base_url: str) -> dict:
     
     # Support multiple href patterns for modern web compatibility
     href_patterns = [
-        r'href\s*=\s*["\']([^"\']+)["\']',  # Quoted: href="..." or href='...'
-        r'href\s*=\s*([^\s>]+)',            # Unquoted: href=value (until space or >)
+        r'href\s*=\s*["\']([^"\']+)["\']',     # Quoted: href="..." or href='...' (优先)
+        r'href\s*=\s*([^"\'\s>][^\s>]*)',      # Unquoted: href=value (排除引号开头，避免重叠)
     ]
     
     processed_hrefs = set()  # Avoid duplicate processing
