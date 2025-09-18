@@ -1050,6 +1050,77 @@ def extract_json_ld_content(html: str) -> dict:
     return result
 
 
+def extract_from_modern_selectors(html: str) -> str:
+    """Enhanced content extraction for modern static site generators (Hugo, Jekyll, etc.)"""
+    import re
+    import html as ihtml
+    
+    # Define CSS selector patterns for modern static sites
+    content_selectors = [
+        # Hugo/Jekyll specific patterns
+        r'<div[^>]*class=["\'][^"\']*hero-content[^"\']*["\'][^>]*>(.*?)</div>',
+        r'<div[^>]*class=["\'][^"\']*post-content[^"\']*["\'][^>]*>(.*?)</div>',
+        r'<div[^>]*class=["\'][^"\']*article-content[^"\']*["\'][^>]*>(.*?)</div>',
+        r'<div[^>]*class=["\'][^"\']*content[^"\']*["\'][^>]*>(.*?)</div>',
+        
+        # Generic CMS patterns
+        r'<div[^>]*class=["\'][^"\']*entry-content[^"\']*["\'][^>]*>(.*?)</div>',
+        r'<div[^>]*class=["\'][^"\']*main-content[^"\']*["\'][^>]*>(.*?)</div>',
+        
+        # HTML5 semantic elements
+        r'<main[^>]*>(.*?)</main>',
+        r'<article[^>]*>(.*?)</article>',
+        r'<section[^>]*class=["\'][^"\']*content[^"\']*["\'][^>]*>(.*?)</section>',
+        
+        # Landing page specific patterns
+        r'<div[^>]*class=["\'][^"\']*intro[^"\']*["\'][^>]*>(.*?)</div>',
+        r'<div[^>]*class=["\'][^"\']*description[^"\']*["\'][^>]*>(.*?)</div>',
+        r'<div[^>]*class=["\'][^"\']*lead[^"\']*["\'][^>]*>(.*?)</div>',
+    ]
+    
+    for pattern in content_selectors:
+        matches = re.findall(pattern, html, re.I | re.S)
+        for match in matches:
+            # Clean and extract text content
+            text = extract_text_from_html_fragment(match)
+            if text and len(text.strip()) > 50:  # Minimum content threshold
+                return text
+    
+    return ''
+
+
+def extract_text_from_html_fragment(html_fragment: str) -> str:
+    """Extract clean text from HTML fragment, preserving paragraph structure"""
+    import re
+    import html as ihtml
+    
+    # Replace common block elements with double newlines for paragraph separation
+    html_fragment = re.sub(r'</(?:p|div|section|article|h[1-6]|li)>', '\n\n', html_fragment, flags=re.I)
+    html_fragment = re.sub(r'<(?:br|hr)[^>]*/?>', '\n', html_fragment, flags=re.I)
+    
+    # Replace list items and other elements with single newlines
+    html_fragment = re.sub(r'</(?:li|dd|dt)>', '\n', html_fragment, flags=re.I)
+    
+    # Remove all remaining HTML tags
+    html_fragment = re.sub(r'<[^>]+>', '', html_fragment)
+    
+    # Decode HTML entities
+    text = ihtml.unescape(html_fragment)
+    
+    # Clean up whitespace
+    lines = []
+    for line in text.split('\n'):
+        line = line.strip()
+        if line and not line.startswith('var ') and not line.startswith('function'):
+            lines.append(line)
+    
+    # Join paragraphs with double newlines, remove excessive spacing
+    result = '\n\n'.join(lines)
+    result = re.sub(r'\n{3,}', '\n\n', result)
+    
+    return result.strip()
+
+
 def parse_date_like(s: Optional[str]) -> tuple[str, str]:
     if not s:
         now = datetime.datetime.now()
@@ -2508,6 +2579,10 @@ def generic_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     elif json_ld.get('description'):
         desc = json_ld['description']
     
+    # Priority 1.5: Modern static site generators (Hugo, Jekyll, etc.)
+    if not desc:
+        desc = extract_from_modern_selectors(html)
+    
     # Priority 2: Try to extract from multiple <p> tags (for sites like ebchina.com)
     if not desc:
         # Extract all paragraph content with various styles
@@ -2840,28 +2915,41 @@ def resolve_url_with_context(base_url: str, href: str) -> str:
 
 def extract_internal_links(html: str, base_url: str) -> dict:
     """Extract all internal links from HTML content with smart subdirectory resolution.
-    Returns dict mapping normalized URLs to original URLs for case-preserving fetching."""
+    Returns dict mapping normalized URLs to original URLs for case-preserving fetching.
+    Enhanced to support both quoted and unquoted href attributes."""
     links = {}  # normalized_url -> original_url
     base_parts = urllib.parse.urlparse(base_url)
     
-    # Find all href attributes
-    href_pattern = r'href=["\']([^"\']*)["\']'
-    for match in re.finditer(href_pattern, html, re.I):
-        href = match.group(1)
-        
-        # Skip empty hrefs or anchors, javascript, mailto
-        if not href or href.startswith(('#', 'javascript:', 'mailto:', 'tel:')):
-            continue
+    # Support multiple href patterns for modern web compatibility
+    href_patterns = [
+        r'href\s*=\s*["\']([^"\']+)["\']',  # Quoted: href="..." or href='...'
+        r'href\s*=\s*([^\s>]+)',            # Unquoted: href=value (until space or >)
+    ]
+    
+    processed_hrefs = set()  # Avoid duplicate processing
+    
+    for pattern in href_patterns:
+        for match in re.finditer(pattern, html, re.I):
+            href = match.group(1)
             
-        # Convert to absolute URL using smart context resolution
-        full_url = resolve_url_with_context(base_url, href)
-        url_parts = urllib.parse.urlparse(full_url)
-        
-        # Check if same domain and should crawl
-        if url_parts.netloc == base_parts.netloc and should_crawl_url(full_url):
-            # Map normalized URL to original URL for case-preserving fetching
-            normalized = normalize_url_for_dedup(full_url)
-            links[normalized] = full_url
+            # Skip if already processed (to avoid duplicates from multiple patterns)
+            if href in processed_hrefs:
+                continue
+            processed_hrefs.add(href)
+            
+            # Skip empty hrefs or anchors, javascript, mailto
+            if not href or href.startswith(('#', 'javascript:', 'mailto:', 'tel:')):
+                continue
+                
+            # Convert to absolute URL using smart context resolution
+            full_url = resolve_url_with_context(base_url, href)
+            url_parts = urllib.parse.urlparse(full_url)
+            
+            # Check if same domain and should crawl
+            if url_parts.netloc == base_parts.netloc and should_crawl_url(full_url):
+                # Map normalized URL to original URL for case-preserving fetching
+                normalized = normalize_url_for_dedup(full_url)
+                links[normalized] = full_url
     
     return links
 
