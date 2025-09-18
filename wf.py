@@ -1,0 +1,322 @@
+#!/usr/bin/env python3
+"""
+wf - WebFetcher的便捷命令行工具
+让网页内容获取更简单高效
+
+输出路径优先级（从高到低）：
+1. 命令行参数指定（位置参数或-o）
+2. 环境变量 WF_OUTPUT_DIR
+3. 默认值 ./output/
+"""
+import sys
+import os
+import subprocess
+from pathlib import Path
+import shutil
+
+# 获取脚本所在目录，以便找到webfetcher.py
+# 如果是符号链接，需要解析到真实路径
+SCRIPT_PATH = Path(__file__).resolve()
+SCRIPT_DIR = SCRIPT_PATH.parent.absolute()
+WEBFETCHER_PATH = SCRIPT_DIR / "webfetcher.py"
+
+# 默认输出目录
+DEFAULT_OUTPUT_DIR = "./output"
+
+def parse_output_dir(args):
+    """
+    解析输出目录参数
+    优先级：
+    1. 命令行-o/--outdir参数（最明确）
+    2. -- 分隔符后的第一个参数（明确分界）
+    3. 位置参数（第一个看起来像路径的参数）
+    4. 环境变量WF_OUTPUT_DIR
+    5. 默认值./output/
+    
+    返回: (output_dir, remaining_args)
+    """
+    output_dir = None
+    remaining_args = args[:]
+    
+    # 方案1：检查-o/--outdir参数（最高优先级）
+    for i, arg in enumerate(args):
+        if arg in ['-o', '--outdir']:
+            if i + 1 < len(args):
+                output_dir = args[i + 1]
+                # 移除-o和其值
+                remaining_args = args[:i] + args[i+2:]
+                # 如果使用了-o，还需要清理可能存在的其他输出目录指示
+                # 移除 -- 分隔符及其后的第一个参数（如果存在）
+                if '--' in remaining_args:
+                    sep_index = remaining_args.index('--')
+                    if sep_index + 1 < len(remaining_args):
+                        # 检查--后面是否为路径
+                        next_arg = remaining_args[sep_index + 1]
+                        if (next_arg.startswith('/') or next_arg.startswith('~/') or 
+                            next_arg.startswith('./') or next_arg.startswith('../') or
+                            next_arg in ['.', '..', '~']):
+                            remaining_args = remaining_args[:sep_index] + remaining_args[sep_index+2:]
+                        else:
+                            # 如果不是路径，只移除--
+                            remaining_args = remaining_args[:sep_index] + remaining_args[sep_index+1:]
+                # 移除位置参数中的路径
+                for j, r_arg in enumerate(remaining_args[:]):
+                    if (r_arg.startswith('~/') or r_arg in ['~', '.', '..'] or
+                        r_arg.startswith('./') or r_arg.startswith('../')):
+                        remaining_args.remove(r_arg)
+                        break
+                break
+    
+    # 方案2：检查 -- 分隔符（如果没有使用-o）
+    if not output_dir and '--' in remaining_args:
+        sep_index = remaining_args.index('--')
+        if sep_index + 1 < len(remaining_args):
+            # -- 后的第一个参数作为输出目录
+            output_dir = remaining_args[sep_index + 1]
+            # 移除 -- 和输出目录
+            remaining_args = remaining_args[:sep_index] + remaining_args[sep_index+2:]
+    
+    # 方案3：智能检测位置参数（保持向后兼容）
+    if not output_dir and len(remaining_args) >= 1:
+        # 查找第一个看起来像路径的参数
+        for i, arg in enumerate(remaining_args):
+            # 跳过明显的URL
+            if arg.startswith('http://') or arg.startswith('https://'):
+                continue
+            
+            # 跳过看起来像域名的参数（包含点但不以路径分隔符开头）
+            # 但要排除 ./ 和 ../ 这样的相对路径
+            if ('.' in arg and not arg.startswith('/') and not arg.startswith('~') 
+                and arg not in ['./', '../', '.', '..']):
+                # 但如果包含路径分隔符且不是第一个字符，可能是URL路径
+                if '/' in arg and not arg.startswith('./') and not arg.startswith('../'):
+                    continue
+            
+            # 检测路径特征
+            is_path = False
+            
+            # 明确的路径标志
+            if (arg.startswith('/') or      # 绝对路径
+                arg.startswith('~/') or     # home目录
+                arg.startswith('./') or     # 当前目录
+                arg.startswith('../') or    # 父目录
+                arg in ['.', '..', '~'] or  # 特殊目录
+                arg in ['./', '../'] or      # 带斜杠的特殊目录
+                arg.endswith('/')):          # 以/结尾的目录
+                is_path = True
+            
+            # 已存在的目录
+            elif os.path.isdir(os.path.expanduser(arg)):
+                is_path = True
+            
+            # 看起来像输出路径（包含常见目录名）
+            elif any(name in arg.lower() for name in ['output', 'download', 'desktop', 'documents']):
+                is_path = True
+            
+            if is_path:
+                output_dir = arg
+                remaining_args = remaining_args[:i] + remaining_args[i+1:]
+                break
+    
+    # 如果还没有，检查环境变量
+    if not output_dir:
+        output_dir = os.environ.get('WF_OUTPUT_DIR')
+    
+    # 最后使用默认值
+    if not output_dir:
+        output_dir = DEFAULT_OUTPUT_DIR
+    
+    # 展开路径
+    output_dir = os.path.expanduser(output_dir)
+    output_dir = os.path.abspath(output_dir)
+    
+    return output_dir, remaining_args
+
+def ensure_output_dir(output_dir):
+    """确保输出目录存在"""
+    try:
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        return True
+    except Exception as e:
+        print(f"警告: 无法创建输出目录 {output_dir}: {e}")
+        return False
+
+def main():
+    if len(sys.argv) < 2:
+        print_help()
+        return
+    
+    # 原始参数（不包括脚本名）
+    raw_args = sys.argv[1:]
+    cmd = raw_args[0]
+    
+    # 快速抓取（最常用）- 检测URL
+    if 'http://' in cmd or 'https://' in cmd or ('.' in cmd and cmd not in ['help', '-h', '--help']):
+        url = cmd if cmd.startswith('http') else f'https://{cmd}'
+        # 解析输出目录
+        output_dir, remaining_args = parse_output_dir(raw_args[1:])
+        ensure_output_dir(output_dir)
+        # 传递URL和输出目录
+        run_webfetcher([url, '-o', output_dir] + remaining_args)
+    
+    # 快速模式
+    elif cmd == 'fast':
+        if len(raw_args) < 2:
+            print("错误: fast模式需要提供URL")
+            print("用法: wf fast <URL> [输出目录]")
+            return
+        url = raw_args[1]
+        if not url.startswith('http'):
+            url = f'https://{url}'
+        # 解析输出目录（跳过'fast'和URL）
+        output_dir, remaining_args = parse_output_dir(raw_args[2:])
+        ensure_output_dir(output_dir)
+        run_webfetcher([url, '-o', output_dir, '--render', 'never', '--timeout', '30'] + remaining_args)
+    
+    # 完整模式
+    elif cmd == 'full':
+        if len(raw_args) < 2:
+            print("错误: full模式需要提供URL")
+            print("用法: wf full <URL> [输出目录]")
+            return
+        url = raw_args[1]
+        if not url.startswith('http'):
+            url = f'https://{url}'
+        # 解析输出目录
+        output_dir, remaining_args = parse_output_dir(raw_args[2:])
+        ensure_output_dir(output_dir)
+        run_webfetcher([url, '-o', output_dir, '--download-assets', '--render', 'auto'] + remaining_args)
+    
+    # 站点爬虫
+    elif cmd == 'site':
+        if len(raw_args) < 2:
+            print("错误: site模式需要提供URL")
+            print("用法: wf site <URL> [输出目录]")
+            return
+        url = raw_args[1]
+        if not url.startswith('http'):
+            url = f'https://{url}'
+        # 解析输出目录
+        output_dir, remaining_args = parse_output_dir(raw_args[2:])
+        ensure_output_dir(output_dir)
+        run_webfetcher([url, '-o', output_dir, '--crawl-site', '--max-crawl-depth', '5', 
+                       '--follow-pagination'] + remaining_args)
+    
+    # 批量抓取
+    elif cmd == 'batch':
+        if len(raw_args) < 2:
+            print("错误: batch模式需要提供URL文件")
+            print("用法: wf batch <urls.txt> [输出目录]")
+            return
+        urls_file = raw_args[1]
+        if not os.path.exists(urls_file):
+            print(f"错误: 文件 {urls_file} 不存在")
+            return
+        
+        # 解析输出目录
+        output_dir, remaining_args = parse_output_dir(raw_args[2:])
+        ensure_output_dir(output_dir)
+        
+        with open(urls_file) as f:
+            urls = [line.strip() for line in f if line.strip()]
+        
+        print(f"准备抓取 {len(urls)} 个URL...")
+        print(f"输出目录: {output_dir}")
+        for i, url in enumerate(urls, 1):
+            print(f"\n[{i}/{len(urls)}] 抓取: {url}")
+            if not url.startswith('http'):
+                url = f'https://{url}'
+            run_webfetcher([url, '-o', output_dir] + remaining_args)
+    
+    # 帮助
+    elif cmd in ['-h', '--help', 'help']:
+        print_help()
+    
+    # 默认：传递给webfetcher
+    else:
+        # 对于其他命令，也处理输出目录
+        output_dir, remaining_args = parse_output_dir(raw_args)
+        ensure_output_dir(output_dir)
+        run_webfetcher(['-o', output_dir] + remaining_args)
+
+def run_webfetcher(args):
+    """运行webfetcher.py并传递参数"""
+    cmd = [sys.executable, str(WEBFETCHER_PATH)] + args
+    try:
+        subprocess.run(cmd)
+    except KeyboardInterrupt:
+        print("\n已取消")
+        sys.exit(1)
+    except Exception as e:
+        print(f"错误: {e}")
+        sys.exit(1)
+
+def print_help():
+    # 获取当前环境变量
+    env_output = os.environ.get('WF_OUTPUT_DIR', '未设置')
+    
+    print(f"""
+wf - WebFetcher便捷命令
+
+输出目录指定方式（按优先级排序）:
+  1. 使用 -o 参数（最明确，推荐用于复杂URL）:
+     wf example.com/path -o ~/Desktop/
+     wf -o ~/Desktop/ example.com/path
+  
+  2. 使用 -- 分隔符（明确分界）:
+     wf example.com/path -- ~/Desktop/
+  
+  3. 智能位置参数（简洁，适合简单URL）:
+     wf example.com ~/Desktop/
+     wf example.com ./output/
+  
+  4. 环境变量（设置默认目录）:
+     export WF_OUTPUT_DIR=~/Documents/fetched
+  
+  5. 默认目录: ./output/
+  
+  当前环境变量 WF_OUTPUT_DIR: {env_output}
+
+最简用法:
+  wf example.com                    # 保存到./output/
+  wf example.com ~/Desktop/         # 智能检测输出目录
+  wf example.com -o ~/Desktop/      # 明确指定输出目录
+  wf example.com -- ~/Desktop/      # 使用分隔符
+
+快捷模式:
+  wf fast URL [输出目录]            # 快速模式（不渲染JS）
+  wf full URL [输出目录]            # 完整模式（含资源）
+  wf site URL [输出目录]            # 整站爬虫
+  wf batch urls.txt [输出目录]     # 批量抓取
+
+处理复杂URL的示例:
+  # URL包含路径时，推荐使用-o或--
+  wf example.com/path/to/page -o ~/Desktop/
+  wf example.com/path/to/page -- ~/Documents/
+  
+  # 简单URL可直接使用位置参数
+  wf example.com ~/Desktop/
+  wf mp.weixin.qq.com/s/xxx ./articles/
+  
+  # 批量和站点模式
+  wf site docs.python.org -o ./python-docs/
+  wf batch ./urls.txt -- ~/Downloads/
+
+高级用法:
+  # 组合多个参数
+  wf fast example.com -o ./output --timeout 10
+  wf site python.org -- ~/docs/ --max-pages 100
+  
+  # 设置默认输出目录后
+  export WF_OUTPUT_DIR=~/Documents/web-content
+  wf example.com                    # 自动保存到~/Documents/web-content
+
+原始命令:
+  wf [任何webfetcher参数]           # 直接传递给webfetcher.py
+  
+查看完整帮助:
+  wf --help                         # 显示webfetcher的完整帮助
+""")
+
+if __name__ == '__main__':
+    main()

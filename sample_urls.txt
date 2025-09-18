@@ -1,0 +1,6 @@
+# 示例URL列表
+# 用于测试批量抓取功能: wf batch sample_urls.txt
+
+python.org
+news.ycombinator.com
+github.com/trending

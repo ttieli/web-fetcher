@@ -1,0 +1,8 @@
+{
+  "install_date": "2025-09-18T09:22:47+08:00",
+  "install_type": "quick",
+  "wf_py": "./wf.py",
+  "webfetcher_py": "./webfetcher.py",
+  "shell_config": "<HOME>/.bash_profile",
+  "symlink": true
+}
