@@ -2574,7 +2574,7 @@ def generic_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     videos = []
     
     # Find all img tags
-    img_pattern = r'<img[^>]*src=["\']([^"\']+)["\'][^>]*>'
+    img_pattern = r'<img[^>]*src=["\']*([^"\'\s>]+)["\']*[^>]*>'
     img_matches = re.findall(img_pattern, html, re.I)
     for img_url in img_matches:
         if img_url and not img_url.startswith('data:'):
@@ -2583,7 +2583,7 @@ def generic_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
                 images.append(full_url)
     
     # Find all video tags
-    video_pattern = r'<video[^>]*src=["\']([^"\']+)["\'][^>]*>'
+    video_pattern = r'<video[^>]*src=["\']*([^"\'\s>]+)["\']*[^>]*>'
     video_matches = re.findall(video_pattern, html, re.I)
     for video_url in video_matches:
         if video_url:
@@ -2820,17 +2820,10 @@ def resolve_url_with_context(base_url: str, href: str) -> str:
     if href == '/':
         return f"{base_parts.scheme}://{base_parts.netloc}/"
     
-    # Detect subdirectory deployment
-    path_segments = [s for s in base_parts.path.strip('/').split('/') if s]
-    
-    # If href starts with '/' and we have a subdirectory, preserve the subdirectory context
-    if href.startswith('/') and path_segments and should_preserve_subdirectory(base_url):
-        first_segment = path_segments[0]
-        
-        # Skip if href already includes the subdirectory
-        if not href.startswith('/' + first_segment + '/') and href != '/' + first_segment:
-            # Preserve subdirectory context
-            return f"{base_parts.scheme}://{base_parts.netloc}/{first_segment}{href}"
+    # Handle absolute paths - they start from the domain root
+    if href.startswith('/'):
+        parsed_base = urllib.parse.urlparse(base_url)
+        return f"{parsed_base.scheme}://{parsed_base.netloc}{href}"
     
     # CRITICAL FIX: For relative paths (not starting with /), ensure base URL has trailing slash
     # This is essential for correct urljoin behavior with subdirectory deployments
