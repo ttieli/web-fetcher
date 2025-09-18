@@ -13,6 +13,8 @@ import os
 import subprocess
 from pathlib import Path
 import shutil
+import logging
+import re
 
 # 获取脚本所在目录，以便找到webfetcher.py
 # 如果是符号链接，需要解析到真实路径
@@ -22,6 +24,14 @@ WEBFETCHER_PATH = SCRIPT_DIR / "webfetcher.py"
 
 # 默认输出目录
 DEFAULT_OUTPUT_DIR = "./output"
+
+# Configure logging for user feedback
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger('wf')
 
 def parse_output_dir(args):
     """
@@ -141,22 +151,93 @@ def ensure_output_dir(output_dir):
         print(f"警告: 无法创建输出目录 {output_dir}: {e}")
         return False
 
+def extract_url_from_text(text: str) -> tuple:
+    """
+    Extract URL from mixed text content (e.g., social media copy-paste).
+    
+    Args:
+        text: Input text that may contain URLs
+        
+    Returns:
+        tuple: (url_or_original_text, was_extracted)
+            - url_or_original_text: Extracted URL if found, otherwise original text
+            - was_extracted: True if URL was extracted from mixed text
+    
+    Examples:
+        >>> extract_url_from_text("Check http://example.com for details")
+        ('http://example.com', True)
+        >>> extract_url_from_text("http://example.com")
+        ('http://example.com', False)
+    """
+    # If input is already a clean URL, return as-is
+    clean_url_pattern = r'^https?://[^\s]+$'
+    if re.match(clean_url_pattern, text.strip()):
+        return text.strip(), False
+    
+    # Comprehensive URL extraction patterns for Chinese social media
+    url_patterns = [
+        # WeChat article links (high priority for business use)
+        r'(https?://mp\.weixin\.qq\.com/s/[^\s\u4e00-\u9fff]+)',
+        r'(mp\.weixin\.qq\.com/s/[^\s\u4e00-\u9fff]+)',
+        # Specific short-link domains
+        r'(?:^|\s)((?:xhslink|t|dwz|url|c|6|bit|tinyurl)\.(?:com|cn|co|ly|me)/[^\s\u4e00-\u9fff]+)',
+        # Standard URLs LAST (most generic)
+        r'https?://[^\s\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]+',
+    ]
+    
+    for pattern in url_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        if matches:
+            # Extract first URL found
+            url = matches[0] if isinstance(matches[0], str) else matches[0][0]
+            # Remove trailing Chinese/English punctuation
+            url = re.sub(r'[,!?。，！？、）)】」』》\uff09]+$', '', url)
+            # Add protocol if missing
+            if not url.startswith('http'):
+                url = 'https://' + url
+            return url, True
+    
+    # No URL found
+    return text, False
+
 def main():
     if len(sys.argv) < 2:
         print_help()
         return
     
-    # 原始参数（不包括脚本名）
+    # Parse arguments
     raw_args = sys.argv[1:]
     cmd = raw_args[0]
     
-    # 快速抓取（最常用）- 检测URL
-    if 'http://' in cmd or 'https://' in cmd or ('.' in cmd and cmd not in ['help', '-h', '--help']):
-        url = cmd if cmd.startswith('http') else f'https://{cmd}'
-        # 解析输出目录
+    # URL extraction from mixed text (new feature)
+    extracted_url = None
+    extraction_performed = False
+    
+    # Skip extraction for known commands
+    skip_commands = ['help', '-h', '--help', 'fast', 'full', 'site', 'raw', 'batch']
+    
+    if cmd not in skip_commands:
+        # Attempt to extract URL from mixed text
+        original_cmd = cmd
+        cmd, extraction_performed = extract_url_from_text(cmd)
+        
+        if extraction_performed:
+            # Provide user feedback about extraction
+            logger.info(f"✓ 已从文本中提取URL: {cmd}")
+            if len(original_cmd) > 80:
+                logger.info(f"  原始输入: {original_cmd[:80]}...")
+            else:
+                logger.info(f"  原始输入: {original_cmd}")
+            extracted_url = cmd
+    
+    # Quick grab mode - detect URL (modified condition)
+    if extracted_url or 'http://' in cmd or 'https://' in cmd or ('.' in cmd and cmd not in ['help', '-h', '--help']):
+        # Use extracted URL if available, otherwise process normally
+        url = extracted_url if extracted_url else (cmd if cmd.startswith('http') else f'https://{cmd}')
+        # Parse output directory
         output_dir, remaining_args = parse_output_dir(raw_args[1:])
         ensure_output_dir(output_dir)
-        # 传递URL和输出目录
+        # Run webfetcher
         run_webfetcher([url, '-o', output_dir] + remaining_args)
     
     # 快速模式
@@ -165,10 +246,18 @@ def main():
             print("错误: fast模式需要提供URL")
             print("用法: wf fast <URL> [输出目录]")
             return
-        url = raw_args[1]
+        
+        # Extract URL from potentially mixed text
+        url_input = raw_args[1]
+        url, was_extracted = extract_url_from_text(url_input)
+        
+        if was_extracted:
+            logger.info(f"✓ Fast模式：已从文本中提取URL: {url}")
+        
         if not url.startswith('http'):
             url = f'https://{url}'
-        # 解析输出目录（跳过'fast'和URL）
+        
+        # Parse output directory
         output_dir, remaining_args = parse_output_dir(raw_args[2:])
         ensure_output_dir(output_dir)
         run_webfetcher([url, '-o', output_dir, '--render', 'never', '--timeout', '30'] + remaining_args)
@@ -179,10 +268,18 @@ def main():
             print("错误: full模式需要提供URL")
             print("用法: wf full <URL> [输出目录]")
             return
-        url = raw_args[1]
+        
+        # Extract URL from potentially mixed text
+        url_input = raw_args[1]
+        url, was_extracted = extract_url_from_text(url_input)
+        
+        if was_extracted:
+            logger.info(f"✓ Full模式：已从文本中提取URL: {url}")
+        
         if not url.startswith('http'):
             url = f'https://{url}'
-        # 解析输出目录
+        
+        # Parse output directory
         output_dir, remaining_args = parse_output_dir(raw_args[2:])
         ensure_output_dir(output_dir)
         run_webfetcher([url, '-o', output_dir, '--download-assets', '--render', 'auto'] + remaining_args)
@@ -193,10 +290,18 @@ def main():
             print("错误: site模式需要提供URL")
             print("用法: wf site <URL> [输出目录]")
             return
-        url = raw_args[1]
+        
+        # Extract URL from potentially mixed text
+        url_input = raw_args[1]
+        url, was_extracted = extract_url_from_text(url_input)
+        
+        if was_extracted:
+            logger.info(f"✓ Site模式：已从文本中提取URL: {url}")
+        
         if not url.startswith('http'):
             url = f'https://{url}'
-        # 解析输出目录
+        
+        # Parse output directory
         output_dir, remaining_args = parse_output_dir(raw_args[2:])
         ensure_output_dir(output_dir)
         run_webfetcher([url, '-o', output_dir, '--crawl-site', '--max-crawl-depth', '5', 
@@ -208,10 +313,18 @@ def main():
             print("错误: raw模式需要提供URL")
             print("用法: wf raw <URL> [输出目录]")
             return
-        url = raw_args[1]
+        
+        # Extract URL from potentially mixed text
+        url_input = raw_args[1]
+        url, was_extracted = extract_url_from_text(url_input)
+        
+        if was_extracted:
+            logger.info(f"✓ Raw模式：已从文本中提取URL: {url}")
+        
         if not url.startswith('http'):
             url = f'https://{url}'
-        # 解析输出目录
+        
+        # Parse output directory
         output_dir, remaining_args = parse_output_dir(raw_args[2:])
         ensure_output_dir(output_dir)
         run_webfetcher([url, '-o', output_dir, '--raw'] + remaining_args)
@@ -296,6 +409,17 @@ wf - WebFetcher便捷命令
   wf example.com ~/Desktop/         # 智能检测输出目录
   wf example.com -o ~/Desktop/      # 明确指定输出目录
   wf example.com -- ~/Desktop/      # 使用分隔符
+
+自动URL提取:
+  wf "文本内容 http://example.com 其他文字"  # 自动提取URL
+  wf "mp.weixin.qq.com/s/xxx 微信文章"       # 提取微信链接
+  wf "http://xhslink.com/abc 小红书笔记"     # 提取小红书链接
+  
+  支持的模式：
+  - 标准HTTP/HTTPS链接
+  - 短链接（xhslink, t.cn, bit.ly等）
+  - 微信文章链接
+  - 自动添加https://协议
 
 快捷模式:
   wf fast URL [输出目录]            # 快速模式（不渲染JS）
