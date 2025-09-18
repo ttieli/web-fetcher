@@ -24,8 +24,7 @@ import urllib.request
 import ssl
 import subprocess
 import sys
-from typing import Optional, List, Dict, Set, Any
-from dataclasses import dataclass
+from typing import Optional
 from html.parser import HTMLParser
 from pathlib import Path
 import logging
@@ -33,66 +32,6 @@ import time
 import random
 from collections import deque
 # BeautifulSoup导入移至动态导入机制
-
-def validate_and_encode_url(url: str) -> str:
-    """
-    Validate URL and ensure safe encoding for subprocess calls.
-    
-    Checks for potentially problematic characters and ensures proper URL encoding.
-    
-    Args:
-        url: URL to validate and encode
-        
-    Returns:
-        str: Safely encoded URL
-        
-    Raises:
-        ValueError: If URL is invalid or contains unsafe patterns
-    """
-    if not url or not isinstance(url, str):
-        raise ValueError("URL must be a non-empty string")
-    
-    url = url.strip()
-    if not url:
-        raise ValueError("URL cannot be empty after stripping whitespace")
-    
-    try:
-        # Parse URL to validate structure
-        parsed = urllib.parse.urlparse(url)
-        
-        # Basic validation
-        if not parsed.scheme:
-            raise ValueError(f"URL missing scheme: {url}")
-        if not parsed.netloc:
-            raise ValueError(f"URL missing network location: {url}")
-        
-        # Check for potentially problematic characters in shell context
-        # Note: & is actually fine in subprocess.run with list arguments,
-        # but we log it for debugging purposes
-        shell_special_chars = ['`', '$', '\\', '"', "'"]
-        for char in shell_special_chars:
-            if char in url:
-                logging.warning(f"URL contains shell special character '{char}': {url}")
-                # Don't raise error, just warn - subprocess.run with list args handles this
-        
-        # Re-encode the URL to ensure proper formatting
-        # This handles cases where URLs might have been partially decoded
-        if parsed.query:
-            # Re-encode query parameters to handle & properly
-            query_params = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
-            new_query = urllib.parse.urlencode(query_params)
-            parsed = parsed._replace(query=new_query)
-        
-        encoded_url = urllib.parse.urlunparse(parsed)
-        
-        if encoded_url != url:
-            logging.debug(f"URL re-encoded: {url} -> {encoded_url}")
-        
-        return encoded_url
-        
-    except Exception as e:
-        raise ValueError(f"URL validation failed for '{url}': {e}")
-
 
 def get_beautifulsoup_parser():
     """动态导入BeautifulSoup，如果不可用则返回None"""
@@ -669,36 +608,21 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30)
 def fetch_html_with_curl(url: str, ua: Optional[str] = None, timeout: int = 30) -> str:
     """Fallback to curl for sites with SSL issues"""
     ua = ua or "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0 Safari/537.36"
-    
     try:
-        # Validate and encode URL for safe subprocess execution
-        validated_url = validate_and_encode_url(url)
-        
         cmd = [
             'curl', '-k', '-s', '-L',  # -k ignores SSL, -s silent, -L follow redirects
             '--max-time', str(timeout),
             '-H', f'User-Agent: {ua}',
             '-H', 'Accept-Language: zh-CN,zh;q=0.9',
             '--compressed',  # Accept compressed responses
-            validated_url
+            url
         ]
-        
-        logging.debug(f"Executing curl command for URL: {validated_url}")
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout+5)
-        
         if result.returncode == 0:
             return result.stdout
         else:
-            # Log curl error details for debugging
-            logging.error(f"curl failed for {validated_url}: return code {result.returncode}, stderr: {result.stderr}")
             raise Exception(f"curl failed with code {result.returncode}: {result.stderr}")
-            
-    except ValueError as e:
-        # URL validation error
-        logging.error(f"URL validation failed for curl: {e}")
-        raise Exception(f"Invalid URL for curl: {e}")
     except subprocess.TimeoutExpired:
-        logging.error(f"curl timeout for {url}")
         raise Exception(f"curl timeout for {url}")
     except Exception as e:
         logging.error(f"Failed to fetch with curl from {url}: {e}")
@@ -730,238 +654,6 @@ def fetch_html_original(url: str, ua: Optional[str] = None, timeout: int = 30) -
 
 # Replace the public interface to use the retry wrapper
 fetch_html = fetch_html_with_retry
-
-
-def resolve_final_url(url: str, ua: Optional[str] = None, timeout: int = 10, max_redirects: int = 5) -> tuple[str, bool]:
-    """
-    Resolves URL redirects to get the final destination URL using HEAD requests.
-    
-    Args:
-        url: Original URL to resolve
-        ua: User agent string (optional)
-        timeout: Request timeout in seconds
-        max_redirects: Maximum number of redirects to follow
-        
-    Returns:
-        tuple[str, bool]: (final_url, was_redirected)
-    """
-    if not url or not url.strip():
-        raise ValueError("URL cannot be empty")
-    
-    ua = ua or "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0 Safari/537.36"
-    current_url = url.strip()
-    redirect_count = 0
-    was_redirected = False
-    
-    try:
-        while redirect_count < max_redirects:
-            logging.debug(f"Checking redirect for: {current_url}")
-            
-            # Create HEAD request to check for redirects
-            req = urllib.request.Request(current_url, headers={
-                "User-Agent": ua,
-                "Accept-Language": "zh-CN,zh;q=0.9"
-            })
-            req.get_method = lambda: 'HEAD'
-            
-            try:
-                with urllib.request.urlopen(req, timeout=timeout, context=ssl_context_unverified) as response:
-                    # If we get here without exception, no redirect occurred
-                    final_url = response.geturl()
-                    if final_url != current_url:
-                        was_redirected = True
-                        logging.info(f"URL resolved via response: {url} -> {final_url}")
-                    return final_url, was_redirected
-                    
-            except urllib.error.HTTPError as e:
-                # Check if it's a redirect status code
-                if e.code in (301, 302, 303, 307, 308):
-                    location = e.headers.get('Location')
-                    if not location:
-                        # No location header, return current URL
-                        return current_url, was_redirected
-                    
-                    # Handle relative URLs
-                    if location.startswith('/'):
-                        parsed = urllib.parse.urlparse(current_url)
-                        location = f"{parsed.scheme}://{parsed.netloc}{location}"
-                    elif not location.startswith(('http://', 'https://')):
-                        # Relative URL, resolve against current URL
-                        location = urllib.parse.urljoin(current_url, location)
-                    
-                    logging.debug(f"Redirect {e.code}: {current_url} -> {location}")
-                    current_url = location
-                    redirect_count += 1
-                    was_redirected = True
-                    continue
-                else:
-                    # Non-redirect HTTP error, return current URL
-                    logging.warning(f"HTTP error {e.code} for {current_url}")
-                    return current_url, was_redirected
-                    
-            except Exception as e:
-                logging.warning(f"Error resolving redirects for {current_url}: {e}")
-                return current_url, was_redirected
-        
-        # Max redirects exceeded
-        logging.warning(f"Max redirects ({max_redirects}) exceeded for {url}")
-        return current_url, was_redirected
-        
-    except Exception as e:
-        logging.error(f"Failed to resolve URL {url}: {e}")
-        return url, False
-
-
-def resolve_final_url_with_fallback(url: str, ua: Optional[str] = None, timeout: int = 10, max_redirects: int = 5) -> tuple[str, bool]:
-    """
-    Enhanced redirect resolver with fallback strategies for problematic redirect services.
-    
-    Some redirect services (like xhslink.com) return 404 on HEAD requests but work with GET.
-    This function implements a fallback strategy for such services.
-    
-    Args:
-        url: Original URL to resolve
-        ua: User agent string (optional)
-        timeout: Request timeout in seconds
-        max_redirects: Maximum number of redirects to follow
-        
-    Returns:
-        tuple[str, bool]: (final_url, was_redirected)
-    """
-    if not url or not url.strip():
-        raise ValueError("URL cannot be empty")
-    
-    ua = ua or "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0 Safari/537.36"
-    current_url = url.strip()
-    redirect_count = 0
-    was_redirected = False
-    
-    # Check if this is a known problematic redirect service
-    parsed_original = urllib.parse.urlparse(current_url)
-    is_known_redirect_service = parsed_original.hostname and 'xhslink.com' in parsed_original.hostname
-    
-    # For known problematic services, try GET-based resolution immediately
-    if is_known_redirect_service:
-        logging.debug(f"Using GET-based redirect resolution for known service: {parsed_original.hostname}")
-        return resolve_redirects_with_get(current_url, ua, timeout, max_redirects)
-    
-    # First attempt: Use the standard HEAD-based resolution
-    try:
-        final_url, was_redirected = resolve_final_url(current_url, ua, timeout, max_redirects)
-        return final_url, was_redirected
-    except Exception as e:
-        logging.debug(f"Standard redirect resolution failed for {current_url}: {e}")
-        
-        # Check if this might be a redirect service that blocks HEAD requests
-        if "404" in str(e) or "HTTP Error 404" in str(e):
-            parsed = urllib.parse.urlparse(current_url)
-            hostname = parsed.hostname or ""
-            
-            # Heuristic: domains that might be redirect services
-            redirect_indicators = ['link', 'short', 'redirect', 'go', 'r', 'l']
-            might_be_redirect_service = any(indicator in hostname.lower() for indicator in redirect_indicators)
-            
-            if might_be_redirect_service:
-                logging.info(f"404 response detected on potential redirect service {hostname}, attempting GET fallback")
-                try:
-                    return resolve_redirects_with_get(current_url, ua, timeout, max_redirects)
-                except Exception as fallback_error:
-                    logging.warning(f"GET fallback also failed for {current_url}: {fallback_error}")
-                    return current_url, False
-        
-        # For other errors, return original URL
-        logging.warning(f"Redirect resolution failed for {current_url}: {e}")
-        return current_url, False
-
-
-def resolve_redirects_with_get(url: str, ua: str, timeout: int, max_redirects: int) -> tuple[str, bool]:
-    """
-    Resolve redirects using GET requests instead of HEAD.
-    
-    This is a fallback for services that return 404 on HEAD but work with GET.
-    
-    Args:
-        url: URL to resolve
-        ua: User agent string
-        timeout: Request timeout
-        max_redirects: Maximum redirects to follow
-        
-    Returns:
-        tuple[str, bool]: (final_url, was_redirected)
-    """
-    current_url = url
-    redirect_count = 0
-    was_redirected = False
-    
-    while redirect_count < max_redirects:
-        logging.debug(f"GET-based redirect check for: {current_url}")
-        
-        try:
-            req = urllib.request.Request(current_url, headers={
-                "User-Agent": ua,
-                "Accept-Language": "zh-CN,zh;q=0.9"
-            })
-            
-            with urllib.request.urlopen(req, timeout=timeout, context=ssl_context_unverified) as response:
-                final_url = response.geturl()
-                if final_url != current_url:
-                    was_redirected = True
-                    logging.info(f"GET-based redirect resolved: {url} -> {final_url}")
-                return final_url, was_redirected
-                
-        except urllib.error.HTTPError as e:
-            if e.code in (301, 302, 303, 307, 308):
-                location = e.headers.get('Location')
-                if not location:
-                    return current_url, was_redirected
-                
-                # Handle relative URLs
-                if location.startswith('/'):
-                    parsed = urllib.parse.urlparse(current_url)
-                    location = f"{parsed.scheme}://{parsed.netloc}{location}"
-                elif not location.startswith(('http://', 'https://')):
-                    location = urllib.parse.urljoin(current_url, location)
-                
-                logging.debug(f"GET-based redirect {e.code}: {current_url} -> {location}")
-                current_url = location
-                redirect_count += 1
-                was_redirected = True
-                continue
-            else:
-                # Non-redirect HTTP error
-                logging.warning(f"GET-based resolution HTTP error {e.code} for {current_url}")
-                return current_url, was_redirected
-                
-        except Exception as e:
-            logging.warning(f"GET-based resolution error for {current_url}: {e}")
-            return current_url, was_redirected
-    
-    # Max redirects exceeded
-    logging.warning(f"Max redirects ({max_redirects}) exceeded in GET-based resolution for {url}")
-    return current_url, was_redirected
-
-
-def get_effective_host(url: str, ua: Optional[str] = None) -> str:
-    """
-    Gets the effective hostname after resolving redirects.
-    Implements caching for performance.
-    
-    Args:
-        url: Original URL
-        ua: User agent string (optional)
-        
-    Returns:
-        str: Effective hostname for parser selection
-    """
-    try:
-        final_url, was_redirected = resolve_final_url_with_fallback(url, ua=ua, timeout=10)
-        if was_redirected:
-            logging.info(f"Redirect resolved for parser selection: {url} -> {final_url}")
-        return urllib.parse.urlparse(final_url).hostname or ''
-    except Exception as e:
-        logging.warning(f"Failed to resolve redirects for parser selection: {e}")
-        # Fallback to original URL parsing
-        return urllib.parse.urlparse(url).hostname or ''
 
 
 def try_render(url: str, ua: Optional[str] = None, timeout_ms: int = 60000) -> Optional[str]:
@@ -1116,8 +808,6 @@ def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
             self.parts: list[str] = []
             self.link = None
             self.images: list[str] = []
-            self.in_script = False
-            self.in_style = False
         def handle_starttag(self, tag, attrs):
             a = dict(attrs)
             if not self.capture and a.get('id') == 'js_content':
@@ -1138,10 +828,6 @@ def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
                         src = normalize_media_url(src)
                         self.images.append(src)
                         self.parts.append(f"\n\n![]({src})\n\n")
-                elif tag == 'script':
-                    self.in_script = True
-                elif tag == 'style':
-                    self.in_style = True
                 elif tag == 'a':
                     self.link = a.get('href')
         def handle_endtag(self, tag):
@@ -1149,15 +835,11 @@ def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
                 if tag == 'a' and self.link:
                     self.parts.append(f" ({self.link})")
                     self.link = None
-                elif tag == 'script':
-                    self.in_script = False
-                elif tag == 'style':
-                    self.in_style = False
                 self.depth -= 1
                 if self.depth == 0:
                     self.capture = False
         def handle_data(self, data):
-            if self.capture and not self.in_script and not self.in_style:
+            if self.capture:
                 t = data.strip('\n')
                 if t.strip(): self.parts.append(ihtml.unescape(t))
 
@@ -1178,695 +860,6 @@ def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
         'publish_time': pub
     }
     return date_only, "\n\n".join(lines).strip() + "\n", metadata
-
-
-@dataclass
-class XHSImageData:
-    """Structured representation of XiaoHongShu image data"""
-    url: str
-    pic_id: Optional[str] = None
-    width: Optional[int] = None
-    height: Optional[int] = None
-    format: Optional[str] = None
-    is_cover: bool = False
-    processing_params: Optional[Dict[str, str]] = None
-    source: str = "unknown"  # Track extraction source for debugging
-
-class XHSImageExtractor:
-    """
-    Enhanced XiaoHongShu image extraction engine.
-    
-    Replaces the simple regex-based approach in the current xhs_to_markdown()
-    function with comprehensive JSON/JavaScript data mining and lazy loading detection.
-    """
-    
-    def __init__(self, html: str, url: str = "", debug: bool = False):
-        """Initialize extractor with HTML content and optional source URL."""
-        self.html = html
-        self.url = url
-        self.images: List[XHSImageData] = []
-        self.seen_urls: Set[str] = set()
-        self.debug = debug
-    
-    def extract_all(self) -> List[str]:
-        """
-        Main extraction orchestrator - executes all extraction strategies.
-        
-        Returns:
-            List[str]: Ordered list of unique, validated image URLs
-        """
-        extraction_strategies = [
-            self._extract_from_initial_state,
-            self._extract_from_api_responses,
-            self._extract_from_lazy_loading,
-            self._extract_from_html_attributes,
-            self._extract_from_json_ld
-        ]
-        
-        for strategy in extraction_strategies:
-            try:
-                strategy()
-            except Exception as e:
-                # Strategy failed, continue to next
-                continue
-        
-        return self._dedupe_and_order()
-    
-    def _extract_from_initial_state(self) -> None:
-        """Extract images from window.__INITIAL_STATE__ and similar XHS globals."""
-        state_patterns = [
-            r'window\.__INITIAL_STATE__\s*=\s*({.+?});',
-            r'window\.initialState\s*=\s*({.+?});',  
-            r'__NUXT__\s*=\s*({.+?});',
-            r'window\.__store\s*=\s*({.+?});'
-        ]
-        
-        for pattern in state_patterns:
-            matches = re.finditer(pattern, self.html, re.DOTALL)
-            for match in matches:
-                try:
-                    state_json = match.group(1)
-                    # Clean up common JavaScript to JSON issues
-                    state_json = self._clean_javascript_json(state_json)
-                    data = json.loads(state_json)
-                    self._parse_state_object(data, source="initial_state")
-                except json.JSONDecodeError as e:
-                    continue
-                except Exception as e:
-                    continue
-    
-    def _parse_state_object(self, data: Any, source: str = "state", path: str = "") -> None:
-        """Recursively parse XHS state objects to find image data structures."""
-        if isinstance(data, dict):
-            # Check for XHS-specific image structures
-            if 'imageList' in data:
-                self._process_image_list(data['imageList'], source=f"{source}.imageList")
-            
-            if 'pics' in data:
-                self._process_pics_array(data['pics'], source=f"{source}.pics")
-            
-            if 'noteDetailMap' in data:
-                # XHS note detail structure
-                note_map = data['noteDetailMap']
-                for note_id, note_data in note_map.items():
-                    if isinstance(note_data, dict):
-                        self._parse_state_object(note_data, source=f"{source}.noteDetailMap.{note_id}")
-            
-            # Recursively search other dict keys
-            for key, value in data.items():
-                if key in ['imageList', 'pics', 'noteDetailMap']:
-                    continue  # Already processed
-                self._parse_state_object(value, source, f"{path}.{key}")
-        
-        elif isinstance(data, list):
-            # Process array elements
-            for i, item in enumerate(data):
-                self._parse_state_object(item, source, f"{path}[{i}]")
-    
-    def _process_image_list(self, image_list: Any, source: str = "imageList") -> None:
-        """Process XHS imageList array structure"""
-        if not isinstance(image_list, list):
-            return
-        
-        for i, img_data in enumerate(image_list):
-            if isinstance(img_data, dict):
-                url = img_data.get('url') or img_data.get('pic')
-                pic_id = img_data.get('picId') or img_data.get('id')
-                
-                if url and self._is_valid_xhs_image_url(url):
-                    self._add_image(XHSImageData(
-                        url=url,
-                        pic_id=pic_id,
-                        width=img_data.get('width'),
-                        height=img_data.get('height'),
-                        is_cover=(i == 0),  # First image often cover
-                        source=source
-                    ))
-            elif isinstance(img_data, str):
-                # Sometimes imageList contains direct URL strings
-                if self._is_valid_xhs_image_url(img_data):
-                    self._add_image(XHSImageData(
-                        url=img_data,
-                        is_cover=(i == 0),
-                        source=source
-                    ))
-    
-    def _process_pics_array(self, pics: Any, source: str = "pics") -> None:
-        """Process XHS pics array structure"""
-        if not isinstance(pics, list):
-            return
-        
-        for pic_data in pics:
-            if isinstance(pic_data, dict):
-                # Multiple URL formats in XHS pics structure
-                url_candidates = [
-                    pic_data.get('url'),
-                    pic_data.get('original'),
-                    pic_data.get('large'),
-                    pic_data.get('medium'),
-                    pic_data.get('small')
-                ]
-                
-                for url in url_candidates:
-                    if url and self._is_valid_xhs_image_url(url):
-                        self._add_image(XHSImageData(
-                            url=url,
-                            pic_id=pic_data.get('picId'),
-                            width=pic_data.get('width'),
-                            height=pic_data.get('height'),
-                            source=source
-                        ))
-                        break  # Use first valid URL found
-    
-    def _extract_from_api_responses(self) -> None:
-        """Extract images from embedded API response data in script tags."""
-        # Enhanced patterns for robust API response extraction
-        # Use a custom balanced bracket/brace matching approach
-        import re
-        
-        # Find all potential starting points for imageList or pics
-        imageList_starts = list(re.finditer(r'"imageList"\s*:\s*\[', self.html))
-        pics_starts = list(re.finditer(r'"pics"\s*:\s*\[', self.html))
-        
-        # Process each potential match
-        all_starts = [(match.start(), match.end(), 'imageList') for match in imageList_starts]
-        all_starts.extend([(match.start(), match.end(), 'pics') for match in pics_starts])
-        
-        for start_pos, end_pos, list_type in all_starts:
-            try:
-                # Extract balanced JSON array from this position
-                json_array = self._extract_balanced_json_array(self.html, end_pos - 1)  # -1 to include the opening [
-                if json_array and len(json_array) > 10:  # Minimum reasonable length
-                    if self.debug:
-                        print(f"DEBUG: Found balanced {list_type} array ({len(json_array)} chars): {json_array[:100]}...")
-                        print(f"DEBUG: Last 50 chars of array: ...{json_array[-50:]}")
-                    
-                    # Clean and parse
-                    cleaned_json = self._clean_unicode_escapes(json_array)
-                    if self.debug:
-                        print(f"DEBUG: Cleaned JSON ({len(cleaned_json)} chars): {cleaned_json[:200]}...")
-                    
-                    try:
-                        data = {"imageList": json.loads(cleaned_json)} if list_type == 'imageList' else {"pics": json.loads(cleaned_json)}
-                        self._extract_images_from_api_data(data, source="api_response")
-                        if self.debug:
-                            print(f"DEBUG: Successfully processed {list_type} data")
-                        return  # Success, no need to try fallback patterns
-                    except json.JSONDecodeError as e:
-                        if self.debug:
-                            print(f"DEBUG: Failed to parse {list_type} array: {e}")
-                            print(f"DEBUG: Error position around: {cleaned_json[max(0, e.pos-20):e.pos+20]}")
-                        continue
-            except Exception as e:
-                if self.debug:
-                    print(f"DEBUG: Error extracting {list_type}: {e}")
-                continue
-        
-        # Fallback to original regex patterns if balanced extraction fails
-        api_patterns = [
-            r'"note"\s*:\s*({[^{}]*"imageList"[^{}]*})',
-            r'"data"\s*:\s*({[^{}]*"pics"[^{}]*})',
-        ]
-        
-        for i, pattern in enumerate(api_patterns):
-            if self.debug:
-                print(f"DEBUG: Trying API pattern {i+1}: {pattern[:50]}...")
-            
-            matches = re.finditer(pattern, self.html, re.DOTALL)
-            for match in matches:
-                try:
-                    json_data = match.group(1)
-                    if self.debug:
-                        print(f"DEBUG: Found API match with pattern {i+1}: {json_data[:100]}...")
-                    
-                    # Handle Unicode escapes and clean JSON
-                    cleaned_json = self._clean_unicode_escapes(json_data)
-                    
-                    # Try multiple parsing approaches
-                    data = None
-                    try:
-                        data = json.loads(cleaned_json)
-                    except json.JSONDecodeError as e:
-                        if self.debug:
-                            print(f"DEBUG: Standard JSON parsing failed: {e}")
-                        # Try parsing as just the array if it looks like one
-                        if cleaned_json.startswith('[') and cleaned_json.endswith(']'):
-                            try:
-                                # Wrap in object for consistent processing
-                                data = {"imageList": json.loads(cleaned_json)}
-                                if self.debug:
-                                    print("DEBUG: Successfully parsed as array")
-                            except json.JSONDecodeError:
-                                continue
-                    
-                    if data:
-                        # Enhanced extraction with new method
-                        self._extract_images_from_api_data(data, source="api_response")
-                        if self.debug:
-                            print(f"DEBUG: Successfully processed data from pattern {i+1}")
-                    
-                except json.JSONDecodeError as e:
-                    if self.debug:
-                        print(f"DEBUG: JSON decode failed for pattern {i+1}: {e}")
-                    continue
-    
-    def _extract_from_lazy_loading(self) -> None:
-        """Extract images from lazy loading configurations."""
-        lazy_patterns = [
-            r'data-src=["\']([^"\']*(?:ci\.xiaohongshu|xhscdn|sns-img)[^"\']*)["\']',
-            r'data-original=["\']([^"\']*(?:ci\.xiaohongshu|xhscdn|sns-img)[^"\']*)["\']',
-            r'data-lazy-src=["\']([^"\']*(?:ci\.xiaohongshu|xhscdn|sns-img)[^"\']*)["\']',
-            r'"lazyLoad"\s*:\s*true[^}]*"src"\s*:\s*"([^"]*(?:ci\.xiaohongshu|xhscdn|sns-img)[^"]*)"',
-        ]
-        
-        for pattern in lazy_patterns:
-            matches = re.finditer(pattern, self.html, re.IGNORECASE)
-            for match in matches:
-                url = match.group(1).strip()
-                if self._is_valid_xhs_image_url(url):
-                    self._add_image(XHSImageData(
-                        url=url,
-                        source="lazy_loading"
-                    ))
-    
-    def _extract_from_html_attributes(self) -> None:
-        """Enhanced HTML attribute scanning with XHS-specific patterns."""
-        attribute_patterns = [
-            r'src=["\']([^"\']*(?:ci\.xiaohongshu|xhscdn|sns-img)[^"\']*)["\']',
-            r'srcset=["\']([^"\']*(?:ci\.xiaohongshu|xhscdn|sns-img)[^"\']*)["\']',
-            r'background-image:\s*url\(["\']?([^"\']*(?:ci\.xiaohongshu|xhscdn|sns-img)[^"\']*)["\']?\)',
-        ]
-        
-        for pattern in attribute_patterns:
-            matches = re.finditer(pattern, self.html, re.IGNORECASE)
-            for match in matches:
-                url_data = match.group(1)
-                
-                # Handle srcset (contains multiple URLs)
-                if 'srcset' in pattern:
-                    urls = self._parse_srcset(url_data)
-                    for url in urls:
-                        if self._is_valid_xhs_image_url(url):
-                            self._add_image(XHSImageData(
-                                url=url,
-                                source="html_srcset"
-                            ))
-                else:
-                    if self._is_valid_xhs_image_url(url_data):
-                        self._add_image(XHSImageData(
-                            url=url_data,
-                            source="html_attributes"
-                        ))
-    
-    def _extract_from_json_ld(self) -> None:
-        """Extract from JSON-LD structured data (existing implementation)."""
-        json_ld_pattern = r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>'
-        matches = re.finditer(json_ld_pattern, self.html, re.IGNORECASE | re.DOTALL)
-        
-        for match in matches:
-            try:
-                data = json.loads(match.group(1).strip())
-                self._parse_json_ld_images(data)
-            except json.JSONDecodeError:
-                continue
-    
-    def _parse_json_ld_images(self, data: Any) -> None:
-        """Parse JSON-LD data for image references"""
-        if isinstance(data, dict):
-            # Look for image properties
-            for key in ['image', 'thumbnail', 'url']:
-                if key in data:
-                    img_data = data[key]
-                    if isinstance(img_data, str) and self._is_valid_xhs_image_url(img_data):
-                        self._add_image(XHSImageData(
-                            url=img_data,
-                            source="json_ld"
-                        ))
-                    elif isinstance(img_data, list):
-                        for img_url in img_data:
-                            if isinstance(img_url, str) and self._is_valid_xhs_image_url(img_url):
-                                self._add_image(XHSImageData(
-                                    url=img_url,
-                                    source="json_ld"
-                                ))
-        elif isinstance(data, list):
-            for item in data:
-                self._parse_json_ld_images(item)
-    
-    def _is_valid_xhs_image_url(self, url: str) -> bool:
-        """Enhanced validation for XiaoHongShu image URLs."""
-        if not url or not isinstance(url, str):
-            return False
-        
-        url_clean = url.strip().strip('"\'')
-        
-        # Domain validation (expanded from current implementation)
-        valid_domains = [
-            'ci.xiaohongshu.com',
-            'sns-img',
-            'xhscdn.com',
-            'sns-webpic-qc.xhscdn.com',
-            'picasso-static.xiaohongshu.com',
-            'sns-avatar-qc.xhscdn.com',  # Profile images
-        ]
-        
-        domain_ok = any(domain in url_clean for domain in valid_domains)
-        if not domain_ok:
-            return False
-        
-        # Exclude avatars and icons (from current implementation)
-        exclusions = ['avatar', 'favicon', 'icon', 'logo']
-        if any(exclusion in url_clean.lower() for exclusion in exclusions):
-            return False
-        
-        # Image format validation (enhanced)
-        format_indicators = [
-            r'\.(?:jpg|jpeg|png|webp|gif)(?:\?|$)',
-            r'imageMogr2',      # XHS image processing
-            r'imageView2',      # XHS image processing  
-            r'thumbnail',
-            r'format=',
-            r'/photos/',        # XHS photo URLs
-        ]
-        
-        format_ok = any(
-            re.search(indicator, url_clean, re.IGNORECASE) 
-            for indicator in format_indicators
-        )
-        
-        return format_ok
-    
-    def _add_image(self, image_data: XHSImageData) -> None:
-        """Add image if not already seen"""
-        if image_data.url not in self.seen_urls:
-            self.seen_urls.add(image_data.url)
-            self.images.append(image_data)
-    
-    def _dedupe_and_order(self) -> List[str]:
-        """Deduplicate and order images for final output."""
-        if not self.images:
-            return []
-        
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_images = []
-        for img in self.images:
-            if img.url not in seen:
-                seen.add(img.url)
-                unique_images.append(img)
-        
-        # Prioritize cover images first
-        cover_images = [img for img in unique_images if img.is_cover]
-        non_cover_images = [img for img in unique_images if not img.is_cover]
-        
-        # Enhanced priority with quality validation
-        # Prioritize API response extraction for high-quality images
-        source_priority = {
-            "initial_state": 1,
-            "api_response": 1,  # Elevated to highest priority  
-            "lazy_loading": 3,
-            "html_attributes": 4,
-            "html_srcset": 4,
-            "json_ld": 5,
-            "unknown": 6
-        }
-        
-        # Enhanced sorting with quality metrics
-        def get_image_quality_score(img):
-            url = img.url
-            quality_score = 0
-            
-            # Higher resolution gets better score
-            if 'w/1080' in url:
-                quality_score += 100
-            elif 'w/720' in url:
-                quality_score += 50
-            elif 'w/480' in url:
-                quality_score += 25
-            # XiaoHongShu specific patterns - 'dft' (default) is typically higher quality than 'prv' (preview)
-            elif 'nd_dft' in url:
-                quality_score += 80  # High quality default format
-            elif 'nd_prv' in url:
-                quality_score += 40  # Lower quality preview format
-            
-            # API response images get bonus points
-            if img.source == "api_response":
-                quality_score += 200
-                
-            return quality_score
-        
-        # Sort by source priority first, then by quality score
-        non_cover_images.sort(key=lambda img: (
-            source_priority.get(img.source.split('.')[0], 6),
-            -get_image_quality_score(img),  # Negative for descending order
-            img.source
-        ))
-        
-        ordered_images = cover_images + non_cover_images
-        
-        # Quality validation and smart fallback
-        final_urls = []
-        api_response_count = 0
-        high_quality_count = 0
-        
-        for img in ordered_images:
-            url = img.url
-            final_urls.append(url)
-            
-            if img.source == "api_response":
-                api_response_count += 1
-            # Count high-quality images (1080p or XHS high-quality patterns)
-            if 'w/1080' in url or 'nd_dft' in url:
-                high_quality_count += 1
-        
-        # Log extraction quality metrics
-        if self.debug:
-            print(f"DEBUG: Total images extracted: {len(final_urls)}")
-            print(f"DEBUG: API response images: {api_response_count}")
-            print(f"DEBUG: High quality (1080p) images: {high_quality_count}")
-            if api_response_count > 0:
-                print("DEBUG: API extraction successful - using high-quality source")
-            else:
-                print("DEBUG: Falling back to HTML extraction methods")
-        
-        return final_urls
-    
-    def _clean_javascript_json(self, js_string: str) -> str:
-        """Clean JavaScript object syntax to valid JSON"""
-        # Remove JavaScript comments
-        js_string = re.sub(r'//.*?$', '', js_string, flags=re.MULTILINE)
-        js_string = re.sub(r'/\*.*?\*/', '', js_string, flags=re.DOTALL)
-        
-        # Handle undefined values
-        js_string = re.sub(r'\bundefined\b', 'null', js_string)
-        
-        # Handle trailing commas (basic cleanup)
-        js_string = re.sub(r',(\s*[}\]])', r'\1', js_string)
-        
-        return js_string
-    
-    def _clean_unicode_escapes(self, json_str: str) -> str:
-        """Clean Unicode escapes and prepare JSON for parsing."""
-        if self.debug:
-            print(f"DEBUG: Input JSON length: {len(json_str)}")
-        
-        # Only handle the most common Unicode escape that causes issues
-        json_str = json_str.replace('\\u002F', '/')
-        
-        if self.debug:
-            print(f"DEBUG: After Unicode cleaning length: {len(json_str)}")
-        
-        return json_str
-    
-    def _extract_balanced_json_array(self, html: str, start_pos: int) -> str:
-        """Extract a balanced JSON array starting from a given position."""
-        if start_pos >= len(html) or html[start_pos] != '[':
-            return ""
-        
-        bracket_count = 0
-        in_string = False
-        escape_next = False
-        i = start_pos
-        
-        while i < len(html):
-            char = html[i]
-            
-            if escape_next:
-                escape_next = False
-            elif char == '\\':
-                escape_next = True
-            elif char == '"':
-                in_string = not in_string
-            elif not in_string:
-                if char == '[':
-                    bracket_count += 1
-                elif char == ']':
-                    bracket_count -= 1
-                    if bracket_count == 0:
-                        # Found the closing bracket for our array
-                        return html[start_pos:i+1]
-            
-            i += 1
-            
-            # Safety check - if we've gone too far, return what we have
-            if i - start_pos > 100000:  # 100KB limit
-                break
-        
-        # If we reach here, we didn't find a proper closing bracket
-        # Return what we have up to a reasonable limit
-        max_length = min(50000, len(html) - start_pos)
-        return html[start_pos:start_pos + max_length]
-    
-    def _parse_srcset(self, srcset: str) -> List[str]:
-        """Parse srcset attribute to extract individual URLs"""
-        urls = []
-        parts = srcset.split(',')
-        for part in parts:
-            # Extract URL (first part before any space)
-            url = part.strip().split(' ')[0]
-            if url:
-                urls.append(url)
-        return urls
-    
-    def _extract_images_from_api_data(self, data: dict, source: str = "api_response") -> None:
-        """Enhanced method to extract images from API response data."""
-        if not isinstance(data, dict):
-            return
-        
-        # Deep traverse the data structure
-        images_found = self._deep_extract_images(data)
-        
-        if self.debug:
-            print(f"DEBUG: Found {len(images_found)} image objects in API data")
-        
-        for img_data in images_found:
-            # Try to get the highest quality image URL
-            image_url = self._upgrade_image_quality(img_data)
-            
-            if self.debug:
-                print(f"DEBUG: Processing image data: {str(img_data)[:200]}...")
-                print(f"DEBUG: Upgraded image URL: {image_url}")
-            
-            if image_url and self._is_valid_image_url(image_url):
-                if self.debug:
-                    print(f"DEBUG: Extracted high-quality image: {image_url}")
-                
-                self.images.append(XHSImageData(
-                    url=image_url,
-                    source=source,
-                    is_cover=img_data.get('is_cover', False)
-                ))
-            elif self.debug:
-                print(f"DEBUG: Skipped invalid image URL: {image_url}")
-    
-    def _upgrade_image_quality(self, img_data: dict) -> str:
-        """Upgrade image quality from 720px to 1080px resolution."""
-        image_url = ""
-        
-        if self.debug:
-            print(f"DEBUG: Looking for URLs in keys: {list(img_data.keys())}")
-        
-        # Priority order for image URLs (highest quality first) - updated for XiaoHongShu
-        url_keys = ['urlDefault', 'url_default', 'urlPre', 'url_pre', 'url', 'live_photo_url', 'src']
-        
-        for key in url_keys:
-            if key in img_data and img_data[key]:
-                candidate_url = img_data[key]
-                if isinstance(candidate_url, str) and candidate_url.strip():
-                    if self.debug:
-                        print(f"DEBUG: Found URL in {key}: {candidate_url}")
-                    # Upgrade to highest resolution
-                    if 'w/720' in candidate_url:
-                        image_url = candidate_url.replace('w/720', 'w/1080')
-                        if self.debug:
-                            print(f"DEBUG: Upgraded resolution: {candidate_url} -> {image_url}")
-                        break
-                    elif 'w/1080' in candidate_url:
-                        image_url = candidate_url
-                        break
-                    elif any(size in candidate_url for size in ['w/480', 'w/360']):
-                        # Upgrade lower resolutions to 1080p
-                        image_url = re.sub(r'w/\d+', 'w/1080', candidate_url)
-                        if self.debug:
-                            print(f"DEBUG: Upgraded low resolution: {candidate_url} -> {image_url}")
-                        break
-                    else:
-                        # Use the URL as-is if no specific resolution pattern
-                        image_url = candidate_url
-                        if self.debug:
-                            print(f"DEBUG: Using URL as-is: {candidate_url}")
-                        break
-        
-        # Also check nested infoList for URLs
-        if not image_url and 'infoList' in img_data and isinstance(img_data['infoList'], list):
-            for info_item in img_data['infoList']:
-                if isinstance(info_item, dict) and 'url' in info_item and info_item['url']:
-                    candidate_url = info_item['url']
-                    if isinstance(candidate_url, str) and candidate_url.strip():
-                        if self.debug:
-                            print(f"DEBUG: Found URL in infoList: {candidate_url}")
-                        # Apply same upgrade logic
-                        if 'w/720' in candidate_url:
-                            image_url = candidate_url.replace('w/720', 'w/1080')
-                        elif any(size in candidate_url for size in ['w/480', 'w/360']):
-                            image_url = re.sub(r'w/\d+', 'w/1080', candidate_url)
-                        else:
-                            image_url = candidate_url
-                        break
-        
-        if self.debug and not image_url:
-            print(f"DEBUG: No valid URL found in image data")
-        
-        return image_url
-    
-    def _is_valid_image_url(self, url: str) -> bool:
-        """Check if URL is a valid image URL."""
-        if not url or not isinstance(url, str):
-            return False
-        
-        # Basic URL validation
-        if not (url.startswith('http://') or url.startswith('https://')):
-            return False
-        
-        # Check for common image-related patterns in XiaoHongShu URLs
-        if 'sns-webpic' in url or 'xhscdn' in url:
-            return True
-        
-        # Check for image file extensions
-        image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
-        return any(ext in url.lower() for ext in image_extensions)
-    
-    def _deep_extract_images(self, obj: any, path: str = "") -> List[dict]:
-        """Recursively traverse JSON to find image data."""
-        images = []
-        
-        if isinstance(obj, dict):
-            # Check for image list patterns
-            if 'imageList' in obj and isinstance(obj['imageList'], list):
-                for img in obj['imageList']:
-                    if isinstance(img, dict):
-                        images.append(img)
-            
-            if 'pics' in obj and isinstance(obj['pics'], list):
-                for img in obj['pics']:
-                    if isinstance(img, dict):
-                        images.append(img)
-            
-            # Check for individual image objects
-            if 'url' in obj or 'url_default' in obj:
-                # This looks like an image object
-                images.append(obj)
-            
-            # Recursively search other keys
-            for key, value in obj.items():
-                if key not in ['imageList', 'pics'] and isinstance(value, (dict, list)):
-                    images.extend(self._deep_extract_images(value, f"{path}.{key}" if path else key))
-        
-        elif isinstance(obj, list):
-            for i, item in enumerate(obj):
-                images.extend(self._deep_extract_images(item, f"{path}[{i}]" if path else f"[{i}]"))
-        
-        return images
 
 
 def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
@@ -1920,105 +913,49 @@ def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
 
     desc = extract_meta(html, 'description').replace('\t','\n\n').strip()
     cover = extract_meta(html, 'og:image')
-    
-    # ENHANCED IMAGE EXTRACTION - Using XHSImageExtractor for comprehensive extraction
-    try:
-        extractor = XHSImageExtractor(html, url, debug=False)
-        imgs = extractor.extract_all()
-        
-        # Apply legacy validation for backward compatibility
-        def _validate_image_url_legacy(url: str) -> bool:
-            """Legacy validation function to maintain backward compatibility."""
-            if not url:
-                return False
-            
-            url_clean = url.strip().strip('"\'')
-            
-            # Current domain validation logic
-            ok_domain = any(x in url_clean for x in (
-                'ci.xiaohongshu.com',
-                'sns-img',
-                'xhscdn.com',
-            ))
-            if not ok_domain:
-                return False
-            
-            if any(bad in url_clean for bad in ('avatar', 'favicon')):
-                return False
-            
-            # Current format validation logic - enhanced for XiaoHongShu
-            if not (re.search(r'\.(?:jpg|jpeg|png|webp|gif)(?:\?|$)', url_clean, re.I) or 
-                    ('imageMogr2' in url_clean) or ('imageView2' in url_clean) or
-                    ('nd_dft' in url_clean) or ('nd_prv' in url_clean)):  # XiaoHongShu patterns
-                return False
-            
-            return True
-        
-        # Filter through legacy validation
-        validated_imgs = []
-        for img_url in imgs:
-            if _validate_image_url_legacy(img_url):
-                validated_imgs.append(img_url)
-        
-        imgs = validated_imgs
-        
-        # Ensure cover is handled properly
-        if cover:
-            if _validate_image_url_legacy(cover):
-                if cover not in imgs:
-                    imgs.insert(0, cover)
-                elif imgs and imgs[0] != cover and cover in imgs:
-                    imgs.remove(cover)
-                    imgs.insert(0, cover)
-        
-        # Enhanced extraction completed
-        
-    except Exception as e:
-        # Fall back to legacy extraction method
-        
-        # FALLBACK TO LEGACY EXTRACTION
-        imgs: list[str] = []
-        seen = set()
-        def consider(u: str):
-            if not u:
-                return
-            # strip quotes and spaces
-            u2 = u.strip().strip('"\'')
-            # heuristic filters for XHS media images (exclude avatars/icons)
-            ok_domain = any(x in u2 for x in (
-                'ci.xiaohongshu.com',
-                'sns-img',
-                'xhscdn.com',
-            ))
-            if not ok_domain:
-                return
-            if any(bad in u2 for bad in ('avatar','favicon')):
-                return
-            # must look like an image URL (extension or image processing params)
-            if not (re.search(r'\.(?:jpg|jpeg|png|webp|gif)(?:\?|$)', u2, re.I) or ('imageMogr2' in u2) or ('imageView2' in u2)):
-                return
-            if u2 not in seen:
-                seen.add(u2)
-                imgs.append(u2)
+    # image gallery - collect from attributes and JSON strings
+    imgs: list[str] = []
+    seen = set()
+    def consider(u: str):
+        if not u:
+            return
+        # strip quotes and spaces
+        u2 = u.strip().strip('"\'')
+        # heuristic filters for XHS media images (exclude avatars/icons)
+        ok_domain = any(x in u2 for x in (
+            'ci.xiaohongshu.com',
+            'sns-img',
+            'xhscdn.com',
+        ))
+        if not ok_domain:
+            return
+        if any(bad in u2 for bad in ('avatar','favicon')):
+            return
+        # must look like an image URL (extension or image processing params)
+        if not (re.search(r'\.(?:jpg|jpeg|png|webp|gif)(?:\?|$)', u2, re.I) or ('imageMogr2' in u2) or ('imageView2' in u2)):
+            return
+        if u2 not in seen:
+            seen.add(u2)
+            imgs.append(u2)
 
-        # 1) common attributes: src, data-src, srcset
-        for m in re.finditer(r'(?:src|data-src)=["\']([^"\']+)["\']', html, re.I):
-            consider(m.group(1))
-        # srcset can contain multiple URLs
-        for m in re.finditer(r'srcset=["\']([^"\']+)["\']', html, re.I):
-            chunk = m.group(1)
-            for part in chunk.split(','):
-                consider(part.strip().split(' ')[0])
-        # 2) generic URLs inside scripts/JSON
-        for m in re.finditer(r'"(https?://[^"\s]+\.(?:jpg|jpeg|png|webp)(?:\?[^"\s]*)?)"', html, re.I):
-            consider(m.group(1))
-        # Ensure cover first
-        if cover:
-            consider(cover)
-            # move cover to front if present later
-            if imgs and imgs[0] != cover and cover in imgs:
-                imgs.remove(cover)
-                imgs.insert(0, cover)
+    # 1) common attributes: src, data-src, srcset
+    for m in re.finditer(r'(?:src|data-src)=["\']([^"\']+)["\']', html, re.I):
+        consider(m.group(1))
+    # srcset can contain multiple URLs
+    for m in re.finditer(r'srcset=["\']([^"\']+)["\']', html, re.I):
+        chunk = m.group(1)
+        for part in chunk.split(','):
+            consider(part.strip().split(' ')[0])
+    # 2) generic URLs inside scripts/JSON
+    for m in re.finditer(r'"(https?://[^"\s]+\.(?:jpg|jpeg|png|webp)(?:\?[^"\s]*)?)"', html, re.I):
+        consider(m.group(1))
+    # Ensure cover first
+    if cover:
+        consider(cover)
+        # move cover to front if present later
+        if imgs and imgs[0] != cover and cover in imgs:
+            imgs.remove(cover)
+            imgs.insert(0, cover)
 
     lines = [f"# {title}"]
     meta = [f"- 标题: {title}"]
@@ -3186,15 +2123,13 @@ def main():
     
     logging.info(f"Starting webfetcher for URL: {url}")
 
-    # Resolve redirects to get effective host for parser selection
-    host = get_effective_host(url, ua=None)  # UA will be determined after this
-    original_host = urllib.parse.urlparse(url).hostname or ''
+    host = urllib.parse.urlparse(url).hostname or ''
     ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0 Safari/537.36"
-    # Use a mobile WeChat UA for WeChat pages; desktop Chrome UA for XHS
+    # Use a mobile WeChat UA for WeChat pages; mobile UA for XHS
     if 'mp.weixin.qq.com' in host or 'weixin.qq.com' in host:
         ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.42(0x18002a2c) NetType/WIFI Language/zh_CN'
-    elif 'xiaohongshu.com' in host or 'xhslink.com' in original_host:
-        ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    elif 'xiaohongshu.com' in host:
+        ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.42(0x18002a2c) NetType/WIFI Language/zh_CN'
     elif 'dianping.com' in host:
         ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
 
@@ -3203,7 +2138,7 @@ def main():
         logging.info("Site crawling mode activated")
         
         # Check if supported site type
-        if 'mp.weixin.qq.com' in host or 'xiaohongshu.com' in host or 'xhslink.com' in original_host or 'dianping.com' in host:
+        if 'mp.weixin.qq.com' in host or 'xiaohongshu.com' in host or 'dianping.com' in host:
             logging.error("Site crawling not supported for social media sites")
             sys.exit(1)
         
@@ -3251,7 +2186,7 @@ def main():
             # Optionally download images and rewrite links
             if hasattr(args, 'legacy_image_mode') and args.legacy_image_mode:
                 # Legacy behavior for backward compatibility
-                do_download_assets = args.download_assets or ('mp.weixin.qq.com' in host) or ('xiaohongshu.com' in host) or ('xhslink.com' in original_host)
+                do_download_assets = args.download_assets or ('mp.weixin.qq.com' in host) or ('xiaohongshu.com' in host)
             else:
                 # New default: only download if explicitly requested
                 do_download_assets = args.download_assets
@@ -3293,7 +2228,7 @@ def main():
         html = Path(args.html).read_text(encoding='utf-8', errors='ignore')
     else:
         html = None
-        should_render = (args.render == 'always') or (args.render == 'auto' and ('xiaohongshu.com' in host or 'xhslink.com' in original_host or 'dianping.com' in host))
+        should_render = (args.render == 'always') or (args.render == 'auto' and ('xiaohongshu.com' in host or 'dianping.com' in host))
         logging.info(f"Render decision: {'will render' if should_render else 'static fetch only'}")
         if should_render:
             logging.info("Attempting headless rendering with Playwright")
@@ -3338,7 +2273,7 @@ def main():
         parser_name = "WeChat"
         date_only, md, metadata = wechat_to_markdown(html, url)
         rendered = 'wechat' in ua.lower()
-    elif 'xiaohongshu.com' in host or 'xhslink.com' in original_host:
+    elif 'xiaohongshu.com' in host:
         logging.info("Selected parser: Xiaohongshu")
         parser_name = "Xiaohongshu"
         date_only, md, metadata = xhs_to_markdown(html, url)
@@ -3400,7 +2335,7 @@ def main():
     # Optionally download images and rewrite links
     if hasattr(args, 'legacy_image_mode') and args.legacy_image_mode:
         # Legacy behavior for backward compatibility
-        do_download_assets = args.download_assets or ('mp.weixin.qq.com' in host) or ('xiaohongshu.com' in host) or ('xhslink.com' in original_host)
+        do_download_assets = args.download_assets or ('mp.weixin.qq.com' in host) or ('xiaohongshu.com' in host)
     else:
         # New default: only download if explicitly requested
         do_download_assets = args.download_assets
