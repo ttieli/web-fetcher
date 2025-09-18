@@ -10,6 +10,13 @@ __pycache__/
 *.json
 downloaded_*/
 output_*/
+output/
+
+# Test directories
+test/
+test-*/
+beijing_*/
+test_*/
 
 # Archive and cleanup
 archive_cleanup/
