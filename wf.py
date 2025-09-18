@@ -202,6 +202,20 @@ def main():
         run_webfetcher([url, '-o', output_dir, '--crawl-site', '--max-crawl-depth', '5', 
                        '--follow-pagination'] + remaining_args)
     
+    # Raw模式
+    elif cmd == 'raw':
+        if len(raw_args) < 2:
+            print("错误: raw模式需要提供URL")
+            print("用法: wf raw <URL> [输出目录]")
+            return
+        url = raw_args[1]
+        if not url.startswith('http'):
+            url = f'https://{url}'
+        # 解析输出目录
+        output_dir, remaining_args = parse_output_dir(raw_args[2:])
+        ensure_output_dir(output_dir)
+        run_webfetcher([url, '-o', output_dir, '--raw'] + remaining_args)
+    
     # 批量抓取
     elif cmd == 'batch':
         if len(raw_args) < 2:
@@ -286,6 +300,7 @@ wf - WebFetcher便捷命令
 快捷模式:
   wf fast URL [输出目录]            # 快速模式（不渲染JS）
   wf full URL [输出目录]            # 完整模式（含资源）
+  wf raw URL [输出目录]             # Raw模式（完整内容）
   wf site URL [输出目录]            # 整站爬虫
   wf batch urls.txt [输出目录]     # 批量抓取
 
