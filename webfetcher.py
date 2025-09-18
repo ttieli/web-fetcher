@@ -31,6 +31,116 @@ import logging
 import time
 import random
 from collections import deque
+# BeautifulSoup导入移至动态导入机制
+
+def get_beautifulsoup_parser():
+    """动态导入BeautifulSoup，如果不可用则返回None"""
+    try:
+        from bs4 import BeautifulSoup
+        return BeautifulSoup
+    except ImportError:
+        return None
+
+# HTML解析降级支持
+from html.parser import HTMLParser
+
+class FallbackHTMLParser(HTMLParser):
+    """基础HTML解析器作为BeautifulSoup的降级方案"""
+    
+    def __init__(self):
+        super().__init__()
+        self.title = ""
+        self.in_title = False
+        self.content_parts = []
+        self.current_text = ""
+        self.in_script = False
+        self.in_style = False
+        self.meta_attrs = []
+        
+    def handle_starttag(self, tag, attrs):
+        if tag == 'title':
+            self.in_title = True
+        elif tag in ['script', 'style']:
+            if tag == 'script':
+                self.in_script = True
+            else:
+                self.in_style = True
+        elif tag == 'meta':
+            attr_dict = dict(attrs)
+            self.meta_attrs.append(attr_dict)
+        elif tag in ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'div', 'li']:
+            if self.current_text.strip():
+                self.content_parts.append(self.current_text.strip())
+                self.current_text = ""
+                
+    def handle_endtag(self, tag):
+        if tag == 'title':
+            self.in_title = False
+        elif tag in ['script', 'style']:
+            if tag == 'script':
+                self.in_script = False
+            else:
+                self.in_style = False
+        elif tag in ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'div', 'li']:
+            if self.current_text.strip():
+                self.content_parts.append(self.current_text.strip())
+                self.current_text = ""
+                
+    def handle_data(self, data):
+        if self.in_title:
+            self.title += data.strip()
+        elif not self.in_script and not self.in_style:
+            self.current_text += data
+            
+    def get_parsed_content(self):
+        if self.current_text.strip():
+            self.content_parts.append(self.current_text.strip())
+        return {
+            'title': self.title or '未命名',
+            'content_parts': self.content_parts,
+            'meta_attrs': self.meta_attrs
+        }
+
+def extract_with_htmlparser(html_content: str, url: str) -> tuple[str, str, dict]:
+    """使用Python内置HTMLParser进行基础解析"""
+    parser = FallbackHTMLParser()
+    try:
+        parser.feed(html_content)
+    except Exception as e:
+        logging.warning(f"HTMLParser解析出错: {e}")
+        return datetime.datetime.now().strftime('%Y-%m-%d'), f"# 解析失败\n\n无法解析页面内容: {str(e)}", {'page_type': 'parse_error'}
+    
+    parsed = parser.get_parsed_content()
+    
+    # 构建markdown内容
+    content_parts = [f"# {parsed['title']}\n"]
+    
+    # 添加meta信息
+    if parsed['meta_attrs']:
+        content_parts.append("## 页面元数据\n")
+        for meta in parsed['meta_attrs']:
+            if meta.get('name'):
+                content_parts.append(f"- {meta.get('name')}: {meta.get('content', '')}")
+            elif meta.get('property'):
+                content_parts.append(f"- {meta.get('property')}: {meta.get('content', '')}")
+    
+    # 添加主要内容
+    if parsed['content_parts']:
+        content_parts.append("\n## 页面内容\n")
+        for part in parsed['content_parts']:
+            if part.strip():
+                content_parts.append(part.strip() + "\n")
+    
+    markdown_content = '\n'.join(content_parts)
+    date_only = datetime.datetime.now().strftime('%Y-%m-%d')
+    
+    metadata = {
+        'page_type': 'basic_html',
+        'parser_used': 'HTMLParser',
+        'content_sections': len(parsed['content_parts'])
+    }
+    
+    return date_only, markdown_content, metadata
 
 # Create an SSL context that doesn't verify certificates for legacy sites
 ssl_context_unverified = ssl.create_default_context()
@@ -1086,6 +1196,238 @@ def ebchina_news_list_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     return date_only, "\n".join(lines).strip() + "\n", metadata
 
 
+def raw_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
+    """
+    Raw mode parser - 尽可能保留所有内容的解析器
+    
+    设计原则：
+    1. 宁可冗余，不可遗漏
+    2. 保持原始结构
+    3. 最小化处理
+    4. 明确标记不同类型的内容
+    """
+    
+    # 智能解析：优先使用BeautifulSoup，降级到HTMLParser
+    BeautifulSoup = get_beautifulsoup_parser()
+    
+    if BeautifulSoup:
+        # 使用BeautifulSoup进行解析（更宽容的解析器）
+        soup = BeautifulSoup(html, 'html.parser')
+        parser_used = "BeautifulSoup"
+    else:
+        # 降级到HTMLParser方案
+        logging.warning("BeautifulSoup不可用，使用HTMLParser降级解析。建议安装: pip install beautifulsoup4")
+        return extract_with_htmlparser(html, url)
+    
+    # 1. 提取基本元数据
+    title = soup.title.string if soup.title else '未命名'
+    
+    # 2. 移除不需要的元素（但保守处理）
+    for tag in soup(['script', 'style', 'noscript']):
+        tag.decompose()
+    
+    # 3. 构建内容列表
+    content_parts = []
+    
+    # 3.1 保留所有meta信息
+    meta_section = ["## 页面元数据\n"]
+    for meta in soup.find_all('meta'):
+        if meta.get('name'):
+            meta_section.append(f"- {meta.get('name')}: {meta.get('content', '')}")
+        elif meta.get('property'):
+            meta_section.append(f"- {meta.get('property')}: {meta.get('content', '')}")
+    
+    if len(meta_section) > 1:
+        content_parts.append('\n'.join(meta_section))
+    
+    # 3.2 提取主体内容（保持结构）
+    content_parts.append("\n## 页面内容\n")
+    
+    def extract_text_with_structure(element, level=0):
+        """递归提取文本，保持结构"""
+        output = []
+        
+        if element.name:
+            # 处理标题
+            if element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+                h_level = int(element.name[1])
+                output.append('#' * h_level + ' ' + element.get_text(strip=True))
+            
+            # 处理段落
+            elif element.name == 'p':
+                text = element.get_text(strip=True)
+                if text:  # 即使很短也保留
+                    output.append(text)
+            
+            # 处理列表
+            elif element.name in ['ul', 'ol']:
+                for li in element.find_all('li', recursive=False):
+                    output.append('- ' + li.get_text(strip=True))
+            
+            # 处理表格（简单ASCII表示）
+            elif element.name == 'table':
+                output.append("\n[表格内容]")
+                for row in element.find_all('tr'):
+                    cells = row.find_all(['td', 'th'])
+                    if cells:
+                        row_text = ' | '.join(cell.get_text(strip=True) for cell in cells)
+                        output.append('| ' + row_text + ' |')
+            
+            # 处理图片
+            elif element.name == 'img':
+                alt = element.get('alt', '')
+                src = element.get('src', '')
+                output.append(f"[图片: {alt or src}]")
+            
+            # 处理视频
+            elif element.name == 'video':
+                src = element.get('src', '多个源')
+                output.append(f"[视频: {src}]")
+            
+            # 处理音频
+            elif element.name == 'audio':
+                src = element.get('src', '多个源')
+                output.append(f"[音频: {src}]")
+            
+            # 处理链接（保留链接文本和URL）
+            elif element.name == 'a':
+                href = element.get('href', '')
+                text = element.get_text(strip=True)
+                if text and href:
+                    output.append(f"[{text}]({href})")
+                elif text:
+                    output.append(text)
+            
+            # 处理块引用
+            elif element.name == 'blockquote':
+                text = element.get_text(strip=True)
+                if text:
+                    output.append('> ' + text)
+            
+            # 处理预格式化文本
+            elif element.name in ['pre', 'code']:
+                text = element.get_text(strip=False)  # 保留空白
+                if text:
+                    output.append('```\n' + text + '\n```')
+            
+            # 其他块级元素
+            elif element.name in ['div', 'section', 'article', 'main', 'aside', 'header', 'footer']:
+                # 递归处理子元素
+                for child in element.children:
+                    if hasattr(child, 'name'):
+                        child_output = extract_text_with_structure(child, level + 1)
+                        output.extend(child_output)
+                    elif isinstance(child, str):
+                        text = child.strip()
+                        if text and len(text) > 1:  # 保留几乎所有文本
+                            output.append(text)
+            
+            # 处理其他内联元素
+            elif element.name in ['span', 'strong', 'em', 'b', 'i', 'u']:
+                text = element.get_text(strip=True)
+                if text:
+                    output.append(text)
+        
+        return output
+    
+    # 提取body内容
+    body = soup.body if soup.body else soup
+    body_content = []
+    
+    # 直接处理body的子元素
+    for child in body.children:
+        if hasattr(child, 'name'):
+            child_output = extract_text_with_structure(child, 0)
+            body_content.extend(child_output)
+        elif isinstance(child, str):
+            text = child.strip()
+            if text and len(text) > 1:  # 保留几乎所有文本
+                body_content.append(text)
+    
+    # 去除连续空行，但保留段落结构
+    cleaned_content = []
+    prev_empty = False
+    for line in body_content:
+        if not line:
+            if not prev_empty:
+                cleaned_content.append('')
+                prev_empty = True
+        else:
+            cleaned_content.append(line)
+            prev_empty = False
+    
+    content_parts.extend(cleaned_content)
+    
+    # 3.3 提取所有链接（作为附录）
+    all_links = []
+    for a in soup.find_all('a', href=True):
+        href = a.get('href')
+        text = a.get_text(strip=True)
+        if href and not href.startswith('#'):
+            # 解析相对URL
+            if not href.startswith(('http://', 'https://', '//')):
+                from urllib.parse import urljoin
+                href = urljoin(url, href)
+            all_links.append(f"- [{text or '无文本'}]({href})")
+    
+    if all_links:
+        content_parts.append("\n## 页面链接汇总\n")
+        content_parts.extend(all_links[:100])  # 限制最多100个链接
+        if len(all_links) > 100:
+            content_parts.append(f"\n... 还有 {len(all_links) - 100} 个链接未显示")
+    
+    # 3.4 提取所有图片
+    all_images = []
+    for img in soup.find_all('img', src=True):
+        src = img.get('src')
+        alt = img.get('alt', '')
+        if src and not src.startswith('data:'):
+            # 解析相对URL
+            if not src.startswith(('http://', 'https://', '//')):
+                from urllib.parse import urljoin
+                src = urljoin(url, src)
+            all_images.append(src)
+    
+    if all_images:
+        content_parts.append("\n## 页面图片汇总\n")
+        for img_url in all_images[:50]:  # 限制最多50张图片
+            content_parts.append(f"![]({img_url})")
+        if len(all_images) > 50:
+            content_parts.append(f"\n... 还有 {len(all_images) - 50} 张图片未显示")
+    
+    # 4. 构建最终的Markdown
+    current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    date_only = datetime.datetime.now().strftime('%Y-%m-%d')
+    
+    md_lines = [
+        f"# {title}",
+        "",
+        "## 文档信息",
+        f"- 标题: {title}",
+        f"- 来源: [{url}]({url})",
+        f"- 抓取时间: {current_time}",
+        f"- 解析模式: Raw (完整内容模式)",
+        "",
+        *content_parts
+    ]
+    
+    # 5. 构建元数据
+    metadata = {
+        'parser': 'raw',
+        'parser_used': parser_used,
+        'title': title,
+        'url': url,
+        'scraped_at': current_time,
+        'content_length': len(html),
+        'text_length': sum(len(part) for part in content_parts if isinstance(part, str)),
+        'images_count': len(all_images),
+        'links_count': len(all_links),
+        'description': f'Raw mode extraction using {parser_used} - complete content preservation'
+    }
+    
+    return date_only, '\n'.join(md_lines), metadata
+
+
 def generic_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     title = extract_meta(html, 'og:title') or extract_meta(html, 'twitter:title')
     if not title:
@@ -1746,6 +2088,8 @@ def main():
     ap.add_argument('--verbose', action='store_true', help='Enable verbose logging (INFO level)')
     ap.add_argument('--follow-pagination', action='store_true', 
                     help='Follow next/previous links to aggregate multi-page documents (MkDocs/Docusaurus only)')
+    ap.add_argument('--raw', action='store_true', 
+                    help='Use raw parser mode (complete content preservation, no filtering)')
     ap.add_argument('--crawl-site', action='store_true',
                     help='Recursively crawl entire site (BFS traversal of all internal links)')
     ap.add_argument('--max-crawl-depth', type=int, default=10,
@@ -1801,7 +2145,11 @@ def main():
         if crawled_pages:
             # Detect appropriate parser from first page
             first_html = crawled_pages[0][1]
-            if re.search(r'theme-doc-markdown|class="[^"]*\\bmarkdown\\b', first_html, re.I):
+            if args.raw:
+                parser_func = raw_to_markdown
+                parser_name = "Raw"
+                logging.info("Using Raw parser for site content (user requested)")
+            elif re.search(r'theme-doc-markdown|class="[^"]*\\bmarkdown\\b', first_html, re.I):
                 parser_func = docusaurus_to_markdown
                 parser_name = "Docusaurus"
             elif re.search(r'md-content__inner\s+md-typeset', first_html, re.I):
@@ -1902,7 +2250,12 @@ def main():
             logging.warning(f"Failed to save HTML snapshot: {e}")
 
     # Parser selection
-    if 'mp.weixin.qq.com' in host:
+    if args.raw:
+        logging.info("Selected parser: Raw (user requested)")
+        parser_name = "Raw"
+        date_only, md, metadata = raw_to_markdown(html, url)
+        rendered = False
+    elif 'mp.weixin.qq.com' in host:
         logging.info("Selected parser: WeChat")
         parser_name = "WeChat"
         date_only, md, metadata = wechat_to_markdown(html, url)
@@ -1987,7 +2340,7 @@ def main():
             'images': metadata.get('images', []),
             'metadata': {
                 **metadata,
-                'parser_used': parser_name,
+                'parser_mode': parser_name,
                 'fetch_method': 'rendered' if rendered else 'static',
                 'scraped_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
