@@ -1,0 +1,8 @@
+{
+  "install_date": "2025-09-18T09:22:47+08:00",
+  "install_type": "quick",
+  "wf_py": "/Users/tieli/Library/Mobile Documents/com~apple~CloudDocs/Project/Web_Fetcher/wf.py",
+  "webfetcher_py": "/Users/tieli/Library/Mobile Documents/com~apple~CloudDocs/Project/Web_Fetcher/webfetcher.py",
+  "shell_config": "/Users/tieli/.bash_profile",
+  "symlink": true
+}

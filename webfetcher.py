@@ -21,6 +21,8 @@ import re
 import http.client as http_client
 import urllib.parse
 import urllib.request
+import ssl
+import subprocess
 import sys
 from typing import Optional
 from html.parser import HTMLParser
@@ -29,6 +31,11 @@ import logging
 import time
 import random
 from collections import deque
+
+# Create an SSL context that doesn't verify certificates for legacy sites
+ssl_context_unverified = ssl.create_default_context()
+ssl_context_unverified.check_hostname = False
+ssl_context_unverified.verify_mode = ssl.CERT_NONE
 
 # Multi-page document support constants
 MAX_PAGINATION_DEPTH = 5
@@ -488,11 +495,35 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30)
     logging.error(f"All {MAX_RETRIES + 1} attempts failed for {url}, giving up")
     raise last_exception
 
+def fetch_html_with_curl(url: str, ua: Optional[str] = None, timeout: int = 30) -> str:
+    """Fallback to curl for sites with SSL issues"""
+    ua = ua or "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0 Safari/537.36"
+    try:
+        cmd = [
+            'curl', '-k', '-s', '-L',  # -k ignores SSL, -s silent, -L follow redirects
+            '--max-time', str(timeout),
+            '-H', f'User-Agent: {ua}',
+            '-H', 'Accept-Language: zh-CN,zh;q=0.9',
+            '--compressed',  # Accept compressed responses
+            url
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout+5)
+        if result.returncode == 0:
+            return result.stdout
+        else:
+            raise Exception(f"curl failed with code {result.returncode}: {result.stderr}")
+    except subprocess.TimeoutExpired:
+        raise Exception(f"curl timeout for {url}")
+    except Exception as e:
+        logging.error(f"Failed to fetch with curl from {url}: {e}")
+        raise
+
 def fetch_html_original(url: str, ua: Optional[str] = None, timeout: int = 30) -> str:
     ua = ua or "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0 Safari/537.36"
     req = urllib.request.Request(url, headers={"User-Agent": ua, "Accept-Language": "zh-CN,zh;q=0.9"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        # Use unverified SSL context for sites with legacy SSL configurations
+        with urllib.request.urlopen(req, timeout=timeout, context=ssl_context_unverified) as r:
             try:
                 data = r.read(MAX_PAGE_SIZE)  # Limit read size
                 # Check if there's more data and truncate if needed
@@ -504,6 +535,10 @@ def fetch_html_original(url: str, ua: Optional[str] = None, timeout: int = 30) -
                 data = (e.partial or b"")
         return data.decode("utf-8", errors="ignore")
     except Exception as e:
+        # If SSL error, try curl as fallback
+        if "SSL" in str(e) or "CERTIFICATE" in str(e).upper():
+            logging.info(f"SSL error detected, falling back to curl for {url}")
+            return fetch_html_with_curl(url, ua, timeout)
         logging.error(f"Failed to fetch HTML from {url}: {e}")
         raise
 
@@ -988,6 +1023,69 @@ def dianping_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     return date_only, "\n\n".join(lines).strip() + "\n", metadata
 
 
+def ebchina_news_list_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
+    """Parse EB China news list page."""
+    # Extract page title
+    title_match = re.search(r'<title[^>]*>(.*?)</title>', html, re.I|re.S)
+    title = ihtml.unescape(re.sub(r'<[^>]+>', '', title_match.group(1))).strip() if title_match else '新闻列表'
+    
+    # Extract news items
+    news_items = []
+    
+    # Pattern to extract news items with title, summary, date, and link
+    # More specific pattern to correctly capture the title attribute
+    item_pattern = r'<p class="N_title"[^>]*><a href="([^"]+)"[^>]*\stitle="([^"]+)"[^>]*>.*?</a></p>.*?<p class="N_summary">(.*?)</p>.*?<p class="N_date">发布时间：([^<]+)</p>'
+    
+    items = re.findall(item_pattern, html, re.I|re.S)
+    
+    for link, item_title, summary, date in items:
+        # Clean summary
+        summary = re.sub(r'<[^>]+>', '', summary)
+        summary = ihtml.unescape(summary).strip()
+        
+        # Clean title
+        item_title = ihtml.unescape(item_title).strip()
+        
+        # Make full URL
+        full_url = resolve_url_with_context(url, link)
+        
+        news_items.append({
+            'title': item_title,
+            'summary': summary,
+            'date': date.strip(),
+            'url': full_url
+        })
+    
+    # Build markdown content
+    lines = [f"# {title}", ""]
+    lines.append(f"- 来源: [{url}]({url})")
+    lines.append(f"- 抓取时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append(f"- 新闻数量: {len(news_items)} 条")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    
+    # Add news items
+    for item in news_items:
+        lines.append(f"## [{item['title']}]({item['url']})")
+        lines.append("")
+        lines.append(f"**发布时间:** {item['date']}")
+        lines.append("")
+        lines.append(item['summary'])
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+    
+    metadata = {
+        'news_count': len(news_items),
+        'news_items': news_items,
+        'page_type': 'news_list'
+    }
+    
+    date_only = datetime.datetime.now().strftime('%Y-%m-%d')
+    return date_only, "\n".join(lines).strip() + "\n", metadata
+
+
 def generic_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     title = extract_meta(html, 'og:title') or extract_meta(html, 'twitter:title')
     if not title:
@@ -1005,7 +1103,30 @@ def generic_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     elif json_ld.get('description'):
         desc = json_ld['description']
     
-    # Priority 2: Beijing gov site specific content divs (existing code)
+    # Priority 2: Try to extract from multiple <p> tags (for sites like ebchina.com)
+    if not desc:
+        # Extract all paragraph content with various styles
+        p_patterns = [
+            r'<p[^>]*class=["\']p["\'][^>]*>(.*?)</p>',  # class="p"
+            r'<p[^>]*style=["\'][^"\']*text-align[^"\']*["\'][^>]*>(.*?)</p>',  # style with text-align
+        ]
+        
+        all_paragraphs = []
+        for pattern in p_patterns:
+            p_matches = re.findall(pattern, html, re.I|re.S)
+            for p in p_matches:
+                # Clean HTML but preserve structure indicators
+                text = re.sub(r'<video[^>]*>.*?</video>', '[视频]', p, flags=re.I|re.S)
+                text = re.sub(r'<img[^>]*>', '', text)  # Remove img tags (will be handled separately)
+                text = re.sub(r'<[^>]+>', '', text)  # Remove other HTML tags
+                text = ihtml.unescape(text).strip()
+                if text and len(text) > 5 and text not in all_paragraphs:  # Skip duplicates and very short text
+                    all_paragraphs.append(text)
+        
+        if all_paragraphs:
+            desc = '\n\n'.join(all_paragraphs)
+    
+    # Priority 3: Beijing gov site specific content divs (existing code)
     if not desc:
         for pattern in [r'<div[^>]+class=["\']view[^>]*>(.*?)</div>',
                        r'<div[^>]+class=["\']TRS_UEDITOR[^>]*>(.*?)</div>']:
@@ -1015,7 +1136,26 @@ def generic_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
                 desc = ihtml.unescape(desc).strip()
                 break
     
-    # Priority 3: Fallback to meta description (existing code)
+    # Priority 4: Try to extract content from generic <p> tags
+    if not desc:
+        # Extract all generic paragraphs with substantial content
+        generic_p_pattern = r'<p[^>]*>(.*?)</p>'
+        generic_p_matches = re.findall(generic_p_pattern, html, re.I|re.S)
+        if generic_p_matches:
+            paragraphs = []
+            for p in generic_p_matches:
+                # Clean HTML tags
+                text = re.sub(r'<img[^>]*>', '[图片]', p)  # Replace images with placeholder
+                text = re.sub(r'<video[^>]*>.*?</video>', '[视频]', text, flags=re.I|re.S)  # Replace videos
+                text = re.sub(r'<[^>]+>', '', text)
+                text = ihtml.unescape(text).strip()
+                # Only include substantial paragraphs (more than 20 chars)
+                if text and len(text) > 20 and not text.startswith('var ') and not text.startswith('function'):
+                    paragraphs.append(text)
+            if len(paragraphs) >= 3:  # Only use if we found multiple paragraphs
+                desc = '\n\n'.join(paragraphs)
+    
+    # Priority 5: Fallback to meta description (existing code)
     if not desc:
         desc = extract_meta(html, 'description').strip()
     
@@ -1024,11 +1164,46 @@ def generic_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     if json_ld.get('datePublished') and not original_meta_date:
         date_only, date_time = parse_date_like(json_ld['datePublished'])
     
+    # Extract images and videos from content
+    images = []
+    videos = []
+    
+    # Find all img tags
+    img_pattern = r'<img[^>]*src=["\']([^"\']+)["\'][^>]*>'
+    img_matches = re.findall(img_pattern, html, re.I)
+    for img_url in img_matches:
+        if img_url and not img_url.startswith('data:'):
+            full_url = resolve_url_with_context(url, img_url)
+            if full_url not in images:
+                images.append(full_url)
+    
+    # Find all video tags
+    video_pattern = r'<video[^>]*src=["\']([^"\']+)["\'][^>]*>'
+    video_matches = re.findall(video_pattern, html, re.I)
+    for video_url in video_matches:
+        if video_url:
+            full_url = resolve_url_with_context(url, video_url)
+            if full_url not in videos:
+                videos.append(full_url)
+    
     lines = [f"# {title}", f"- 标题: {title}", f"- 发布时间: {date_time}", f"- 来源: [{url}]({url})", f"- 抓取时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "", desc or '(未能提取正文)']
+    
+    # Add images section if any images found
+    if images:
+        lines.append("\n## 图片\n")
+        for img_url in images:
+            lines.append(f"![]({img_url})")
+    
+    # Add videos section if any videos found
+    if videos:
+        lines.append("\n## 视频\n")
+        for video_url in videos:
+            lines.append(f"[视频链接]({video_url})")
     
     metadata = {
         'description': desc,
-        'images': [],
+        'images': images,
+        'videos': videos,
         'publish_time': json_ld.get('datePublished') or extract_meta(html, 'article:published_time') or extract_meta(html, 'og:updated_time'),
         'author': json_ld.get('author', '')
     }
@@ -1529,7 +1704,7 @@ def rewrite_and_download_assets(md: str, md_base: str, outdir: Path, ua: str, as
             # download with UA
             try:
                 req = urllib.request.Request(u, headers={"User-Agent": ua, "Accept-Language": "zh-CN,zh;q=0.9"})
-                with urllib.request.urlopen(req, timeout=60) as r:
+                with urllib.request.urlopen(req, timeout=60, context=ssl_context_unverified) as r:
                     data = r.read()
                 dest.write_bytes(data)
             except Exception:
@@ -1742,6 +1917,12 @@ def main():
         parser_name = "Dianping"
         date_only, md, metadata = dianping_to_markdown(html, url)
         rendered = should_render
+    elif 'ebchina.com' in host and 'class="N_title"' in html:
+        # EB China news list page
+        logging.info("Selected parser: EB China News List")
+        parser_name = "EBChina_NewsList"
+        date_only, md, metadata = ebchina_news_list_to_markdown(html, url)
+        rendered = False
     elif re.search(r'theme-doc-markdown|class=\"[^\"]*\\bmarkdown\\b', html, re.I):
         logging.info("Selected parser: Docusaurus")
         parser_name = "Docusaurus"
