@@ -1,26 +1,63 @@
 # Python cache
 __pycache__/
 *.py[cod]
+*$py.class
 
 # OS files
 .DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
 
-# Downloaded content
+# Downloaded content and outputs
 *.html
 *.json
 downloaded_*/
 output_*/
-output/
+output/*
+!output/.gitkeep
+raw_output/
+assets/
 
-# Test directories
+# Test directories and files
 test/
 test-*/
-beijing_*/
 test_*/
+perf_test*/
+*_test/
+*_tests/
+*.test.md
+*.test.json
+
+# Temporary files
+temp.*
+tmp/
+*.tmp
+*.temp
+*.bak
+*.backup
+*.log
+
+# Date-prefixed downloads (pattern: YYYY-MM-DD-HHMMSS - *)
+20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9]* - *
 
 # Archive and cleanup
 archive_cleanup/
 *.tar.gz
+*.zip
 
-# Claude
+# IDE and editor
 .claude/
+.cursor/
+*.sublime-*
+
+# Local environment
+.env
+.env.local
+venv/
+env/
+
+# Documentation build outputs
+docs/_build/
+site/
