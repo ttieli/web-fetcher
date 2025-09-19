@@ -1,0 +1,49 @@
+{
+  "timestamp": "2025-09-19T19:41:47.809734",
+  "summary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "timeouts": 0,
+    "avg_time": 1.5958477854728699
+  },
+  "results": [
+    {
+      "name": "People Daily - Political Bureau Meetings (Critical)",
+      "url": "http://cpc.people.com.cn/n/2012/1119/c352110-19621695.html",
+      "success": true,
+      "elapsed_time": 0.48808908462524414,
+      "has_output": false,
+      "output_size": 0,
+      "stderr": null
+    },
+    {
+      "name": "Simple Page - Example.com",
+      "url": "http://example.com",
+      "success": true,
+      "elapsed_time": 1.7869069576263428,
+      "has_output": false,
+      "output_size": 0,
+      "stderr": null
+    },
+    {
+      "name": "Complex News Site - Sina",
+      "url": "http://news.sina.com.cn",
+      "success": true,
+      "elapsed_time": 0.8544111251831055,
+      "has_output": false,
+      "output_size": 0,
+      "stderr": null
+    },
+    {
+      "name": "Table Content - Generic",
+      "url": "https://www.w3schools.com/html/html_tables.asp",
+      "success": true,
+      "elapsed_time": 3.253983974456787,
+      "has_output": false,
+      "output_size": 0,
+      "stderr": null
+    }
+  ],
+  "critical_issues": []
+}
