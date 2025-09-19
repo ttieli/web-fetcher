@@ -2913,10 +2913,16 @@ def resolve_url_with_context(base_url: str, href: str) -> str:
     # Default to standard urljoin for other cases
     return urllib.parse.urljoin(base_url, href)
 
-def extract_internal_links(html: str, base_url: str) -> dict:
+def extract_internal_links(html: str, base_url: str, enable_doc_filter: bool = False) -> dict:
     """Extract all internal links from HTML content with smart subdirectory resolution.
     Returns dict mapping normalized URLs to original URLs for case-preserving fetching.
-    Enhanced to support both quoted and unquoted href attributes."""
+    Enhanced to support both quoted and unquoted href attributes.
+    
+    Args:
+        html: HTML content to extract links from
+        base_url: Base URL for resolving relative links
+        enable_doc_filter: If True, apply is_documentation_url filter during extraction
+    """
     links = {}  # normalized_url -> original_url
     base_parts = urllib.parse.urlparse(base_url)
     
@@ -2947,6 +2953,10 @@ def extract_internal_links(html: str, base_url: str) -> dict:
             
             # Check if same domain and should crawl
             if url_parts.netloc == base_parts.netloc and should_crawl_url(full_url):
+                # Apply documentation URL filter during extraction if enabled (Stage 1.1 optimization)
+                if enable_doc_filter and not is_documentation_url(full_url):
+                    continue
+                
                 # Map normalized URL to original URL for case-preserving fetching
                 normalized = normalize_url_for_dedup(full_url)
                 links[normalized] = full_url
@@ -2968,11 +2978,259 @@ def is_documentation_url(url: str) -> bool:
     
     return True  # Default: include
 
+def detect_government_site(url: str, html: str) -> bool:
+    """
+    Detect if a website is a government site based on domain patterns and HTML content.
+    
+    Args:
+        url: The website URL to check
+        html: HTML content of the homepage for additional verification
+        
+    Returns:
+        bool: True if detected as government site, False otherwise
+    """
+    import urllib.parse
+    
+    # Parse the URL
+    parsed_url = urllib.parse.urlparse(url)
+    domain = parsed_url.netloc.lower()
+    
+    # Stage 2.1: Government domain pattern detection
+    gov_domain_patterns = [
+        r'\.gov\.cn$',    # Chinese government sites
+        r'\.gov$',        # US government sites  
+        r'\.org\.cn$',    # Chinese organizations (many government-related)
+        r'\.mil\.cn$',    # Chinese military sites
+        r'\.edu\.cn$',    # Chinese educational sites (government-funded)
+        r'\.ac\.cn$',     # Chinese academic sites
+        r'\.gov\.uk$',    # UK government sites
+        r'\.europa\.eu$', # EU government sites
+    ]
+    
+    # Check domain patterns
+    for pattern in gov_domain_patterns:
+        if re.search(pattern, domain):
+            logging.info(f"Government site detected by domain pattern: {domain}")
+            return True
+    
+    # Stage 2.1: HTML content-based detection
+    if html:
+        gov_content_indicators = [
+            r'政府|Government|官方|Official',  # Government keywords
+            r'政务|公告|通知|Public Notice',   # Government activity keywords
+            r'党委|市委|区委|县委',              # Party committee keywords (Chinese)
+            r'人民政府|People.*Government',    # People's government
+            r'国务院|State Council',          # State council
+            r'中华人民共和国|People.*Republic.*China', # PRC
+            r'Gov\.cn|政府门户|Government Portal', # Government portal indicators
+        ]
+        
+        # Check for government content indicators
+        for pattern in gov_content_indicators:
+            if re.search(pattern, html, re.I):
+                logging.info(f"Government site detected by content pattern: {pattern}")
+                return True
+    
+    return False
+
+def extract_site_categories(url: str, html: str) -> list:
+    """
+    Extract website navigation structure and categories.
+    
+    Args:
+        url: Base URL of the website
+        html: HTML content of the homepage
+        
+    Returns:
+        List[dict]: List of category dictionaries with 'name', 'url', 'priority' keys
+    """
+    import urllib.parse
+    from bs4 import BeautifulSoup
+    
+    if not html:
+        return []
+    
+    categories = []
+    base_parts = urllib.parse.urlparse(url)
+    
+    try:
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Stage 2.2: Navigation menu detection patterns
+        nav_selectors = [
+            'nav ul li a',           # Standard navigation
+            '.navbar ul li a',       # Bootstrap navbar
+            '.nav ul li a',          # Navigation class
+            '.menu ul li a',         # Menu class
+            '.main-nav ul li a',     # Main navigation
+            '.navigation ul li a',   # Navigation class variation
+            'ul.nav li a',           # Direct nav class on ul
+            'ul.menu li a',          # Direct menu class on ul
+            '.header nav a',         # Header navigation
+            '.top-nav a',            # Top navigation
+        ]
+        
+        # Collect all potential navigation links
+        nav_links = set()
+        
+        for selector in nav_selectors:
+            try:
+                links = soup.select(selector)
+                for link in links:
+                    href = link.get('href')
+                    text = link.get_text(strip=True)
+                    
+                    if href and text and len(text) > 1:
+                        # Convert to absolute URL
+                        full_url = urllib.parse.urljoin(url, href)
+                        url_parts = urllib.parse.urlparse(full_url)
+                        
+                        # Only include same-domain links
+                        if url_parts.netloc == base_parts.netloc:
+                            nav_links.add((text, full_url))
+                            
+            except Exception as e:
+                logging.debug(f"Failed to parse selector {selector}: {e}")
+                continue
+        
+        # Stage 2.2: Government-specific category prioritization
+        gov_priority_keywords = [
+            ('政务公开', '政务', '公开', 'Public Affairs'),  # Public affairs - High priority
+            ('通知公告', '公告', '通知', 'Notice'),          # Notices - High priority  
+            ('新闻', '资讯', '动态', 'News'),               # News - Medium priority
+            ('服务', '办事', '业务', 'Service'),            # Services - High priority
+            ('政策', '法规', '规章', 'Policy'),             # Policies - High priority
+            ('领导', '组织', '机构', 'Leadership'),         # Leadership - Medium priority
+        ]
+        
+        # Convert nav_links to categories with priority scoring
+        for text, link_url in nav_links:
+            priority = 1  # Default priority
+            
+            # Check for government priority keywords
+            for keywords in gov_priority_keywords:
+                for keyword in keywords:
+                    if keyword.lower() in text.lower():
+                        if '公开' in keywords or '公告' in keywords or 'Service' in keywords or 'Policy' in keywords:
+                            priority = 3  # High priority
+                        elif '新闻' in keywords or 'News' in keywords or 'Leadership' in keywords:
+                            priority = 2  # Medium priority
+                        break
+                if priority > 1:
+                    break
+            
+            categories.append({
+                'name': text,
+                'url': link_url,
+                'priority': priority
+            })
+        
+        # Sort by priority (high to low) then by name
+        categories.sort(key=lambda x: (-x['priority'], x['name']))
+        
+        logging.info(f"Extracted {len(categories)} site categories")
+        if categories:
+            high_priority = [c for c in categories if c['priority'] == 3]
+            logging.info(f"High priority categories: {len(high_priority)}")
+            
+    except Exception as e:
+        logging.warning(f"Failed to extract site categories: {e}")
+        
+    return categories
+
+def crawl_site_by_categories(start_url: str, ua: str, categories: list, **kwargs):
+    """
+    Crawl site with category-first strategy for government sites.
+    
+    Args:
+        start_url: Starting URL
+        ua: User agent string
+        categories: List of category dicts from extract_site_categories()
+        **kwargs: Additional arguments passed to crawl_site()
+        
+    Yields:
+        Iterator of (category_info, pages) tuples for progressive results
+    """
+    # Extract parameters for individual category crawls
+    max_depth = kwargs.get('max_depth', 3)
+    max_pages_per_category = min(kwargs.get('max_pages', 1000) // max(len(categories), 1), 100)
+    delay = kwargs.get('delay', 0.5)
+    enable_optimizations = kwargs.get('enable_optimizations', True)
+    
+    logging.info(f"Starting category-first crawl with {len(categories)} categories")
+    logging.info(f"Max {max_pages_per_category} pages per category")
+    
+    all_pages = []
+    total_crawled = 0
+    
+    # Sort categories by priority for crawling order
+    sorted_categories = sorted(categories, key=lambda x: (-x['priority'], x['name']))
+    
+    for i, category in enumerate(sorted_categories):
+        if total_crawled >= kwargs.get('max_pages', 1000):
+            break
+            
+        category_name = category['name']
+        category_url = category['url']
+        category_priority = category['priority']
+        
+        logging.info(f"[{i+1}/{len(sorted_categories)}] Crawling category '{category_name}' (priority {category_priority})")
+        
+        try:
+            # Crawl this category with limited scope
+            category_pages = crawl_site(
+                category_url,
+                ua,
+                max_depth=min(max_depth, 2),  # Limit depth per category
+                max_pages=max_pages_per_category,
+                delay=delay,
+                enable_optimizations=enable_optimizations,
+                crawl_strategy='default'  # Use default strategy for individual categories
+            )
+            
+            logging.info(f"Category '{category_name}' yielded {len(category_pages)} pages")
+            
+            # Yield progressive results
+            category_info = {
+                'name': category_name,
+                'url': category_url,
+                'priority': category_priority,
+                'pages_count': len(category_pages)
+            }
+            
+            yield (category_info, category_pages)
+            
+            all_pages.extend(category_pages)
+            total_crawled += len(category_pages)
+            
+        except Exception as e:
+            logging.warning(f"Failed to crawl category '{category_name}': {e}")
+            continue
+    
+    logging.info(f"Category-first crawl completed: {total_crawled} total pages from {len(sorted_categories)} categories")
+
 def crawl_site(start_url: str, ua: str, max_depth: int = 10, 
-               max_pages: int = 1000, delay: float = 0.5) -> list:
+               max_pages: int = 1000, delay: float = 0.5,
+               # Stage 1 optimization parameters
+               enable_optimizations: bool = True,
+               crawl_strategy: str = 'default',
+               # Stage 1.3 memory optimization
+               memory_efficient: bool = False,
+               page_callback = None) -> list:
     """
     Crawl entire site using BFS algorithm.
     Returns list of (url, html, depth) tuples.
+    
+    Args:
+        start_url: Starting URL for crawling
+        ua: User agent string for requests
+        max_depth: Maximum crawling depth
+        max_pages: Maximum number of pages to crawl
+        delay: Delay between requests in seconds
+        enable_optimizations: Enable Stage 1 optimizations (link pre-filtering, batch processing)
+        crawl_strategy: Crawling strategy ('default', 'category_first' for Stage 2)
+        memory_efficient: Enable memory optimization - pages processed in batches
+        page_callback: Optional callback function for streaming page processing
     """
     # Initialize crawl statistics
     stats = {
@@ -2987,11 +3245,62 @@ def crawl_site(start_url: str, ua: str, max_depth: int = 10,
     visited_normalized = set()  # For deduplication using normalized URLs
     url_mapping = {}  # Maps normalized URLs to original URLs for fetching
     queue = deque([(start_url, 0)])  # (original_url, depth) - keep original URL
-    pages = []
+    
+    # Stage 1.3: Memory-efficient page storage
+    if memory_efficient:
+        pages = []  # Store only basic info for memory-efficient mode
+        page_batch = []  # Temporary batch for processing
+        batch_size = 50  # Process in batches of 50 pages
+    else:
+        pages = []  # Traditional full storage
     
     logging.info(f"Starting site crawl from {start_url}")
-    logging.info(f"Settings: max_depth={max_depth}, max_pages={max_pages}, delay={delay}s")
+    logging.info(f"Settings: max_depth={max_depth}, max_pages={max_pages}, delay={delay}s, strategy={crawl_strategy}")
     
+    # Stage 2.3: Check for government site and category-first strategy
+    if crawl_strategy == 'category_first':
+        # First, fetch the homepage to detect government site and extract categories
+        try:
+            homepage_html = fetch_html(start_url, ua=ua, timeout=30)
+            
+            # Detect if it's a government site
+            is_government = detect_government_site(start_url, homepage_html)
+            
+            if is_government:
+                # Extract site categories
+                categories = extract_site_categories(start_url, homepage_html)
+                
+                if categories:
+                    logging.info(f"Government site detected with {len(categories)} categories. Using category-first strategy.")
+                    
+                    # Use category-first crawling
+                    all_category_pages = []
+                    crawl_params = {
+                        'max_depth': max_depth,
+                        'max_pages': max_pages,
+                        'delay': delay,
+                        'enable_optimizations': enable_optimizations
+                    }
+                    
+                    for category_info, category_pages in crawl_site_by_categories(start_url, ua, categories, **crawl_params):
+                        all_category_pages.extend(category_pages)
+                        
+                        # Check if we've reached the page limit
+                        if len(all_category_pages) >= max_pages:
+                            break
+                    
+                    # Update final statistics (simplified for category-first mode)
+                    logging.info(f"Category-first crawl summary: {len(all_category_pages)} pages total")
+                    return all_category_pages[:max_pages]  # Ensure we don't exceed limit
+                else:
+                    logging.info("Government site detected but no categories found. Falling back to default strategy.")
+            else:
+                logging.info("Non-government site detected. Falling back to default strategy.")
+                
+        except Exception as e:
+            logging.warning(f"Category-first strategy failed: {e}. Falling back to default strategy.")
+    
+    # Default BFS crawling strategy (original logic)
     while queue and len(visited_normalized) < max_pages:
         current_url, depth = queue.popleft()
         current_normalized = normalize_url_for_dedup(current_url)
@@ -3024,7 +3333,23 @@ def crawl_site(start_url: str, ua: str, max_depth: int = 10,
             html = fetch_html(current_url, ua=ua, timeout=30)
             visited_normalized.add(current_normalized)
             url_mapping[current_normalized] = current_url
-            pages.append((current_url, html, depth))
+            
+            # Stage 1.3: Memory-efficient page handling
+            if memory_efficient:
+                # Add to batch for processing
+                page_batch.append((current_url, html, depth))
+                
+                # Process batch when full
+                if len(page_batch) >= batch_size:
+                    if page_callback:
+                        page_callback(page_batch.copy())  # Send copy to callback
+                    # Keep only metadata for final result (no HTML content)
+                    for url, _, d in page_batch:
+                        pages.append((url, '', d))
+                    page_batch.clear()
+            else:
+                # Traditional full storage
+                pages.append((current_url, html, depth))
             
             # Update statistics
             stats['pages_success'] += 1
@@ -3032,24 +3357,54 @@ def crawl_site(start_url: str, ua: str, max_depth: int = 10,
             
             # Extract and queue new links (only if not at max depth)
             if depth < max_depth:
-                link_mapping = extract_internal_links(html, current_url)
-                new_normalized_links = set(link_mapping.keys()) - visited_normalized
+                # Stage 1.1 optimization: Enable documentation filter during link extraction
+                enable_doc_filter = enable_optimizations and crawl_strategy == 'default'
+                link_mapping = extract_internal_links(html, current_url, enable_doc_filter=enable_doc_filter)
                 
-                # Filter to documentation URLs (check both normalized and original)
-                doc_links = [(norm, orig) for norm, orig in link_mapping.items() 
-                           if norm in new_normalized_links and is_documentation_url(orig)]
-                
-                logging.info(f"Found {len(doc_links)} new documentation links")
-                
-                for normalized_link, original_link in sorted(doc_links)[:50]:  # Limit per-page discoveries
-                    # Queue the original URL for case-preserving fetching
-                    queue.append((original_link, depth + 1))
+                # Stage 1.2 optimization: Batch process new links
+                if enable_optimizations:
+                    # Batch filtering and deduplication
+                    new_normalized_links = set(link_mapping.keys()) - visited_normalized
+                    
+                    if enable_doc_filter:
+                        # All links already pre-filtered for documentation
+                        doc_links = [(norm, orig) for norm, orig in link_mapping.items() 
+                                   if norm in new_normalized_links]
+                        logging.info(f"Found {len(doc_links)} new documentation links (pre-filtered)")
+                    else:
+                        # Batch apply documentation filter
+                        doc_links = [(norm, orig) for norm, orig in link_mapping.items() 
+                                   if norm in new_normalized_links and is_documentation_url(orig)]
+                        logging.info(f"Found {len(doc_links)} new documentation links")
+                    
+                    # Batch queue operations - sort and limit in one operation
+                    links_to_queue = sorted(doc_links)[:50]  # Limit per-page discoveries
+                    for normalized_link, original_link in links_to_queue:
+                        queue.append((original_link, depth + 1))
+                        
+                else:
+                    # Original non-optimized path for compatibility
+                    new_normalized_links = set(link_mapping.keys()) - visited_normalized
+                    doc_links = [(norm, orig) for norm, orig in link_mapping.items() 
+                               if norm in new_normalized_links and is_documentation_url(orig)]
+                    logging.info(f"Found {len(doc_links)} new documentation links")
+                    
+                    for normalized_link, original_link in sorted(doc_links)[:50]:
+                        queue.append((original_link, depth + 1))
             
         except Exception as e:
             logging.warning(f"Failed to crawl {current_url}: {e}")
             stats['pages_failed'] += 1
             stats['failed_urls'].append((current_url, str(e)))
             continue
+    
+    # Stage 1.3: Process any remaining batch
+    if memory_efficient and 'page_batch' in locals() and page_batch:
+        if page_callback:
+            page_callback(page_batch)
+        # Add remaining pages as metadata only
+        pages.extend([(url, '', d) for url, _, d in page_batch])
+        page_batch.clear()
     
     # Clear progress line if we were showing it
     if logging.getLogger().level > logging.INFO:
