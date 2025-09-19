@@ -685,10 +685,11 @@ def fetch_html_with_curl(url: str, ua: Optional[str] = None, timeout: int = 30) 
         ]
         
         logging.debug(f"Executing curl command for URL: {validated_url}")
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout+5)
+        result = subprocess.run(cmd, capture_output=True, text=False, timeout=timeout+5)
         
         if result.returncode == 0:
-            return result.stdout
+            # 使用智能解码处理curl获取的字节数据
+            return smart_decode(result.stdout)
         else:
             # Log curl error details for debugging
             logging.error(f"curl failed for {validated_url}: return code {result.returncode}, stderr: {result.stderr}")
@@ -705,6 +706,160 @@ def fetch_html_with_curl(url: str, ua: Optional[str] = None, timeout: int = 30) 
         logging.error(f"Failed to fetch with curl from {url}: {e}")
         raise
 
+
+def extract_charset_from_headers(response) -> Optional[str]:
+    """
+    从HTTP响应头提取charset编码信息
+    
+    Args:
+        response: HTTP响应对象
+        
+    Returns:
+        Optional[str]: 提取到的编码名称，如果未找到则返回None
+    """
+    content_type = response.headers.get('Content-Type', '')
+    if not content_type:
+        return None
+    
+    # 查找charset参数
+    charset_match = re.search(r'charset=([^;\s]+)', content_type, re.IGNORECASE)
+    if charset_match:
+        charset = charset_match.group(1).strip('"\'').lower()
+        # 标准化常见的编码名称
+        charset_mapping = {
+            'gb2312': 'gb2312',
+            'gbk': 'gbk', 
+            'gb18030': 'gb18030',
+            'utf-8': 'utf-8',
+            'iso-8859-1': 'iso-8859-1'
+        }
+        return charset_mapping.get(charset, charset)
+    
+    return None
+
+
+def extract_charset_from_html(data: bytes) -> Optional[str]:
+    """
+    从HTML前8KB检测meta标签中的编码信息
+    
+    Args:
+        data: HTML字节数据
+        
+    Returns:
+        Optional[str]: 提取到的编码名称，如果未找到则返回None
+    """
+    # 只检查前8KB内容以提升性能
+    sample = data[:8192]
+    
+    try:
+        # 尝试用ASCII解码来查找meta标签
+        sample_str = sample.decode('ascii', errors='ignore')
+    except:
+        return None
+    
+    # 查找各种形式的charset声明
+    patterns = [
+        r'<meta[^>]+charset\s*=\s*["\']?([^"\'>;\s]+)',  # <meta charset="...">
+        r'<meta[^>]+content\s*=\s*["\'][^"\']*charset=([^"\'>;\s]+)',  # <meta http-equiv content="...charset=...">
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, sample_str, re.IGNORECASE)
+        if match:
+            charset = match.group(1).lower()
+            # 标准化常见的编码名称
+            charset_mapping = {
+                'gb2312': 'gb2312',
+                'gbk': 'gbk',
+                'gb18030': 'gb18030', 
+                'utf-8': 'utf-8',
+                'iso-8859-1': 'iso-8859-1'
+            }
+            return charset_mapping.get(charset, charset)
+    
+    return None
+
+
+def try_decode_with_fallback(data: bytes, encoding: Optional[str] = None) -> str:
+    """
+    使用降级链进行解码尝试
+    
+    Args:
+        data: 要解码的字节数据
+        encoding: 优先尝试的编码（可选）
+        
+    Returns:
+        str: 解码后的字符串
+    """
+    # 中文编码降级链：GB2312 → GBK → GB18030 → UTF-8
+    fallback_encodings = ['gb2312', 'gbk', 'gb18030', 'utf-8']
+    
+    # 如果提供了特定编码，优先尝试
+    encodings_to_try = []
+    if encoding:
+        encodings_to_try.append(encoding)
+    
+    # 添加降级链中未包含的编码
+    for enc in fallback_encodings:
+        if enc != encoding:
+            encodings_to_try.append(enc)
+    
+    # 最后尝试一些其他常见编码
+    encodings_to_try.extend(['iso-8859-1', 'windows-1252'])
+    
+    for enc in encodings_to_try:
+        try:
+            decoded = data.decode(enc)
+            # 简单检查解码质量：如果包含常见的中文字符且没有明显乱码标志，认为解码成功
+            if enc in ['gb2312', 'gbk', 'gb18030']:
+                # 对于中文编码，检查是否有合理的中文字符
+                if re.search(r'[\u4e00-\u9fff]', decoded):
+                    return decoded
+            else:
+                # 对于其他编码，检查是否有明显的乱码
+                if not re.search(r'�', decoded):
+                    return decoded
+        except (UnicodeDecodeError, LookupError):
+            continue
+    
+    # 如果所有编码都失败，使用UTF-8并忽略错误
+    return data.decode('utf-8', errors='ignore')
+
+
+def smart_decode(data: bytes, response=None) -> str:
+    """
+    智能解码函数，支持多种编码检测
+    优先级：HTTP头 > HTML meta > 降级链
+    
+    Args:
+        data: 要解码的字节数据
+        response: HTTP响应对象（可选）
+        
+    Returns:
+        str: 解码后的字符串
+    """
+    detected_encoding = None
+    
+    # 1. 从HTTP响应头提取charset
+    if response:
+        detected_encoding = extract_charset_from_headers(response)
+        if detected_encoding:
+            logging.debug(f"Detected encoding from headers: {detected_encoding}")
+    
+    # 2. 如果HTTP头没有找到，从HTML meta标签检测
+    if not detected_encoding:
+        detected_encoding = extract_charset_from_html(data)
+        if detected_encoding:
+            logging.debug(f"Detected encoding from HTML meta: {detected_encoding}")
+    
+    # 3. 使用降级链解码
+    try:
+        return try_decode_with_fallback(data, detected_encoding)
+    except Exception as e:
+        logging.warning(f"Smart decode failed, falling back to UTF-8: {e}")
+        return data.decode('utf-8', errors='ignore')
+
+
 def fetch_html_original(url: str, ua: Optional[str] = None, timeout: int = 30) -> str:
     ua = ua or "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0 Safari/537.36"
     req = urllib.request.Request(url, headers={"User-Agent": ua, "Accept-Language": "zh-CN,zh;q=0.9"})
@@ -720,7 +875,8 @@ def fetch_html_original(url: str, ua: Optional[str] = None, timeout: int = 30) -
             except http_client.IncompleteRead as e:
                 logging.warning(f"Incomplete read, using partial data: {len(e.partial or b'')} bytes")
                 data = (e.partial or b"")
-        return data.decode("utf-8", errors="ignore")
+            # 使用智能解码替代简单的UTF-8解码
+            return smart_decode(data, r)
     except Exception as e:
         # If SSL error, try curl as fallback
         if "SSL" in str(e) or "CERTIFICATE" in str(e).upper():
