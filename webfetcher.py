@@ -26,6 +26,7 @@ import subprocess
 import sys
 from typing import Optional, List, Dict, Set, Any
 from dataclasses import dataclass
+from enum import Enum
 from html.parser import HTMLParser
 from pathlib import Path
 import logging
@@ -1249,6 +1250,12 @@ def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
         'publish_time': pub
     }
     return date_only, "\n\n".join(lines).strip() + "\n", metadata
+
+
+class PageType(Enum):
+    """页面类型枚举"""
+    ARTICLE = "article"      # 文章页面
+    LIST_INDEX = "list"      # 列表索引页面
 
 
 @dataclass
@@ -2562,7 +2569,377 @@ def raw_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     return date_only, '\n'.join(md_lines), metadata
 
 
+def detect_page_type(html: str) -> PageType:
+    """
+    检测页面类型：文章页面还是列表索引页面
+    
+    检测策略：
+    1. 链接密度分析 - 计算链接数量与文本总量的比值
+    2. 列表容器识别 - 检测ul/ol/div[class*=list]等列表元素
+    3. 内容结构分析 - 判断是否包含大量相似格式的链接项
+    
+    Args:
+        html: 页面HTML内容
+        
+    Returns:
+        PageType: ARTICLE 或 LIST_INDEX
+    """
+    # 1. 提取所有链接
+    link_pattern = r'<a[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>'
+    links = re.findall(link_pattern, html, re.I | re.S)
+    
+    # 2. 计算页面文本总量（去除HTML标签）
+    # 移除脚本和样式
+    clean_html = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.I | re.S)
+    clean_html = re.sub(r'<style[^>]*>.*?</style>', '', clean_html, flags=re.I | re.S)
+    # 提取纯文本
+    text_content = re.sub(r'<[^>]+>', ' ', clean_html)
+    text_content = ihtml.unescape(text_content)
+    total_text_length = len(text_content.strip())
+    
+    # 3. 计算有效链接数量（排除导航、页脚等）
+    content_links = []
+    for href, link_text in links:
+        link_text_clean = re.sub(r'<[^>]+>', '', link_text).strip()
+        # 过滤掉明显的导航链接（放宽条件）
+        if (len(link_text_clean) > 2 and  # 降低最小长度要求
+            not any(nav_word in link_text_clean.lower() for nav_word in 
+                   ['首页', '返回', '登录', '注册', 'home', 'back', 'login', 'register']) and
+            not link_text_clean.lower() in ['更多', '更多>>']):  # 分别检查常见的短导航词
+            content_links.append((href, link_text_clean))
+    
+    # 4. 计算链接密度
+    link_density = len(content_links) / max(total_text_length, 1) * 1000  # 每1000字符的链接数
+    
+    # 5. 检测列表容器
+    list_containers = [
+        r'<ul[^>]*class=["\'][^"\']*list[^"\']*["\']',  # ul.list*
+        r'<ol[^>]*class=["\'][^"\']*list[^"\']*["\']',  # ol.list*
+        r'<div[^>]*class=["\'][^"\']*list[^"\']*["\']', # div.list*
+        r'<div[^>]*class=["\'][^"\']*index[^"\']*["\']', # div.index*
+        r'<div[^>]*class=["\'][^"\']*content-list[^"\']*["\']', # div.content-list*
+        r'<div[^>]*id=["\'][^"\']*list[^"\']*["\']',    # div#list*
+        r'<table[^>]*>.*?<tr[^>]*>.*?<td[^>]*>.*?</td>.*?<td[^>]*>.*?</td>.*?<td[^>]*>.*?</td>', # 三列表格
+    ]
+    
+    list_container_count = 0
+    for pattern in list_containers:
+        if re.search(pattern, html, re.I):
+            list_container_count += 1
+    
+    # 6. 检测重复链接模式（相似的链接文本长度和格式）
+    if len(content_links) >= 5:
+        link_lengths = [len(text) for _, text in content_links]
+        avg_length = sum(link_lengths) / len(link_lengths)
+        # 检查链接文本长度的一致性
+        similar_length_links = sum(1 for length in link_lengths 
+                                 if abs(length - avg_length) <= avg_length * 0.5)
+        pattern_consistency = similar_length_links / len(content_links)
+    else:
+        pattern_consistency = 0
+    
+    # 7. 决策逻辑
+    # 强列表信号：
+    # - 高链接密度 (>1.5个链接/1000字符)
+    # - 存在列表容器
+    # - 链接模式一致性高 (>50%)
+    # - 链接数量多 (>=5个)
+    
+    is_list_page = (
+        (link_density > 1.5 and len(content_links) >= 5) or  # 降低密度要求
+        (list_container_count >= 2) or  # 多个列表容器
+        (len(content_links) >= 8 and pattern_consistency > 0.5) or  # 降低一致性要求
+        (link_density > 1.0 and list_container_count >= 1 and len(content_links) >= 5) or  # 降低综合判断阈值
+        (list_container_count >= 1 and len(content_links) >= 10)  # 如果有列表容器且链接多，直接判定为列表
+    )
+    
+    # 调试信息（可选）
+    logging.debug(f"Page type detection - Links: {len(content_links)}, "
+                 f"Density: {link_density:.2f}, "
+                 f"List containers: {list_container_count}, "
+                 f"Pattern consistency: {pattern_consistency:.2f}, "
+                 f"Result: {'LIST' if is_list_page else 'ARTICLE'}")
+    
+    return PageType.LIST_INDEX if is_list_page else PageType.ARTICLE
+
+
+@dataclass
+class ListItem:
+    """列表项数据结构"""
+    title: str
+    url: str
+    date: Optional[str] = None
+    summary: Optional[str] = None
+    index: Optional[int] = None
+
+
+def extract_list_content(html: str, base_url: str) -> tuple[str, List[ListItem]]:
+    """
+    从列表页面提取列表项内容
+    
+    提取策略：
+    1. 识别主要列表容器
+    2. 提取每个列表项的标题、链接、日期、摘要
+    3. 清理和标准化数据
+    
+    Args:
+        html: 页面HTML内容
+        base_url: 基础URL，用于解析相对链接
+        
+    Returns:
+        tuple: (页面标题, 列表项列表)
+    """
+    # 1. 提取页面标题
+    page_title = extract_meta(html, 'og:title') or extract_meta(html, 'twitter:title')
+    if not page_title:
+        title_match = re.search(r'<title[^>]*>(.*?)</title>', html, re.I | re.S)
+        if title_match:
+            page_title = ihtml.unescape(re.sub(r'<[^>]+>', '', title_match.group(1))).strip()
+    page_title = page_title or '列表页面'
+    
+    # 2. 定义多种列表项提取模式，针对不同网站结构
+    list_patterns = [
+        # 人民网政治局会议表格专用模式
+        {
+            'container': r'<table[^>]*>(.*?)</table>',
+            'item': r'<tr[^>]*>.*?<td[^>]*>.*?</td>.*?<td[^>]*>.*?<center>(.*?)</center>.*?</td>.*?<td[^>]*>(.*?)</td>.*?</tr>',
+            'title_link': None,  # 特殊处理
+            'date': r'(\d{4}年\d{1,2}月\d{1,2}日)',
+            'special': 'people_table'
+        },
+        # 通用表格形式的列表
+        {
+            'container': r'<table[^>]*>(.*?)</table>',
+            'item': r'<tr[^>]*>(.*?)</tr>',
+            'title_link': r'<a[^>]*href=["\']([^"\']+)["\'][^>]*[^>]*>(.*?)</a>',
+            'date': r'(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2})'
+        },
+        # 人民网等新闻网站的典型结构
+        {
+            'container': r'<ul[^>]*class=["\'][^"\']*list[^"\']*["\'][^>]*>(.*?)</ul>',
+            'item': r'<li[^>]*>(.*?)</li>',
+            'title_link': r'<a[^>]*href=["\']([^"\']+)["\'][^>]*[^>]*>(.*?)</a>',
+            'date': r'(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2})'
+        },
+        # 带有div包装的列表项
+        {
+            'container': r'<div[^>]*class=["\'][^"\']*list[^"\']*["\'][^>]*>(.*?)</div>',
+            'item': r'<div[^>]*class=["\'][^"\']*item[^"\']*["\'][^>]*>(.*?)</div>',
+            'title_link': r'<a[^>]*href=["\']([^"\']+)["\'][^>]*[^>]*>(.*?)</a>',
+            'date': r'(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2})'
+        },
+        # 通用链接提取（作为后备方案）
+        {
+            'container': r'<body[^>]*>(.*?)</body>',
+            'item': r'<a[^>]*href=["\']([^"\']+)["\'][^>]*[^>]*>(.*?)</a>',
+            'title_link': None,  # 已在item中处理
+            'date': r'(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2})'
+        }
+    ]
+    
+    list_items = []
+    
+    # 3. 尝试每种模式提取列表项
+    for pattern_config in list_patterns:
+        container_match = re.search(pattern_config['container'], html, re.I | re.S)
+        if container_match:
+            container_content = container_match.group(1)
+            
+            # 特殊处理人民网表格格式
+            if pattern_config.get('special') == 'people_table':
+                # 人民网政治局会议特殊表格处理
+                items = re.findall(pattern_config['item'], container_content, re.I | re.S)
+                for date_text, content_html in items:
+                    # 清理日期
+                    date = re.sub(r'<[^>]+>', '', date_text).strip()
+                    date = ihtml.unescape(date)
+                    
+                    # 提取链接
+                    link_match = re.search(r'<a[^>]*href=["\']([^"\']+)["\'][^>]*[^>]*>(.*?)</a>', content_html, re.I | re.S)
+                    if link_match:
+                        href = link_match.group(1)
+                        link_text = re.sub(r'<[^>]+>', '', link_match.group(2)).strip()
+                    else:
+                        # 如果没有链接，跳过这项
+                        continue
+                    
+                    # 清理内容作为摘要
+                    summary_text = re.sub(r'<a[^>]*>.*?</a>', '', content_html, flags=re.I | re.S)
+                    summary_text = re.sub(r'<[^>]+>', ' ', summary_text)
+                    summary_text = ihtml.unescape(summary_text).strip()
+                    summary = summary_text if len(summary_text) > 10 else None
+                    
+                    # 构建标题：会议名称 + 日期
+                    title = f"中央政治局会议 {date}"
+                    
+                    if title and href:
+                        full_url = resolve_url_with_context(base_url, href)
+                        list_items.append(ListItem(
+                            title=title,
+                            url=full_url,
+                            date=date,
+                            summary=summary,
+                            index=len(list_items) + 1
+                        ))
+            
+            elif pattern_config['title_link']:
+                # 常规模式：先提取item，再提取链接
+                items = re.findall(pattern_config['item'], container_content, re.I | re.S)
+                for item_html in items:
+                    link_match = re.search(pattern_config['title_link'], item_html, re.I | re.S)
+                    if link_match:
+                        href = link_match.group(1)
+                        title_html = link_match.group(2)
+                        
+                        # 清理标题
+                        title = re.sub(r'<[^>]+>', '', title_html).strip()
+                        title = ihtml.unescape(title)
+                        
+                        # 提取日期
+                        date_match = re.search(pattern_config['date'], item_html)
+                        date = date_match.group(1) if date_match else None
+                        
+                        # 提取摘要（链接外的其他文本）
+                        summary_text = re.sub(r'<a[^>]*>.*?</a>', '', item_html, flags=re.I | re.S)
+                        summary_text = re.sub(r'<[^>]+>', ' ', summary_text)
+                        summary_text = ihtml.unescape(summary_text).strip()
+                        summary = summary_text if len(summary_text) > 10 else None
+                        
+                        if title and len(title) > 3:  # 过滤过短的标题
+                            full_url = resolve_url_with_context(base_url, href)
+                            list_items.append(ListItem(
+                                title=title,
+                                url=full_url,
+                                date=date,
+                                summary=summary,
+                                index=len(list_items) + 1
+                            ))
+            else:
+                # 直接链接模式：item就是链接
+                items = re.findall(pattern_config['item'], container_content, re.I | re.S)
+                for href, title_html in items:
+                    title = re.sub(r'<[^>]+>', '', title_html).strip()
+                    title = ihtml.unescape(title)
+                    
+                    # 过滤导航和无关链接
+                    if (len(title) > 5 and 
+                        not any(skip_word in title.lower() for skip_word in 
+                               ['首页', '返回', '登录', '注册', 'home', 'back', 'login', 'register', 
+                                '更多>>', '更多', '上一页', '下一页', 'prev', 'next'])):
+                        
+                        full_url = resolve_url_with_context(base_url, href)
+                        list_items.append(ListItem(
+                            title=title,
+                            url=full_url,
+                            date=None,
+                            summary=None,
+                            index=len(list_items) + 1
+                        ))
+        
+        # 如果找到足够的列表项，就停止尝试其他模式
+        if len(list_items) >= 5:
+            break
+    
+    # 4. 去重和排序
+    seen_urls = set()
+    unique_items = []
+    for item in list_items:
+        if item.url not in seen_urls:
+            seen_urls.add(item.url)
+            unique_items.append(item)
+    
+    # 限制数量，避免过多项目
+    if len(unique_items) > 50:
+        unique_items = unique_items[:50]
+    
+    # 重新编号
+    for i, item in enumerate(unique_items):
+        item.index = i + 1
+    
+    return page_title, unique_items
+
+
+def format_list_page_markdown(page_title: str, list_items: List[ListItem], url: str) -> tuple[str, str, dict]:
+    """
+    将列表页面数据格式化为Markdown输出
+    
+    Args:
+        page_title: 页面标题
+        list_items: 列表项数据
+        url: 原始URL
+        
+    Returns:
+        tuple: (文件名用的日期, Markdown内容, 元数据)
+    """
+    # 生成文件名用的日期
+    date_only = datetime.datetime.now().strftime('%Y-%m-%d')
+    
+    # 构建Markdown内容
+    lines = [
+        f"# {page_title}",
+        "",
+        f"**页面类型**: 列表索引",
+        f"**链接数量**: {len(list_items)}个",
+        f"**来源**: [{url}]({url})",
+        f"**抓取时间**: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "",
+        "## 内容列表",
+        ""
+    ]
+    
+    # 添加每个列表项
+    for item in list_items:
+        lines.append(f"### {item.index}. {item.title}")
+        lines.append(f"- **链接**: [{item.url}]({item.url})")
+        
+        if item.date:
+            lines.append(f"- **日期**: {item.date}")
+        
+        if item.summary:
+            lines.append(f"- **摘要**: {item.summary}")
+        
+        lines.append("")
+    
+    # 元数据
+    metadata = {
+        'title': page_title,
+        'url': url,
+        'type': 'list_index',
+        'item_count': len(list_items),
+        'extracted_at': datetime.datetime.now().isoformat(),
+        'items': [
+            {
+                'title': item.title,
+                'url': item.url,
+                'date': item.date,
+                'summary': item.summary
+            }
+            for item in list_items
+        ]
+    }
+    
+    return date_only, "\n".join(lines), metadata
+
+
 def generic_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
+    # 1. 页面类型检测
+    page_type = detect_page_type(html)
+    
+    # 2. 如果是列表页面，使用专门的列表处理逻辑
+    if page_type == PageType.LIST_INDEX:
+        logging.info(f"Detected list page, using list extraction for: {url}")
+        page_title, list_items = extract_list_content(html, url)
+        
+        # 如果成功提取到列表项，使用列表格式输出
+        if list_items and len(list_items) >= 3:  # 至少3个项目才认为是有效列表
+            return format_list_page_markdown(page_title, list_items, url)
+        else:
+            # 如果列表提取失败，fallback到文章模式
+            logging.info(f"List extraction failed or insufficient items ({len(list_items) if list_items else 0}), falling back to article mode")
+    
+    # 3. 文章页面处理（原有逻辑）
+    logging.info(f"Processing as article page: {url}")
+    
     title = extract_meta(html, 'og:title') or extract_meta(html, 'twitter:title')
     if not title:
         m = re.search(r'<title[^>]*>(.*?)</title>', html, re.I|re.S)
