@@ -12,21 +12,17 @@ Thumbs.db
 
 # Downloaded content and outputs
 *.html
-*.json
 downloaded_*/
 output_*/
 output/*
-!output/.gitkeep
+!output/README.md
+fetched/*
+!fetched/README.md
 raw_output/
 assets/
 
 # Test directories and files
-test/
-test-*/
-test_*/
 perf_test*/
-*_test/
-*_tests/
 *.test.md
 *.test.json
 
