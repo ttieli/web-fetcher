@@ -32,6 +32,7 @@ from pathlib import Path
 import logging
 import time
 import random
+import signal
 from collections import deque
 # BeautifulSoup导入移至动态导入机制
 
@@ -2845,123 +2846,179 @@ def extract_list_content(html: str, base_url: str) -> tuple[str, List[ListItem]]
     Returns:
         tuple: (页面标题, 列表项列表)
     """
-    # 1. 提取页面标题
-    page_title = extract_meta(html, 'og:title') or extract_meta(html, 'twitter:title')
-    if not page_title:
-        title_match = re.search(r'<title[^>]*>(.*?)</title>', html, re.I | re.S)
-        if title_match:
-            page_title = ihtml.unescape(re.sub(r'<[^>]+>', '', title_match.group(1))).strip()
-    page_title = page_title or '列表页面'
+    # 性能保护机制：内容大小和复杂度检测
+    html_size = len(html)
+    if html_size > 5 * 1024 * 1024:  # 超过5MB的HTML
+        print(f"Warning: Large HTML content ({html_size // 1024}KB), using simplified processing")
     
-    # 2. 定义多种列表项提取模式，针对不同网站结构
-    list_patterns = [
-        # 人民网政治局会议表格专用模式
-        {
-            'container': r'<table[^>]*>(.*?)</table>',
-            'item': r'<tr[^>]*>.*?<td[^>]*>.*?</td>.*?<td[^>]*>.*?<center>(.*?)</center>.*?</td>.*?<td[^>]*>(.*?)</td>.*?</tr>',
-            'title_link': None,  # 特殊处理
-            'date': r'(\d{4}年\d{1,2}月\d{1,2}日)',
-            'special': 'people_table'
-        },
-        # 通用表格形式的列表
-        {
-            'container': r'<table[^>]*>(.*?)</table>',
-            'item': r'<tr[^>]*>(.*?)</tr>',
-            'title_link': r'<a[^>]*href=["\']([^"\']+)["\'][^>]*[^>]*>(.*?)</a>',
-            'date': r'(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2})'
-        },
-        # 人民网等新闻网站的典型结构
-        {
-            'container': r'<ul[^>]*class=["\'][^"\']*list[^"\']*["\'][^>]*>(.*?)</ul>',
-            'item': r'<li[^>]*>(.*?)</li>',
-            'title_link': r'<a[^>]*href=["\']([^"\']+)["\'][^>]*[^>]*>(.*?)</a>',
-            'date': r'(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2})'
-        },
-        # 带有div包装的列表项
-        {
-            'container': r'<div[^>]*class=["\'][^"\']*list[^"\']*["\'][^>]*>(.*?)</div>',
-            'item': r'<div[^>]*class=["\'][^"\']*item[^"\']*["\'][^>]*>(.*?)</div>',
-            'title_link': r'<a[^>]*href=["\']([^"\']+)["\'][^>]*[^>]*>(.*?)</a>',
-            'date': r'(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2})'
-        },
-        # 通用链接提取（作为后备方案）
-        {
-            'container': r'<body[^>]*>(.*?)</body>',
-            'item': r'<a[^>]*href=["\']([^"\']+)["\'][^>]*[^>]*>(.*?)</a>',
-            'title_link': None,  # 已在item中处理
-            'date': r'(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2})'
-        }
-    ]
+    # 表格复杂度检测
+    table_count = len(re.findall(r'<table[^>]*>', html, re.I))
+    tr_count = len(re.findall(r'<tr[^>]*>', html, re.I))
+    td_count = len(re.findall(r'<td[^>]*>', html, re.I))
     
-    list_items = []
+    # 设置处理超时
+    def timeout_handler(signum, frame):
+        raise TimeoutError("List content extraction timeout after 5 seconds")
     
-    # 3. 尝试每种模式提取列表项
-    for pattern_config in list_patterns:
-        container_match = re.search(pattern_config['container'], html, re.I | re.S)
-        if container_match:
-            container_content = container_match.group(1)
-            
-            # 特殊处理人民网表格格式
-            if pattern_config.get('special') == 'people_table':
-                # 人民网政治局会议特殊表格处理
-                items = re.findall(pattern_config['item'], container_content, re.I | re.S)
-                for date_text, content_html in items:
-                    # 清理日期
-                    date = re.sub(r'<[^>]+>', '', date_text).strip()
-                    date = ihtml.unescape(date)
-                    
-                    # 提取链接
-                    link_match = re.search(r'<a[^>]*href=["\']([^"\']+)["\'][^>]*[^>]*>(.*?)</a>', content_html, re.I | re.S)
-                    if link_match:
-                        href = link_match.group(1)
-                        link_text = re.sub(r'<[^>]+>', '', link_match.group(2)).strip()
-                    else:
-                        # 如果没有链接，跳过这项
-                        continue
-                    
-                    # 清理内容作为摘要
-                    summary_text = re.sub(r'<a[^>]*>.*?</a>', '', content_html, flags=re.I | re.S)
-                    summary_text = re.sub(r'<[^>]+>', ' ', summary_text)
-                    summary_text = ihtml.unescape(summary_text).strip()
-                    summary = summary_text if len(summary_text) > 10 else None
-                    
-                    # 构建标题：会议名称 + 日期
-                    title = f"中央政治局会议 {date}"
-                    
-                    if title and href:
-                        full_url = resolve_url_with_context(base_url, href)
-                        list_items.append(ListItem(
-                            title=title,
-                            url=full_url,
-                            date=date,
-                            summary=summary,
-                            index=len(list_items) + 1
-                        ))
-            
-            elif pattern_config['title_link']:
-                # 常规模式：先提取item，再提取链接
-                items = re.findall(pattern_config['item'], container_content, re.I | re.S)
-                for item_html in items:
-                    link_match = re.search(pattern_config['title_link'], item_html, re.I | re.S)
-                    if link_match:
-                        href = link_match.group(1)
-                        title_html = link_match.group(2)
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(5)  # 5秒超时
+    
+    try:
+        # 1. 提取页面标题
+        page_title = extract_meta(html, 'og:title') or extract_meta(html, 'twitter:title')
+        if not page_title:
+            title_match = re.search(r'<title[^>]*>(.*?)</title>', html, re.I | re.S)
+            if title_match:
+                page_title = ihtml.unescape(re.sub(r'<[^>]+>', '', title_match.group(1))).strip()
+        page_title = page_title or '列表页面'
+        
+        # 检查是否为人民网，使用特殊处理策略
+        is_people_site = 'cpc.people.com.cn' in base_url or 'people.com.cn' in base_url
+        
+        # 表格数量过多时使用简化策略
+        if td_count > 500:
+            print(f"Warning: Too many table cells ({td_count}), limiting to first 500")
+            # 截断HTML以减少处理量
+            html = html[:len(html)//2] if len(html) > 1024*1024 else html
+        
+        # 2. 定义多种列表项提取模式，针对不同网站结构
+        list_patterns = []
+        
+        # 对于人民网使用优化的分步处理策略
+        if is_people_site:
+            list_patterns.append({
+                'container': r'<table[^>]*>(.*?)</table>',
+                'item': 'people_table_optimized',  # 标记使用优化处理
+                'title_link': None,
+                'date': r'(\d{4}年\d{1,2}月\d{1,2}日)',
+                'special': 'people_table_optimized'
+            })
+        else:
+            # 人民网政治局会议表格专用模式（原始版本，仅用于非人民网站点）
+            list_patterns.append({
+                'container': r'<table[^>]*>(.*?)</table>',
+                'item': r'<tr[^>]*>.*?<td[^>]*>.*?</td>.*?<td[^>]*>.*?<center>(.*?)</center>.*?</td>.*?<td[^>]*>(.*?)</td>.*?</tr>',
+                'title_link': None,  # 特殊处理
+                'date': r'(\d{4}年\d{1,2}月\d{1,2}日)',
+                'special': 'people_table'
+            })
+        
+        # 添加通用模式
+        list_patterns.extend([
+            # 通用表格形式的列表
+            {
+                'container': r'<table[^>]*>(.*?)</table>',
+                'item': r'<tr[^>]*>(.*?)</tr>',
+                'title_link': r'<a[^>]*href=["\']([^"\']+)["\'][^>]*[^>]*>(.*?)</a>',
+                'date': r'(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2})'
+            },
+            # 人民网等新闻网站的典型结构
+            {
+                'container': r'<ul[^>]*class=["\'][^"\']*list[^"\']*["\'][^>]*>(.*?)</ul>',
+                'item': r'<li[^>]*>(.*?)</li>',
+                'title_link': r'<a[^>]*href=["\']([^"\']+)["\'][^>]*[^>]*>(.*?)</a>',
+                'date': r'(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2})'
+            },
+            # 带有div包装的列表项
+            {
+                'container': r'<div[^>]*class=["\'][^"\']*list[^"\']*["\'][^>]*>(.*?)</div>',
+                'item': r'<div[^>]*class=["\'][^"\']*item[^"\']*["\'][^>]*>(.*?)</div>',
+                'title_link': r'<a[^>]*href=["\']([^"\']+)["\'][^>]*[^>]*>(.*?)</a>',
+                'date': r'(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2})'
+            },
+            # 通用链接提取（作为后备方案）
+            {
+                'container': r'<body[^>]*>(.*?)</body>',
+                'item': r'<a[^>]*href=["\']([^"\']+)["\'][^>]*[^>]*>(.*?)</a>',
+                'title_link': None,  # 已在item中处理
+                'date': r'(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2})'
+            }
+        ])
+        
+        list_items = []
+        
+        # 3. 尝试每种模式提取列表项
+        for pattern_config in list_patterns:
+            container_match = re.search(pattern_config['container'], html, re.I | re.S)
+            if container_match:
+                container_content = container_match.group(1)
+                
+                # 优化的人民网表格处理
+                if pattern_config.get('special') == 'people_table_optimized':
+                    # 分步处理，避免复杂正则表达式的灾难性回溯
+                    # 1. 先提取所有表格行
+                    rows = re.findall(r'<tr[^>]*>(.*?)</tr>', container_content, re.I | re.S)
+                    row_count = 0
+                    for row_html in rows:
+                        row_count += 1
+                        if row_count > 50:  # 限制处理行数
+                            print(f"Warning: Too many table rows, stopping at {row_count}")
+                            break
+                            
+                        # 2. 从每行中提取单元格
+                        cells = re.findall(r'<td[^>]*>(.*?)</td>', row_html, re.I | re.S)
+                        if len(cells) >= 3:  # 确保有足够的单元格
+                            # 3. 分别处理日期和内容单元格
+                            for i, cell in enumerate(cells):
+                                if i >= 2:  # 只处理前3个单元格
+                                    break
+                                # 寻找包含center标签的单元格（通常是日期）
+                                center_match = re.search(r'<center[^>]*>(.*?)</center>', cell, re.I | re.S)
+                                if center_match:
+                                    date_text = center_match.group(1)
+                                    date = re.sub(r'<[^>]+>', '', date_text).strip()
+                                    date = ihtml.unescape(date)
+                                    
+                                    # 从下一个单元格中提取内容
+                                    if i + 1 < len(cells):
+                                        content_cell = cells[i + 1]
+                                        link_match = re.search(r'<a[^>]*href=["\']([^"\']+)["\'][^>]*[^>]*>(.*?)</a>', content_cell, re.I | re.S)
+                                        if link_match:
+                                            href = link_match.group(1)
+                                            link_text = re.sub(r'<[^>]+>', '', link_match.group(2)).strip()
+                                            
+                                            # 构建标题
+                                            title = f"中央政治局会议 {date}"
+                                            
+                                            if title and href:
+                                                full_url = resolve_url_with_context(base_url, href)
+                                                list_items.append(ListItem(
+                                                    title=title,
+                                                    url=full_url,
+                                                    date=date,
+                                                    summary=None,
+                                                    index=len(list_items) + 1
+                                                ))
+                                    break  # 找到一个有效的日期单元格后跳出
+                
+                # 特殊处理人民网表格格式（原始版本）
+                elif pattern_config.get('special') == 'people_table':
+                    # 人民网政治局会议特殊表格处理
+                    items = re.findall(pattern_config['item'], container_content, re.I | re.S)
+                    for date_text, content_html in items:
+                        # 清理日期
+                        date = re.sub(r'<[^>]+>', '', date_text).strip()
+                        date = ihtml.unescape(date)
                         
-                        # 清理标题
-                        title = re.sub(r'<[^>]+>', '', title_html).strip()
-                        title = ihtml.unescape(title)
+                        # 提取链接
+                        link_match = re.search(r'<a[^>]*href=["\']([^"\']+)["\'][^>]*[^>]*>(.*?)</a>', content_html, re.I | re.S)
+                        if link_match:
+                            href = link_match.group(1)
+                            link_text = re.sub(r'<[^>]+>', '', link_match.group(2)).strip()
+                        else:
+                            # 如果没有链接，跳过这项
+                            continue
                         
-                        # 提取日期
-                        date_match = re.search(pattern_config['date'], item_html)
-                        date = date_match.group(1) if date_match else None
-                        
-                        # 提取摘要（链接外的其他文本）
-                        summary_text = re.sub(r'<a[^>]*>.*?</a>', '', item_html, flags=re.I | re.S)
+                        # 清理内容作为摘要
+                        summary_text = re.sub(r'<a[^>]*>.*?</a>', '', content_html, flags=re.I | re.S)
                         summary_text = re.sub(r'<[^>]+>', ' ', summary_text)
                         summary_text = ihtml.unescape(summary_text).strip()
                         summary = summary_text if len(summary_text) > 10 else None
                         
-                        if title and len(title) > 3:  # 过滤过短的标题
+                        # 构建标题：会议名称 + 日期
+                        title = f"中央政治局会议 {date}"
+                        
+                        if title and href:
                             full_url = resolve_url_with_context(base_url, href)
                             list_items.append(ListItem(
                                 title=title,
@@ -2970,49 +3027,92 @@ def extract_list_content(html: str, base_url: str) -> tuple[str, List[ListItem]]
                                 summary=summary,
                                 index=len(list_items) + 1
                             ))
-            else:
-                # 直接链接模式：item就是链接
-                items = re.findall(pattern_config['item'], container_content, re.I | re.S)
-                for href, title_html in items:
-                    title = re.sub(r'<[^>]+>', '', title_html).strip()
-                    title = ihtml.unescape(title)
-                    
-                    # 过滤导航和无关链接
-                    if (len(title) > 5 and 
-                        not any(skip_word in title.lower() for skip_word in 
-                               ['首页', '返回', '登录', '注册', 'home', 'back', 'login', 'register', 
-                                '更多>>', '更多', '上一页', '下一页', 'prev', 'next'])):
+                
+                elif pattern_config['title_link']:
+                    # 常规模式：先提取item，再提取链接
+                    items = re.findall(pattern_config['item'], container_content, re.I | re.S)
+                    for item_html in items:
+                        link_match = re.search(pattern_config['title_link'], item_html, re.I | re.S)
+                        if link_match:
+                            href = link_match.group(1)
+                            title_html = link_match.group(2)
+                            
+                            # 清理标题
+                            title = re.sub(r'<[^>]+>', '', title_html).strip()
+                            title = ihtml.unescape(title)
+                            
+                            # 提取日期
+                            date_match = re.search(pattern_config['date'], item_html)
+                            date = date_match.group(1) if date_match else None
+                            
+                            # 提取摘要（链接外的其他文本）
+                            summary_text = re.sub(r'<a[^>]*>.*?</a>', '', item_html, flags=re.I | re.S)
+                            summary_text = re.sub(r'<[^>]+>', ' ', summary_text)
+                            summary_text = ihtml.unescape(summary_text).strip()
+                            summary = summary_text if len(summary_text) > 10 else None
+                            
+                            if title and len(title) > 3:  # 过滤过短的标题
+                                full_url = resolve_url_with_context(base_url, href)
+                                list_items.append(ListItem(
+                                    title=title,
+                                    url=full_url,
+                                    date=date,
+                                    summary=summary,
+                                    index=len(list_items) + 1
+                                ))
+                else:
+                    # 直接链接模式：item就是链接
+                    items = re.findall(pattern_config['item'], container_content, re.I | re.S)
+                    for href, title_html in items:
+                        title = re.sub(r'<[^>]+>', '', title_html).strip()
+                        title = ihtml.unescape(title)
                         
-                        full_url = resolve_url_with_context(base_url, href)
-                        list_items.append(ListItem(
-                            title=title,
-                            url=full_url,
-                            date=None,
-                            summary=None,
-                            index=len(list_items) + 1
-                        ))
+                        # 过滤导航和无关链接
+                        if (len(title) > 5 and 
+                            not any(skip_word in title.lower() for skip_word in 
+                                   ['首页', '返回', '登录', '注册', 'home', 'back', 'login', 'register', 
+                                    '更多>>', '更多', '上一页', '下一页', 'prev', 'next'])):
+                            
+                            full_url = resolve_url_with_context(base_url, href)
+                            list_items.append(ListItem(
+                                title=title,
+                                url=full_url,
+                                date=None,
+                                summary=None,
+                                index=len(list_items) + 1
+                            ))
         
-        # 如果找到足够的列表项，就停止尝试其他模式
-        if len(list_items) >= 5:
-            break
-    
-    # 4. 去重和排序
-    seen_urls = set()
-    unique_items = []
-    for item in list_items:
-        if item.url not in seen_urls:
-            seen_urls.add(item.url)
-            unique_items.append(item)
-    
-    # 限制数量，避免过多项目
-    if len(unique_items) > 50:
-        unique_items = unique_items[:50]
-    
-    # 重新编号
-    for i, item in enumerate(unique_items):
-        item.index = i + 1
-    
-    return page_title, unique_items
+            # 如果找到足够的列表项，就停止尝试其他模式
+            if len(list_items) >= 5:
+                break
+        
+        # 4. 去重和排序
+        seen_urls = set()
+        unique_items = []
+        for item in list_items:
+            if item.url not in seen_urls:
+                seen_urls.add(item.url)
+                unique_items.append(item)
+        
+        # 限制数量，避免过多项目
+        if len(unique_items) > 50:
+            unique_items = unique_items[:50]
+        
+        # 重新编号
+        for i, item in enumerate(unique_items):
+            item.index = i + 1
+        
+        return page_title, unique_items
+        
+    except TimeoutError as e:
+        print(f"List extraction timed out: {e}")
+        return "页面处理超时", []
+    except Exception as e:
+        print(f"Error during list extraction: {e}")
+        return "列表页面", []
+    finally:
+        # 清理超时设置
+        signal.alarm(0)
 
 
 def format_list_page_markdown(page_title: str, list_items: List[ListItem], url: str) -> tuple[str, str, dict]:
