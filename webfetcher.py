@@ -2582,13 +2582,35 @@ def generic_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     # Priority 1.5: Modern static site generators (Hugo, Jekyll, etc.)
     if not desc:
         desc = extract_from_modern_selectors(html)
+        if desc:
+            # 质量检查：如果内容太短或包含明显的版权信息，则不使用
+            if (len(desc) < 200 or 
+                any(keyword in desc.lower() for keyword in ['版权所有', 'copyright', '运维保障', 'icp备案'])):
+                desc = ''  # 重置，继续后续priority
+    
+    # Priority 1.8: 12371.cn 共产党员网特定处理
+    if not desc and "12371.cn" in html:
+        # 针对12371.cn的专用选择器
+        word_pattern = r'<div[^>]*class=["\']word["\'][^>]*>(.*?)</div>'
+        m = re.search(word_pattern, html, re.I|re.S)
+        if m:
+            content = m.group(1)
+            # 保留段落结构，将<p>转换为换行
+            content = re.sub(r'<p[^>]*>', '\n\n', content)
+            content = re.sub(r'</p>', '', content)
+            # 处理列表项
+            content = re.sub(r'<li[^>]*>', '\n• ', content)
+            content = re.sub(r'</li>', '', content)
+            # 移除其他HTML标签
+            content = re.sub(r'<[^>]+>', '', content)
+            desc = ihtml.unescape(content).strip()
     
     # Priority 2: Try to extract from multiple <p> tags (for sites like ebchina.com)
     if not desc:
         # Extract all paragraph content with various styles
         p_patterns = [
             r'<p[^>]*class=["\']p["\'][^>]*>(.*?)</p>',  # class="p"
-            r'<p[^>]*style=["\'][^"\']*text-align[^"\']*["\'][^>]*>(.*?)</p>',  # style with text-align
+            r'<p[^>]*style=[^>]*text-align[^>]*>(.*?)</p>',  # style with text-align (simplified)
         ]
         
         all_paragraphs = []
@@ -2606,19 +2628,55 @@ def generic_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
         if all_paragraphs:
             desc = '\n\n'.join(all_paragraphs)
     
-    # Priority 3: Beijing gov site specific content divs (existing code)
+    # Priority 3: Enhanced government and legal site content extraction
     if not desc:
-        for pattern in [r'<div[^>]+class=["\']view[^>]*>(.*?)</div>',
-                       r'<div[^>]+class=["\']TRS_UEDITOR[^>]*>(.*?)</div>']:
+        # Extended list of content container selectors for government sites
+        content_selectors = [
+            # 针对12371.cn共产党员网的特定结构 - 直接匹配word class
+            r'<div[^>]*class=["\']word["\'][^>]*>(.*?)</div>',
+            # 通用政府网站.word容器选择器  
+            r'<div[^>]+class=["\'][^"\']*word[^"\']*["\'][^>]*>(.*?)</div>',
+            # 通用政府网站.con容器选择器
+            r'<div[^>]+class=["\'][^"\']*con[^"\']*["\'][^>]*>(.*?)</div>',
+            # 现有北京政府网站选择器
+            r'<div[^>]+class=["\']view[^>]*>(.*?)</div>',
+            r'<div[^>]+class=["\']TRS_UEDITOR[^>]*>(.*?)</div>',
+            # 司法部等政府网站常用选择器
+            r'<div[^>]+class=["\'][^"\']*content-text[^"\']*["\'][^>]*>(.*?)</div>',
+            r'<div[^>]+class=["\'][^"\']*text-content[^"\']*["\'][^>]*>(.*?)</div>',
+            r'<div[^>]+class=["\'][^"\']*law-content[^"\']*["\'][^>]*>(.*?)</div>',
+            r'<div[^>]+class=["\'][^"\']*regulation-text[^"\']*["\'][^>]*>(.*?)</div>',
+            r'<div[^>]+class=["\'][^"\']*article-content[^"\']*["\'][^>]*>(.*?)</div>',
+            # 通用内容容器（包含content关键字的class或id）
+            r'<div[^>]+class=["\'][^"\']*content[^"\']*["\'][^>]*>(.*?)</div>',
+            r'<div[^>]+id=["\'][^"\']*content[^"\']*["\'][^>]*>(.*?)</div>',
+            # main标签内容提取
+            r'<main[^>]*>(.*?)</main>',
+        ]
+        
+        for pattern in content_selectors:
             m = re.search(pattern, html, re.I|re.S)
             if m:
-                desc = re.sub(r'<[^>]+>', '', m.group(1))
-                desc = ihtml.unescape(desc).strip()
-                break
+                # 提取内容并清理HTML标签
+                content = m.group(1)
+                # 保留段落结构，将<p>转换为换行
+                content = re.sub(r'<p[^>]*>', '\n\n', content)
+                content = re.sub(r'</p>', '', content)
+                # 处理列表项
+                content = re.sub(r'<li[^>]*>', '\n• ', content)
+                content = re.sub(r'</li>', '', content)
+                # 移除其他HTML标签
+                content = re.sub(r'<[^>]+>', '', content)
+                desc = ihtml.unescape(content).strip()
+                # 检查内容质量：如果提取的内容足够长，则使用
+                if desc and len(desc) > 100:  # 降低质量阈值以适应政府网站
+                    break
+                else:
+                    desc = ''  # 重置，继续尝试下一个选择器
     
-    # Priority 4: Try to extract content from generic <p> tags
+    # Priority 4: Enhanced generic paragraph extraction with lower thresholds
     if not desc:
-        # Extract all generic paragraphs with substantial content
+        # Extract all generic paragraphs with relaxed criteria for government sites
         generic_p_pattern = r'<p[^>]*>(.*?)</p>'
         generic_p_matches = re.findall(generic_p_pattern, html, re.I|re.S)
         if generic_p_matches:
@@ -2629,11 +2687,34 @@ def generic_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
                 text = re.sub(r'<video[^>]*>.*?</video>', '[视频]', text, flags=re.I|re.S)  # Replace videos
                 text = re.sub(r'<[^>]+>', '', text)
                 text = ihtml.unescape(text).strip()
-                # Only include substantial paragraphs (more than 20 chars)
-                if text and len(text) > 20 and not text.startswith('var ') and not text.startswith('function'):
-                    paragraphs.append(text)
-            if len(paragraphs) >= 3:  # Only use if we found multiple paragraphs
+                # 降低段落长度阈值，从20降到10字符，以适应法规条文的简短段落
+                if text and len(text) > 10 and not text.startswith('var ') and not text.startswith('function'):
+                    # 过滤掉明显的导航、版权等无关内容
+                    if not any(keyword in text.lower() for keyword in ['copyright', '版权', '备案', 'icp', '运维保障']):
+                        paragraphs.append(text)
+            # 降低段落数量阈值，从3降到2，以增加政府网站内容提取成功率
+            if len(paragraphs) >= 2:  # 如果找到2个或更多段落就使用
                 desc = '\n\n'.join(paragraphs)
+        
+        # 备用策略：如果段落提取失败且内容太少，尝试提取所有非脚本文本
+        if not desc or len(desc) < 500:
+            # 尝试提取页面主体文本作为最后的备用方案
+            body_content = re.search(r'<body[^>]*>(.*?)</body>', html, re.I|re.S)
+            if body_content:
+                # 移除脚本和样式
+                content = re.sub(r'<script[^>]*>.*?</script>', '', body_content.group(1), flags=re.I|re.S)
+                content = re.sub(r'<style[^>]*>.*?</style>', '', content, flags=re.I|re.S)
+                # 提取所有文本内容
+                text_parts = re.findall(r'>([^<]+)<', content)
+                meaningful_parts = []
+                for part in text_parts:
+                    part = ihtml.unescape(part).strip()
+                    if (part and len(part) > 10 and 
+                        not any(keyword in part.lower() for keyword in ['javascript', 'copyright', '版权', '备案', 'icp', '运维保障'])):
+                        meaningful_parts.append(part)
+                
+                if meaningful_parts and len('\n'.join(meaningful_parts)) > len(desc or ''):
+                    desc = '\n\n'.join(meaningful_parts)
     
     # Priority 5: Fallback to meta description (existing code)
     if not desc:
