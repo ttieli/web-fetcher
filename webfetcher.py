@@ -2756,10 +2756,14 @@ def detect_page_type(html: str) -> PageType:
     
     # 3. 计算有效链接数量（排除导航、页脚等）
     content_links = []
+    anchor_links = []  # 添加锚点链接列表
     for href, link_text in links:
         link_text_clean = re.sub(r'<[^>]+>', '', link_text).strip()
+        # 识别锚点链接
+        if href.startswith('#'):
+            anchor_links.append((href, link_text_clean))
         # 过滤掉明显的导航链接（放宽条件）
-        if (len(link_text_clean) > 2 and  # 降低最小长度要求
+        elif (len(link_text_clean) > 2 and  # 降低最小长度要求
             not any(nav_word in link_text_clean.lower() for nav_word in 
                    ['首页', '返回', '登录', '注册', 'home', 'back', 'login', 'register']) and
             not link_text_clean.lower() in ['更多', '更多>>']):  # 分别检查常见的短导航词
@@ -2795,6 +2799,20 @@ def detect_page_type(html: str) -> PageType:
     else:
         pattern_consistency = 0
     
+    # 6.5. 锚点链接比例判定（解决章节导航误判问题）
+    all_links = links
+    if len(all_links) > 0:
+        anchor_ratio = len(anchor_links) / len(all_links)
+        
+        # 如果锚点链接占比超过30%，或者锚点链接数量>=10，很可能是文章页面的章节导航
+        if anchor_ratio > 0.3 or len(anchor_links) >= 10:
+            return PageType.ARTICLE
+        
+        # 如果有较多锚点链接（如章节导航），降低列表页判定权重
+        if len(anchor_links) >= 5:
+            # 减少有效链接计数，避免误判
+            content_links = content_links[:max(len(content_links)//2, 1)]
+    
     # 7. 决策逻辑
     # 强列表信号：
     # - 高链接密度 (>1.5个链接/1000字符)
@@ -2811,6 +2829,7 @@ def detect_page_type(html: str) -> PageType:
     )
     
     # 调试信息（可选）
+    print(f"[DEBUG] Links - Total: {len(all_links)}, Content: {len(content_links)}, Anchor: {len(anchor_links)}")
     logging.debug(f"Page type detection - Links: {len(content_links)}, "
                  f"Density: {link_density:.2f}, "
                  f"List containers: {list_container_count}, "
