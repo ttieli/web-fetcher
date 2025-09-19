@@ -1,0 +1,75 @@
+{
+  "test_time": "2025-09-19 16:08:18",
+  "results": [
+    {
+      "test": "静态HTML页面",
+      "url": "https://example.com",
+      "success": true,
+      "time": 2.2874271869659424,
+      "error": null,
+      "render_used": false
+    },
+    {
+      "test": "React官网（SPA）",
+      "url": "https://react.dev/learn",
+      "success": true,
+      "time": 2.8648111820220947,
+      "error": null,
+      "render_used": false
+    },
+    {
+      "test": "React官网（带渲染）",
+      "url": "https://react.dev/learn",
+      "success": true,
+      "time": 2.7467329502105713,
+      "error": null,
+      "render_used": true
+    },
+    {
+      "test": "Medium文章（懒加载）",
+      "url": "https://medium.com/@tusharaggarwal272/python-vs-javascript-what-to-choose-in-2024-33eca4ceb9a6",
+      "success": true,
+      "time": 3.6415610313415527,
+      "error": null,
+      "render_used": false
+    },
+    {
+      "test": "Twitter/X（需要登录）",
+      "url": "https://x.com/OpenAI",
+      "success": true,
+      "time": 3.750999927520752,
+      "error": null,
+      "render_used": false
+    },
+    {
+      "test": "GitHub API文档（多页面）",
+      "url": "https://docs.github.com/en/rest",
+      "success": true,
+      "time": 3.4081850051879883,
+      "error": null,
+      "render_used": false
+    },
+    {
+      "test": "YouTube视频页面",
+      "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "success": true,
+      "time": 4.520788908004761,
+      "error": null,
+      "render_used": false
+    },
+    {
+      "test": "Cloudflare保护的网站",
+      "url": "https://www.cloudflare.com/",
+      "success": true,
+      "time": 3.8601720333099365,
+      "error": null,
+      "render_used": false
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "success": 8,
+    "fail": 0,
+    "success_rate": 100.0
+  }
+}
