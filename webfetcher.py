@@ -102,20 +102,45 @@ def add_metrics_to_markdown(md_content: str, metrics: FetchMetrics) -> str:
     return detailed_comment + md_content + footer
 # BeautifulSoup导入移至动态导入机制
 
+def is_url_encoded(text: str) -> bool:
+    """
+    Check if a text string is already URL-encoded.
+    
+    Args:
+        text: String to check for URL encoding
+        
+    Returns:
+        bool: True if text appears to be URL-encoded, False otherwise
+    """
+    try:
+        # If decoding changes the text, it was encoded
+        # Also check for common encoded patterns
+        return (urllib.parse.unquote(text, errors='strict') != text or 
+                '%' in text and any(c in text for c in ['%20', '%2F', '%3A']))
+    except:
+        return False
+
 def validate_and_encode_url(url: str) -> str:
     """
     Validate URL and ensure safe encoding for subprocess calls.
     
-    Checks for potentially problematic characters and ensures proper URL encoding.
+    Properly handles Unicode characters (e.g., Chinese), spaces, and already-encoded URLs.
+    Converts IRI (Internationalized Resource Identifier) to proper URI format.
     
     Args:
-        url: URL to validate and encode
+        url: URL to validate and encode (can contain Unicode or spaces)
         
     Returns:
-        str: Safely encoded URL
+        str: Safely encoded URL ready for curl/subprocess
         
     Raises:
         ValueError: If URL is invalid or contains unsafe patterns
+        
+    Examples:
+        >>> validate_and_encode_url('https://zh.wikipedia.org/wiki/中文')
+        'https://zh.wikipedia.org/wiki/%E4%B8%AD%E6%96%87'
+        >>> validate_and_encode_url('https://example.com/path with spaces')
+        'https://example.com/path%20with%20spaces'
     """
     if not url or not isinstance(url, str):
         raise ValueError("URL must be a non-empty string")
@@ -135,26 +160,62 @@ def validate_and_encode_url(url: str) -> str:
             raise ValueError(f"URL missing network location: {url}")
         
         # Check for potentially problematic characters in shell context
-        # Note: & is actually fine in subprocess.run with list arguments,
-        # but we log it for debugging purposes
         shell_special_chars = ['`', '$', '\\', '"', "'"]
         for char in shell_special_chars:
             if char in url:
                 logging.warning(f"URL contains shell special character '{char}': {url}")
-                # Don't raise error, just warn - subprocess.run with list args handles this
         
-        # Re-encode the URL to ensure proper formatting
-        # This handles cases where URLs might have been partially decoded
+        # Encode path component (handles Unicode and spaces)
+        if parsed.path:
+            # Split path into segments to handle each separately
+            path_segments = parsed.path.split('/')
+            encoded_segments = []
+            
+            for segment in path_segments:
+                if segment:  # Skip empty segments from leading/trailing slashes
+                    if not is_url_encoded(segment):
+                        # Encode Unicode and special characters, but preserve slashes
+                        encoded_segment = urllib.parse.quote(segment, safe='')
+                        encoded_segments.append(encoded_segment)
+                    else:
+                        # Already encoded, keep as-is
+                        encoded_segments.append(segment)
+                else:
+                    encoded_segments.append(segment)
+            
+            encoded_path = '/'.join(encoded_segments)
+        else:
+            encoded_path = parsed.path
+        
+        # Handle query parameters
         if parsed.query:
-            # Re-encode query parameters to handle & properly
+            # Parse and re-encode to ensure consistency
             query_params = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
-            new_query = urllib.parse.urlencode(query_params)
-            parsed = parsed._replace(query=new_query)
+            encoded_query = urllib.parse.urlencode(query_params)
+        else:
+            encoded_query = parsed.query
         
-        encoded_url = urllib.parse.urlunparse(parsed)
+        # Handle fragment (anchor)
+        if parsed.fragment:
+            if not is_url_encoded(parsed.fragment):
+                encoded_fragment = urllib.parse.quote(parsed.fragment, safe='')
+            else:
+                encoded_fragment = parsed.fragment
+        else:
+            encoded_fragment = parsed.fragment
+        
+        # Reconstruct the URL with encoded components
+        encoded_url = urllib.parse.urlunparse((
+            parsed.scheme,
+            parsed.netloc,  # netloc (domain) stays as-is for international domains
+            encoded_path,
+            parsed.params,  # rarely used, keep as-is
+            encoded_query,
+            encoded_fragment
+        ))
         
         if encoded_url != url:
-            logging.debug(f"URL re-encoded: {url} -> {encoded_url}")
+            logging.debug(f"URL encoded: {url} -> {encoded_url}")
         
         return encoded_url
         
@@ -172,6 +233,173 @@ def get_beautifulsoup_parser():
 
 # HTML解析降级支持
 from html.parser import HTMLParser
+
+class ContentFilter:
+    """Generic content filtering system for noise removal from any website"""
+    
+    def __init__(self, filter_level='safe'):
+        self.filter_level = filter_level
+        self.removed_elements = []
+        
+    def filter_content(self, soup):
+        """Apply content filtering based on filter level"""
+        if not soup:
+            return soup
+            
+        self.removed_elements = []
+        
+        if self.filter_level == 'none':
+            return soup
+            
+        # Safe filters (default) - remove obvious noise
+        if self.filter_level in ['safe', 'moderate', 'aggressive']:
+            self._remove_scripts_and_styles(soup)
+            self._remove_hidden_elements(soup)
+            self._remove_ads_and_popups(soup)
+            
+        # Moderate filters - also remove navigation
+        if self.filter_level in ['moderate', 'aggressive']:
+            self._remove_navigation_elements(soup)
+            
+        # Aggressive filters - remove all identified noise
+        if self.filter_level == 'aggressive':
+            self._remove_metadata_elements(soup)
+            self._remove_social_elements(soup)
+            self._clean_attributes(soup)
+            
+        return soup
+    
+    def _remove_scripts_and_styles(self, soup):
+        """Remove script and style tags"""
+        for tag in soup.find_all(['script', 'style', 'noscript']):
+            self.removed_elements.append(f"script/style: {tag.name}")
+            tag.decompose()
+    
+    def _remove_hidden_elements(self, soup):
+        """Remove visually hidden elements"""
+        # Elements with display:none or visibility:hidden
+        for element in soup.find_all(style=lambda x: x and ('display:none' in x.replace(' ', '') or 'visibility:hidden' in x.replace(' ', ''))):
+            self.removed_elements.append(f"hidden: {element.name}")
+            element.decompose()
+            
+        # Common hidden classes
+        hidden_classes = ['hidden', 'sr-only', 'screen-reader-only', 'visually-hidden', 'invisible']
+        for class_name in hidden_classes:
+            for element in soup.find_all(class_=lambda x: x and class_name in x):
+                self.removed_elements.append(f"hidden class: {element.name}")
+                element.decompose()
+    
+    def _remove_ads_and_popups(self, soup):
+        """Remove advertisement and popup elements"""
+        # Common ad selectors
+        ad_selectors = [
+            '[id*="ad"]', '[class*="ad"]', '[id*="advertisement"]', '[class*="advertisement"]',
+            '[id*="banner"]', '[class*="banner"]', '[id*="popup"]', '[class*="popup"]',
+            '[id*="modal"]', '[class*="modal"]', '[class*="overlay"]',
+            '[class*="promo"]', '[class*="sponsored"]'
+        ]
+        
+        for selector in ad_selectors:
+            try:
+                for element in soup.select(selector):
+                    # Avoid removing main content areas
+                    if not any(main_class in str(element.get('class', [])).lower() 
+                             for main_class in ['main', 'content', 'article', 'post']):
+                        self.removed_elements.append(f"ad: {element.name}")
+                        element.decompose()
+            except:
+                continue
+    
+    def _remove_navigation_elements(self, soup):
+        """Remove navigation, header, footer elements"""
+        nav_tags = ['nav', 'header', 'footer', 'aside']
+        for tag in nav_tags:
+            for element in soup.find_all(tag):
+                self.removed_elements.append(f"navigation: {element.name}")
+                element.decompose()
+        
+        # Common navigation classes
+        nav_classes = ['nav', 'navigation', 'menu', 'sidebar', 'breadcrumb', 'pagination']
+        for class_name in nav_classes:
+            for element in soup.find_all(class_=lambda x: x and any(cls for cls in x if class_name in cls.lower())):
+                self.removed_elements.append(f"nav class: {element.name}")
+                element.decompose()
+    
+    def _remove_metadata_elements(self, soup):
+        """Remove metadata and tracking elements"""
+        # Meta tags not needed for content
+        for meta in soup.find_all('meta'):
+            if meta.get('name') not in ['description', 'author', 'keywords']:
+                meta.decompose()
+        
+        # Comments
+        from bs4 import Comment
+        comments = soup.find_all(string=lambda text: isinstance(text, Comment))
+        for comment in comments:
+            comment.extract()
+            
+        # Tracking and analytics
+        tracking_classes = ['analytics', 'tracking', 'pixel', 'beacon']
+        for class_name in tracking_classes:
+            for element in soup.find_all(class_=lambda x: x and any(cls for cls in x if class_name in cls.lower())):
+                element.decompose()
+    
+    def _remove_social_elements(self, soup):
+        """Remove social media widgets and share buttons"""
+        social_classes = ['social', 'share', 'facebook', 'twitter', 'linkedin', 'pinterest']
+        for class_name in social_classes:
+            for element in soup.find_all(class_=lambda x: x and any(cls for cls in x if class_name in cls.lower())):
+                self.removed_elements.append(f"social: {element.name}")
+                element.decompose()
+    
+    def _clean_attributes(self, soup):
+        """Remove unnecessary attributes to clean up HTML"""
+        for element in soup.find_all(True):
+            # Keep only essential attributes
+            essential_attrs = ['href', 'src', 'alt', 'title', 'id']
+            attrs_to_remove = [attr for attr in element.attrs.keys() if attr not in essential_attrs]
+            for attr in attrs_to_remove:
+                del element.attrs[attr]
+    
+    def get_filter_stats(self):
+        """Return filtering statistics"""
+        stats = {}
+        for item in self.removed_elements:
+            category = item.split(':')[0]
+            stats[category] = stats.get(category, 0) + 1
+        return stats
+
+
+class NavigationFilter:
+    """Specialized filter for navigation and structural elements"""
+    
+    @staticmethod
+    def remove_navigation_noise(soup):
+        """Remove common navigation patterns that interfere with content"""
+        if not soup:
+            return soup
+            
+        removed_count = 0
+        
+        # Remove skip links (accessibility)
+        for skip_link in soup.find_all('a', href=lambda x: x and x.startswith('#')):
+            if 'skip' in skip_link.get_text().lower():
+                skip_link.decompose()
+                removed_count += 1
+        
+        # Remove empty navigation containers
+        for nav in soup.find_all(['nav', 'div', 'section'], class_=lambda x: x and 'nav' in ' '.join(x).lower()):
+            if not nav.get_text().strip() or len(nav.get_text().strip()) < 10:
+                nav.decompose()
+                removed_count += 1
+        
+        # Remove breadcrumb trails (often noise in conversion)
+        for breadcrumb in soup.find_all(attrs={'aria-label': lambda x: x and 'breadcrumb' in x.lower()}):
+            breadcrumb.decompose()
+            removed_count += 1
+            
+        return soup, removed_count
+
 
 class FallbackHTMLParser(HTMLParser):
     """基础HTML解析器作为BeautifulSoup的降级方案"""
@@ -3363,9 +3591,32 @@ def format_list_page_markdown(page_title: str, list_items: List[ListItem], url: 
     return date_only, "\n".join(lines), metadata
 
 
-def generic_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
+def generic_to_markdown(html: str, url: str, filter_level: str = 'safe') -> tuple[str, str, dict]:
     # 1. 页面类型检测
     page_type = detect_page_type(html, url)
+    
+    # 1.5. 内容过滤（如果启用）
+    filter_stats = {}
+    if filter_level != 'none':
+        BeautifulSoup = get_beautifulsoup_parser()
+        if BeautifulSoup:
+            try:
+                logging.info(f"Applying content filtering (level: {filter_level}) to: {url}")
+                soup = BeautifulSoup(html, 'html.parser')
+                content_filter = ContentFilter(filter_level)
+                filtered_soup = content_filter.filter_content(soup)
+                if filtered_soup:
+                    html = str(filtered_soup)
+                    filter_stats = content_filter.get_filter_stats()
+                    logging.info(f"Content filtering completed. Removed elements: {filter_stats}")
+                else:
+                    logging.warning("Content filtering failed - soup is None")
+            except Exception as e:
+                logging.warning(f"Content filtering failed: {e}")
+        else:
+            logging.warning("BeautifulSoup not available, skipping content filtering")
+    else:
+        logging.info("Content filtering disabled (filter_level: none)")
     
     # 2. 如果是列表页面，使用专门的列表处理逻辑
     if page_type == PageType.LIST_INDEX:
@@ -3585,7 +3836,9 @@ def generic_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
         'images': images,
         'videos': videos,
         'publish_time': json_ld.get('datePublished') or extract_meta(html, 'article:published_time') or extract_meta(html, 'og:updated_time'),
-        'author': json_ld.get('author', '')
+        'author': json_ld.get('author', ''),
+        'filter_level': filter_level,
+        'filter_stats': filter_stats
     }
     return date_only, "\n\n".join(lines).strip() + "\n", metadata
 
@@ -4489,6 +4742,8 @@ def main():
                     help='Follow next/previous links to aggregate multi-page documents (MkDocs/Docusaurus only)')
     ap.add_argument('--raw', action='store_true', 
                     help='Use raw parser mode (complete content preservation, no filtering)')
+    ap.add_argument('--filter', choices=['none', 'safe', 'moderate', 'aggressive'], default='safe',
+                    help='Content filtering level: none (no filtering), safe (remove scripts/ads), moderate (+ navigation), aggressive (+ metadata) (default: safe)')
     ap.add_argument('--crawl-site', action='store_true',
                     help='Recursively crawl entire site (BFS traversal of all internal links)')
     ap.add_argument('--max-crawl-depth', type=int, default=10,
@@ -4515,12 +4770,20 @@ def main():
         logging.warning(f"Requested pages {args.max_pages} exceeds maximum {MAX_CRAWL_PAGES}, using {MAX_CRAWL_PAGES}")
         args.max_pages = MAX_CRAWL_PAGES
     
+    # Handle --raw flag override for filtering
+    if args.raw:
+        logging.info("Raw mode enabled, disabling content filtering")
+        args.filter = 'none'
+    
     setup_logging(args.verbose)
-    url = args.url
+    # Validate and encode URL for proper Unicode handling
+    url = validate_and_encode_url(args.url)
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     
     logging.info(f"Starting webfetcher for URL: {url}")
+    if url != args.url:
+        logging.info(f"URL encoded from: {args.url}")
 
     # Resolve redirects to get effective host for parser selection
     host = get_effective_host(url, ua=None)  # UA will be determined after this
@@ -4801,7 +5064,7 @@ def main():
     else:
         logging.info("Selected parser: Generic")
         parser_name = "Generic"
-        date_only, md, metadata = generic_to_markdown(html, url)
+        date_only, md, metadata = generic_to_markdown(html, url, getattr(args, 'filter', 'safe'))
         rendered = False
 
     # Title for filename comes from first heading
