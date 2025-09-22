@@ -2726,7 +2726,7 @@ def raw_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     return date_only, '\n'.join(md_lines), metadata
 
 
-def detect_page_type(html: str) -> PageType:
+def detect_page_type(html: str, url: Optional[str] = None) -> PageType:
     """
     检测页面类型：文章页面还是列表索引页面
     
@@ -2737,10 +2737,18 @@ def detect_page_type(html: str) -> PageType:
     
     Args:
         html: 页面HTML内容
+        url: 页面URL，用于特定网站的优先判断
         
     Returns:
         PageType: ARTICLE 或 LIST_INDEX
     """
+    # URL模式优先判断
+    if url:
+        # 12371.cn文章页面特征：包含日期路径和ARTI前缀
+        if re.search(r'12371\.cn/\d{4}/\d{2}/\d{2}/ARTI\d+\.shtml', url):
+            logging.debug(f"12371.cn article pattern detected: {url}")
+            return PageType.ARTICLE
+    
     # 1. 提取所有链接
     link_pattern = r'<a[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>'
     links = re.findall(link_pattern, html, re.I | re.S)
@@ -3198,7 +3206,7 @@ def format_list_page_markdown(page_title: str, list_items: List[ListItem], url: 
 
 def generic_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     # 1. 页面类型检测
-    page_type = detect_page_type(html)
+    page_type = detect_page_type(html, url)
     
     # 2. 如果是列表页面，使用专门的列表处理逻辑
     if page_type == PageType.LIST_INDEX:
