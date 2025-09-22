@@ -1623,15 +1623,24 @@ def extract_from_modern_selectors(html: str) -> str:
         r'<div[^>]*class=["\'][^"\']*lead[^"\']*["\'][^>]*>(.*?)</div>',
     ]
     
+    # FIXED: Collect ALL matching content instead of returning first match
+    all_content = []
+    seen_starts = set()  # For intelligent deduplication
+    
     for pattern in content_selectors:
         matches = re.findall(pattern, html, re.I | re.S)
         for match in matches:
             # Clean and extract text content
             text = extract_text_from_html_fragment(match)
-            if text and len(text.strip()) > 50:  # Minimum content threshold
-                return text
+            if text and len(text.strip()) > 200:  # Higher threshold to avoid fragments
+                # Intelligent deduplication: use first 100 chars as signature
+                text_start = text[:100].strip()
+                if text_start not in seen_starts:
+                    all_content.append(text.strip())
+                    seen_starts.add(text_start)
     
-    return ''
+    # Join all unique content blocks with proper paragraph spacing
+    return '\n\n'.join(all_content) if all_content else ''
 
 
 def extract_text_from_html_fragment(html_fragment: str) -> str:
@@ -3113,7 +3122,7 @@ def raw_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     return date_only, '\n'.join(md_lines), metadata
 
 
-def detect_page_type(html: str, url: Optional[str] = None) -> PageType:
+def detect_page_type(html: str, url: Optional[str] = None, is_crawling: bool = False) -> PageType:
     """
     检测页面类型：文章页面还是列表索引页面
     
@@ -3125,10 +3134,22 @@ def detect_page_type(html: str, url: Optional[str] = None) -> PageType:
     Args:
         html: 页面HTML内容
         url: 页面URL，用于特定网站的优先判断
+        is_crawling: 是否在爬虫模式下，单页模式时跳过检测直接返回ARTICLE
         
     Returns:
         PageType: ARTICLE 或 LIST_INDEX
     """
+    # Mode-aware detection: Skip detection in single-page mode
+    if not is_crawling:
+        # Check for emergency disable via environment variable
+        if os.environ.get('WF_FORCE_PAGE_DETECTION', '').lower() == 'true':
+            logging.debug("WF_FORCE_PAGE_DETECTION is set, proceeding with detection")
+        else:
+            logging.debug("Single-page mode: defaulting to ARTICLE type")
+            return PageType.ARTICLE
+    else:
+        logging.debug("Crawl mode: performing full page type detection")
+    
     # URL模式优先判断
     if url:
         # 12371.cn文章页面特征：包含日期路径和ARTI前缀
@@ -3591,9 +3612,9 @@ def format_list_page_markdown(page_title: str, list_items: List[ListItem], url: 
     return date_only, "\n".join(lines), metadata
 
 
-def generic_to_markdown(html: str, url: str, filter_level: str = 'safe') -> tuple[str, str, dict]:
+def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_crawling: bool = False) -> tuple[str, str, dict]:
     # 1. 页面类型检测
-    page_type = detect_page_type(html, url)
+    page_type = detect_page_type(html, url, is_crawling)
     
     # 1.5. 内容过滤（如果启用）
     filter_stats = {}
@@ -4620,7 +4641,11 @@ def aggregate_crawled_site(pages: list, parser_func) -> tuple[str, str, dict]:
         
         for url, html in by_depth[depth]:
             try:
-                date, content, metadata = parser_func(html, url)
+                # Pass is_crawling=True only to generic_to_markdown which supports it
+                if parser_func == generic_to_markdown:
+                    date, content, metadata = parser_func(html, url, 'safe', is_crawling=True)
+                else:
+                    date, content, metadata = parser_func(html, url)
                 
                 # Extract title from content
                 title_match = re.search(r'^#\s+(.+)$', content, re.M)
@@ -5064,7 +5089,7 @@ def main():
     else:
         logging.info("Selected parser: Generic")
         parser_name = "Generic"
-        date_only, md, metadata = generic_to_markdown(html, url, getattr(args, 'filter', 'safe'))
+        date_only, md, metadata = generic_to_markdown(html, url, getattr(args, 'filter', 'safe'), is_crawling=False)
         rendered = False
 
     # Title for filename comes from first heading
