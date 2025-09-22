@@ -182,7 +182,7 @@ def extract_url_from_text(text: str) -> tuple:
         # Specific short-link domains
         r'(?:^|\s)((?:xhslink|t|dwz|url|c|6|bit|tinyurl)\.(?:com|cn|co|ly|me)/[^\s\u4e00-\u9fff]+)',
         # Standard URLs LAST (most generic)
-        r'https?://[^\s\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]+',
+        r'https?://[^\s"\']+',
     ]
     
     for pattern in url_patterns:
