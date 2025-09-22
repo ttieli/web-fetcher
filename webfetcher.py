@@ -34,6 +34,72 @@ import time
 import random
 import signal
 from collections import deque
+
+
+@dataclass
+class FetchMetrics:
+    """Tracks metrics for web content fetching operations."""
+    primary_method: str = ""  # urllib/curl/playwright/local_file
+    fallback_method: Optional[str] = None  # curl (when SSL fails)
+    total_attempts: int = 0
+    fetch_duration: float = 0.0
+    render_duration: float = 0.0
+    ssl_fallback_used: bool = False
+    final_status: str = "unknown"  # success/failed
+    error_message: Optional[str] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert metrics to dictionary for JSON serialization."""
+        return {
+            'primary_method': self.primary_method,
+            'fallback_method': self.fallback_method,
+            'total_attempts': self.total_attempts,
+            'fetch_duration': round(self.fetch_duration, 3),
+            'render_duration': round(self.render_duration, 3),
+            'ssl_fallback_used': self.ssl_fallback_used,
+            'final_status': self.final_status,
+            'error_message': self.error_message
+        }
+    
+    def get_summary(self) -> str:
+        """Generate a human-readable summary of fetch metrics."""
+        method = self.fallback_method if self.fallback_method else self.primary_method
+        duration = self.fetch_duration + self.render_duration
+        
+        summary = f"Fetched via: {method}"
+        
+        if self.total_attempts > 1:
+            summary += f" | Attempts: {self.total_attempts}"
+        
+        if duration > 0:
+            summary += f" | Duration: {duration:.2f}s"
+        
+        if self.ssl_fallback_used:
+            summary += " | SSL fallback used"
+            
+        return summary
+
+
+def add_metrics_to_markdown(md_content: str, metrics: FetchMetrics) -> str:
+    """Add fetch metrics to markdown content as HTML comment and footer."""
+    # Add HTML comment at the top with detailed metrics
+    detailed_comment = f"""<!-- Fetch Metrics:
+  Method: {metrics.primary_method}
+  Fallback: {metrics.fallback_method or 'None'}
+  Attempts: {metrics.total_attempts}
+  Fetch Duration: {metrics.fetch_duration:.3f}s
+  Render Duration: {metrics.render_duration:.3f}s
+  SSL Fallback: {metrics.ssl_fallback_used}
+  Status: {metrics.final_status}
+  Error: {metrics.error_message or 'None'}
+-->
+
+"""
+    
+    # Add visible footer with summary
+    footer = f"\n\n---\n\n*{metrics.get_summary()}*\n"
+    
+    return detailed_comment + md_content + footer
 # BeautifulSoup导入移至动态导入机制
 
 def validate_and_encode_url(url: str) -> str:
@@ -621,24 +687,40 @@ def calculate_backoff_delay(attempt: int, base_delay: float = BASE_DELAY) -> flo
     jitter = random.uniform(0, MAX_JITTER)
     return delay + jitter
 
-def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30) -> str:
+def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30) -> tuple[str, FetchMetrics]:
     """
     Fetch HTML with exponential backoff retry logic.
     
     Retries network/temporary errors up to MAX_RETRIES times with exponential backoff.
     Immediately fails on client errors (4xx) and non-retryable server errors.
+    
+    Returns:
+        tuple[str, FetchMetrics]: (html_content, fetch_metrics)
     """
+    metrics = FetchMetrics(primary_method="urllib")
+    start_time = time.time()
     last_exception = None
     
     for attempt in range(MAX_RETRIES + 1):  # 0, 1, 2, 3 (4 total attempts)
+        metrics.total_attempts = attempt + 1
+        
         try:
             if attempt > 0:
                 delay = calculate_backoff_delay(attempt - 1)
                 logging.info(f"Retry attempt {attempt}/{MAX_RETRIES} for {url} after {delay:.1f}s delay")
                 time.sleep(delay)
             
-            # Call the original fetch_html function
-            return fetch_html_original(url, ua, timeout)
+            # Call the original fetch_html function and track metrics
+            html, fetch_metrics = fetch_html_original(url, ua, timeout)
+            
+            # Merge metrics from original fetch
+            metrics.fetch_duration = time.time() - start_time
+            metrics.ssl_fallback_used = fetch_metrics.ssl_fallback_used
+            if fetch_metrics.fallback_method:
+                metrics.fallback_method = fetch_metrics.fallback_method
+            metrics.final_status = "success"
+            
+            return html, metrics
             
         except Exception as e:
             last_exception = e
@@ -658,6 +740,10 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30)
                                  f"Try using a specific page URL instead of the root domain.")
                 else:
                     logging.info(f"Non-retryable error for {url}, failing immediately: {type(e).__name__}")
+                
+                metrics.fetch_duration = time.time() - start_time
+                metrics.final_status = "failed"
+                metrics.error_message = str(e)
                 raise e
             
             # If this was the last attempt, don't sleep
@@ -665,11 +751,15 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30)
                 break
     
     # All retry attempts exhausted
+    metrics.fetch_duration = time.time() - start_time
+    metrics.final_status = "failed"
+    metrics.error_message = str(last_exception)
     logging.error(f"All {MAX_RETRIES + 1} attempts failed for {url}, giving up")
     raise last_exception
 
-def fetch_html_with_curl(url: str, ua: Optional[str] = None, timeout: int = 30) -> str:
-    """Fallback to curl for sites with SSL issues"""
+def fetch_html_with_curl_metrics(url: str, ua: Optional[str] = None, timeout: int = 30) -> tuple[str, FetchMetrics]:
+    """Fallback to curl for sites with SSL issues with metrics tracking"""
+    metrics = FetchMetrics(primary_method="curl")
     ua = ua or "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0 Safari/537.36"
     
     try:
@@ -690,22 +780,42 @@ def fetch_html_with_curl(url: str, ua: Optional[str] = None, timeout: int = 30) 
         
         if result.returncode == 0:
             # 使用智能解码处理curl获取的字节数据
-            return smart_decode(result.stdout)
+            html = smart_decode(result.stdout)
+            metrics.final_status = "success"
+            return html, metrics
         else:
             # Log curl error details for debugging
+            error_msg = f"curl failed with code {result.returncode}: {result.stderr}"
             logging.error(f"curl failed for {validated_url}: return code {result.returncode}, stderr: {result.stderr}")
-            raise Exception(f"curl failed with code {result.returncode}: {result.stderr}")
+            metrics.final_status = "failed"
+            metrics.error_message = error_msg
+            raise Exception(error_msg)
             
     except ValueError as e:
         # URL validation error
+        error_msg = f"Invalid URL for curl: {e}"
         logging.error(f"URL validation failed for curl: {e}")
-        raise Exception(f"Invalid URL for curl: {e}")
+        metrics.final_status = "failed"
+        metrics.error_message = error_msg
+        raise Exception(error_msg)
     except subprocess.TimeoutExpired:
-        logging.error(f"curl timeout for {url}")
-        raise Exception(f"curl timeout for {url}")
+        error_msg = f"curl timeout for {url}"
+        logging.error(error_msg)
+        metrics.final_status = "failed"
+        metrics.error_message = error_msg
+        raise Exception(error_msg)
     except Exception as e:
-        logging.error(f"Failed to fetch with curl from {url}: {e}")
+        error_msg = f"Failed to fetch with curl from {url}: {e}"
+        logging.error(error_msg)
+        metrics.final_status = "failed"
+        metrics.error_message = error_msg
         raise
+
+
+def fetch_html_with_curl(url: str, ua: Optional[str] = None, timeout: int = 30) -> str:
+    """Fallback to curl for sites with SSL issues (legacy interface)"""
+    html, _ = fetch_html_with_curl_metrics(url, ua, timeout)
+    return html
 
 
 def extract_charset_from_headers(response) -> Optional[str]:
@@ -861,9 +971,17 @@ def smart_decode(data: bytes, response=None) -> str:
         return data.decode('utf-8', errors='ignore')
 
 
-def fetch_html_original(url: str, ua: Optional[str] = None, timeout: int = 30) -> str:
+def fetch_html_original(url: str, ua: Optional[str] = None, timeout: int = 30) -> tuple[str, FetchMetrics]:
+    """
+    Fetch HTML using urllib with optional curl fallback for SSL issues.
+    
+    Returns:
+        tuple[str, FetchMetrics]: (html_content, fetch_metrics)
+    """
+    metrics = FetchMetrics(primary_method="urllib")
     ua = ua or "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0 Safari/537.36"
     req = urllib.request.Request(url, headers={"User-Agent": ua, "Accept-Language": "zh-CN,zh;q=0.9"})
+    
     try:
         # Use unverified SSL context for sites with legacy SSL configurations
         with urllib.request.urlopen(req, timeout=timeout, context=ssl_context_unverified) as r:
@@ -877,13 +995,28 @@ def fetch_html_original(url: str, ua: Optional[str] = None, timeout: int = 30) -
                 logging.warning(f"Incomplete read, using partial data: {len(e.partial or b'')} bytes")
                 data = (e.partial or b"")
             # 使用智能解码替代简单的UTF-8解码
-            return smart_decode(data, r)
+            html = smart_decode(data, r)
+            metrics.final_status = "success"
+            return html, metrics
+            
     except Exception as e:
         # If SSL error, try curl as fallback
         if "SSL" in str(e) or "CERTIFICATE" in str(e).upper():
             logging.info(f"SSL error detected, falling back to curl for {url}")
-            return fetch_html_with_curl(url, ua, timeout)
+            html, curl_metrics = fetch_html_with_curl_metrics(url, ua, timeout)
+            
+            # Update metrics to reflect curl fallback
+            metrics.ssl_fallback_used = True
+            metrics.fallback_method = "curl"
+            metrics.final_status = curl_metrics.final_status
+            if curl_metrics.error_message:
+                metrics.error_message = curl_metrics.error_message
+            
+            return html, metrics
+            
         logging.error(f"Failed to fetch HTML from {url}: {e}")
+        metrics.final_status = "failed"
+        metrics.error_message = str(e)
         raise
 
 # Replace the public interface to use the retry wrapper
@@ -1122,11 +1255,24 @@ def get_effective_host(url: str, ua: Optional[str] = None) -> str:
         return urllib.parse.urlparse(url).hostname or ''
 
 
-def try_render(url: str, ua: Optional[str] = None, timeout_ms: int = 60000) -> Optional[str]:
+def try_render_with_metrics(url: str, ua: Optional[str] = None, timeout_ms: int = 60000) -> tuple[Optional[str], FetchMetrics]:
+    """
+    Try to render page with Playwright and track metrics.
+    
+    Returns:
+        tuple[Optional[str], FetchMetrics]: (html_content, fetch_metrics)
+    """
+    metrics = FetchMetrics(primary_method="playwright")
+    start_time = time.time()
+    
     try:
         from playwright.sync_api import sync_playwright
-    except Exception:
-        return None
+    except Exception as e:
+        metrics.render_duration = time.time() - start_time
+        metrics.final_status = "failed"
+        metrics.error_message = f"Playwright not available: {e}"
+        return None, metrics
+        
     html = None
     try:
         with sync_playwright() as p:
@@ -1145,8 +1291,21 @@ def try_render(url: str, ua: Optional[str] = None, timeout_ms: int = 60000) -> O
                 pass
             html = page.content()
             ctx.close(); browser.close()
-    except Exception:
-        html = None
+            
+        metrics.render_duration = time.time() - start_time
+        metrics.final_status = "success"
+        return html, metrics
+        
+    except Exception as e:
+        metrics.render_duration = time.time() - start_time
+        metrics.final_status = "failed"
+        metrics.error_message = str(e)
+        return None, metrics
+
+
+def try_render(url: str, ua: Optional[str] = None, timeout_ms: int = 60000) -> Optional[str]:
+    """Legacy interface for try_render"""
+    html, _ = try_render_with_metrics(url, ua, timeout_ms)
     return html
 
 
@@ -4467,23 +4626,101 @@ def main():
             logging.error("No pages crawled successfully")
             sys.exit(1)
     elif args.html:
+        # Local HTML file
         html = Path(args.html).read_text(encoding='utf-8', errors='ignore')
+        fetch_metrics = FetchMetrics(primary_method="local_file", final_status="success")
+        rendered = False
     else:
         html = None
+        fetch_metrics = None
         should_render = (args.render == 'always') or (args.render == 'auto' and ('xiaohongshu.com' in host or 'xhslink.com' in original_host or 'dianping.com' in host))
         logging.info(f"Render decision: {'will render' if should_render else 'static fetch only'}")
+        
         if should_render:
             logging.info("Attempting headless rendering with Playwright")
-            rendered = try_render(url, ua=ua, timeout_ms=max(1000, args.render_timeout*1000))
-            if rendered:
+            rendered_html, render_metrics = try_render_with_metrics(url, ua=ua, timeout_ms=max(1000, args.render_timeout*1000))
+            if rendered_html:
                 logging.info("Rendering successful")
-                html = rendered
+                html = rendered_html
+                fetch_metrics = render_metrics
+                rendered = True
             else:
                 logging.info("Rendering failed, falling back to static fetch")
+                rendered = False
+        else:
+            rendered = False
+            
         if html is None:
             logging.info("Fetching HTML statically")
-            html = fetch_html(url, ua=ua, timeout=args.timeout)
+            html, fetch_metrics = fetch_html(url, ua=ua, timeout=args.timeout)
             logging.info("Static fetch completed")
+
+    # Check if this is a downloadable file based on URL extension
+    parsed_url = urllib.parse.urlparse(url)
+    file_extension = parsed_url.path.lower().split('.')[-1] if '.' in parsed_url.path else ''
+    
+    # Common downloadable file extensions
+    downloadable_extensions = {
+        'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'rtf',
+        'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'tiff', 'ico',
+        'mp3', 'mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm', 'wav', 'ogg',
+        'zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'dmg', 'iso', 'exe', 'msi', 'deb', 'rpm',
+        'xml', 'json', 'csv', 'sql', 'log', 'conf', 'cfg', 'ini', 'yaml', 'yml'
+    }
+    
+    if file_extension in downloadable_extensions:
+        logging.info(f"Detected downloadable file with extension: {file_extension}")
+        
+        # Extract filename from URL
+        filename = parsed_url.path.split('/')[-1] if parsed_url.path else f"download.{file_extension}"
+        if not filename or filename == f".{file_extension}":
+            # Generate filename from domain and timestamp if path is empty
+            domain = parsed_url.hostname or 'unknown'
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{domain}_{timestamp}.{file_extension}"
+        
+        # Sanitize filename for filesystem
+        filename = sanitize_filename(filename)
+        
+        # Ensure unique filename to avoid conflicts
+        outdir = Path(args.outdir)
+        outdir.mkdir(parents=True, exist_ok=True)
+        base_path = outdir / filename
+        final_path = base_path
+        
+        counter = 1
+        while final_path.exists():
+            name_part, ext_part = filename.rsplit('.', 1) if '.' in filename else (filename, '')
+            if ext_part:
+                final_path = outdir / f"{name_part}_{counter}.{ext_part}"
+            else:
+                final_path = outdir / f"{filename}_{counter}"
+            counter += 1
+        
+        try:
+            # Download binary file directly
+            logging.info(f"Downloading file to: {final_path}")
+            
+            # Re-fetch the content as binary data
+            req = urllib.request.Request(url, headers={"User-Agent": ua, "Accept-Language": "zh-CN,zh;q=0.9"})
+            with urllib.request.urlopen(req, timeout=args.timeout, context=ssl_context_unverified) as response:
+                # Write binary data to file
+                with open(final_path, 'wb') as f:
+                    while True:
+                        chunk = response.read(8192)  # Read in 8KB chunks
+                        if not chunk:
+                            break
+                        f.write(chunk)
+            
+            file_size = final_path.stat().st_size
+            logging.info(f"File downloaded successfully: {final_path} ({file_size} bytes)")
+            print(str(final_path))
+            return  # Exit early, skip HTML processing for binary files
+            
+        except Exception as e:
+            logging.error(f"Failed to download file: {e}")
+            # Continue with normal HTML processing if download fails
+            logging.info("Falling back to HTML processing")
 
     # Optionally save HTML snapshot before parsing
     if args.save_html:
@@ -4587,6 +4824,10 @@ def main():
         md = rewrite_and_download_assets(md, md_base, outdir, ua, args.assets_root)
         logging.info("Asset downloads completed")
     
+    # Add fetch metrics to markdown content if available
+    if fetch_metrics:
+        md = add_metrics_to_markdown(md, fetch_metrics)
+    
     path.write_text(md, encoding='utf-8')
     logging.info(f"Markdown file saved: {path}")
     
@@ -4605,6 +4846,10 @@ def main():
                 'scraped_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
         }
+        
+        # Add fetch metrics to JSON if available
+        if fetch_metrics:
+            json_data['metadata']['fetch_metrics'] = fetch_metrics.to_dict()
         json_path = path.with_suffix('.json')
         json_path.write_text(json.dumps(json_data, ensure_ascii=False, indent=2), encoding='utf-8')
         logging.info(f"JSON data saved: {json_path}")
