@@ -19,7 +19,7 @@ from typing import Optional, Tuple, Dict, Any
 from urllib.parse import urlparse
 
 # Import configuration and extractors
-from safari_config import (
+from .config import (
     SAFARI_ENABLED, should_use_safari_for_url, detect_captcha_or_block,
     get_site_config, validate_safari_availability, log_safari_config
 )

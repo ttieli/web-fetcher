@@ -35,8 +35,8 @@ sys.path.insert(0, str(project_root))
 
 # Import modules
 import webfetcher
-import safari_config
-from safari_config import SAFARI_ENABLED, validate_safari_availability
+from plugins.safari import config as safari_config
+from plugins.safari.config import SAFARI_ENABLED, validate_safari_availability
 
 class SafariIntegrationValidator:
     """Validates Safari integration implementation."""
@@ -109,7 +109,7 @@ class SafariIntegrationValidator:
             
             # Check module imports
             try:
-                from safari_extractor import extract_with_safari_fallback
+                from plugins.safari.extractor import extract_with_safari_fallback
                 test_result['details']['safari_module'] = {
                     'imported': True,
                     'status': 'PASS'

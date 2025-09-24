@@ -23,7 +23,7 @@ def get_extractor_for_site(url: str) -> 'BaseExtractor':
     Returns:
         BaseExtractor: Appropriate extractor instance
     """
-    from safari_config import get_extractor_class_name
+    from plugins.safari.config import get_extractor_class_name
     
     extractor_class_name = get_extractor_class_name(url)
     

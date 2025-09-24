@@ -198,7 +198,7 @@ class PluginRegistry:
         
         # Try to register Safari plugin (optional)
         try:
-            from .safari_plugin import SafariFetcherPlugin
+            from .safari.plugin import SafariFetcherPlugin
             safari_plugin = SafariFetcherPlugin()
             if safari_plugin.is_available():
                 self.register_plugin(safari_plugin)
