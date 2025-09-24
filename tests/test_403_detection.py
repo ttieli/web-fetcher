@@ -25,7 +25,7 @@ print("\n=== Safari Module Availability ===")
 try:
     # Try importing Safari modules
     if os.environ.get('WF_ENABLE_SAFARI', '1') == '1':
-        from safari_extractor import should_fallback_to_safari, extract_with_safari_fallback
+        from plugins.safari.extractor import should_fallback_to_safari, extract_with_safari_fallback
         print("✓ Safari extractor module imported successfully")
         SAFARI_AVAILABLE = True
     else:
@@ -38,7 +38,7 @@ except ImportError as e:
 # Test Safari configuration
 if SAFARI_AVAILABLE:
     print("\n=== Safari Configuration Test ===")
-    from safari_config import (
+    from plugins.safari.config import (
         SAFARI_ENABLED, SAFARI_GOV_ONLY, SAFARI_AUTO_DETECT,
         get_site_config, should_use_safari_for_url, 
         detect_captcha_or_block, validate_safari_availability

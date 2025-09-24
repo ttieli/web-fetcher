@@ -23,12 +23,11 @@ from pathlib import Path
 from dataclasses import dataclass, field
 
 # Import configuration
-from safari_config import (
+from plugins.safari.config import (
     SAFARI_ENABLED, 
     SAFARI_SITES, 
     CAPTCHA_INDICATORS,
-    SAFARI_TIMEOUT,
-    MIN_CONTENT_LENGTH
+    SAFARI_TIMEOUT
 )
 
 # Import site-specific extractors

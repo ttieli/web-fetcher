@@ -6,8 +6,8 @@ import time
 import urllib.error
 from typing import Optional, List
 
-from .base import BaseFetcherPlugin, FetchContext, FetchResult, FetchPriority
-from .domain_config import get_domain_priority_override, should_use_safari_for_domain, get_domain_config
+from ..base import BaseFetcherPlugin, FetchContext, FetchResult, FetchPriority
+from ..domain_config import get_domain_priority_override, should_use_safari_for_domain, get_domain_config
 
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ class SafariFetcherPlugin(BaseFetcherPlugin):
                 return False
             
             # Try to import Safari functions
-            from safari_extractor import should_fallback_to_safari, extract_with_safari_fallback
+            from .extractor import should_fallback_to_safari, extract_with_safari_fallback
             logger.debug("Safari plugin dependencies available")
             return True
             
@@ -130,7 +130,7 @@ class SafariFetcherPlugin(BaseFetcherPlugin):
         start_time = time.time()
         
         try:
-            from safari_extractor import extract_with_safari_fallback
+            from .extractor import extract_with_safari_fallback
             
             logger.info(f"Using Safari to fetch: {context.url}")
             
@@ -202,7 +202,7 @@ class SafariFetcherPlugin(BaseFetcherPlugin):
             return False
             
         try:
-            from safari_extractor import should_fallback_to_safari
+            from .extractor import should_fallback_to_safari
             return should_fallback_to_safari(url, html_content, exception)
         except ImportError:
             # Basic fallback logic if safari_extractor not available

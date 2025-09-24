@@ -29,7 +29,7 @@ sys.path.insert(0, str(project_root))
 # Import modules to test
 try:
     import webfetcher
-    import safari_config
+    from plugins.safari import config as safari_config
 except ImportError as e:
     print(f"Failed to import modules: {e}")
     sys.exit(1)
