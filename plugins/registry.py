@@ -1,7 +1,7 @@
 """Plugin registry system for managing and discovering fetcher plugins."""
 
 import logging
-from typing import Dict, List, Optional, Type
+from typing import Dict, List, Optional
 from .base import IFetcherPlugin, FetchContext, FetchResult, FetchPriority
 
 

@@ -7,7 +7,7 @@ import urllib.error
 from typing import Optional, List
 
 from ..base import BaseFetcherPlugin, FetchContext, FetchResult, FetchPriority
-from ..domain_config import get_domain_priority_override, should_use_safari_for_domain, get_domain_config
+from ..domain_config import get_domain_priority_override, should_use_safari_for_domain
 
 
 logger = logging.getLogger(__name__)
