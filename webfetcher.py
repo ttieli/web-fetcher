@@ -3500,7 +3500,7 @@ def extract_list_content(html: str, base_url: str) -> tuple[str, List[ListItem]]
     td_count = len(re.findall(r'<td[^>]*>', html, re.I))
     
     # 设置处理超时
-    def timeout_handler(signum, frame):
+    def timeout_handler(_, __):
         raise TimeoutError("List content extraction timeout after 5 seconds")
     
     signal.signal(signal.SIGALRM, timeout_handler)
