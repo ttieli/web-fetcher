@@ -196,6 +196,20 @@ class PluginRegistry:
         except Exception as e:
             logger.warning(f"Failed to register HTTP fetcher plugin: {e}")
         
+        # Try to register Curl plugin (fallback for SSL issues)
+        try:
+            from .curl import CurlFetcherPlugin
+            curl_plugin = CurlFetcherPlugin()
+            if curl_plugin.is_available():
+                self.register_plugin(curl_plugin)
+                logger.debug("Auto-discovered Curl fetcher plugin")
+            else:
+                logger.debug("Curl fetcher plugin not available")
+        except ImportError as e:
+            logger.debug(f"Curl fetcher plugin not available: {e}")
+        except Exception as e:
+            logger.debug(f"Failed to register Curl fetcher plugin: {e}")
+        
         # Try to register Safari plugin (optional)
         try:
             from .safari.plugin import SafariFetcherPlugin

@@ -1460,6 +1460,7 @@ def fetch_html_original(url: str, ua: Optional[str] = None, timeout: int = 30) -
 
 # Replace the public interface to use the plugin system with retry fallback
 fetch_html = fetch_html_with_plugins
+fetch_html_with_metrics = fetch_html_with_plugins
 
 
 def resolve_final_url(url: str, ua: Optional[str] = None, timeout: int = 10, max_redirects: int = 5) -> tuple[str, bool]:
