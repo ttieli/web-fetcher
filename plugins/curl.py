@@ -13,7 +13,7 @@ class CurlFetcherPlugin(BaseFetcherPlugin):
     """Plugin that uses curl command-line tool for fetching, particularly useful for SSL-problematic sites."""
     
     def __init__(self):
-        super().__init__("curl", FetchPriority.FALLBACK)
+        super().__init__("curl_fetcher", FetchPriority.MEDIUM)
     
     def can_handle(self, context: FetchContext) -> bool:
         """
