@@ -1,0 +1,18 @@
+{
+  "timestamp": "2025-09-25 15:05:43",
+  "results": {
+    "connection": false,
+    "content_extraction": false,
+    "session_reuse": false,
+    "error_handling": false
+  },
+  "score": 0.0,
+  "test_urls": [
+    "https://mp.weixin.qq.com/s/xM_lYyQXmg4JCpd1w7kPxg?scene=1&click_id=5",
+    "https://www.xiaohongshu.com/explore/68be9ba0000000001c00f210",
+    "https://www.qstheory.cn/dukan/qs/2024-01/31/c_1130069364.htm",
+    "https://arxiv.org/pdf/2508.18190",
+    "http://www.news.cn/politics/leaders/20250305/0d1eaaa64ec74dd5916d29b28fe4fda8/c.html",
+    "https://zh.wikipedia.org/zh-hans/%E8%8C%83%E6%9B%BE"
+  ]
+}
