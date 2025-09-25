@@ -223,6 +223,20 @@ class PluginRegistry:
             logger.debug(f"Safari fetcher plugin not available: {e}")
         except Exception as e:
             logger.debug(f"Failed to register Safari fetcher plugin: {e}")
+        
+        # Try to register Playwright plugin (JavaScript rendering)
+        try:
+            from .playwright_fetcher import PlaywrightFetcherPlugin
+            playwright_plugin = PlaywrightFetcherPlugin()
+            if playwright_plugin.is_available():
+                self.register_plugin(playwright_plugin)
+                logger.debug("Auto-discovered Playwright fetcher plugin")
+            else:
+                logger.debug("Playwright fetcher plugin not available")
+        except ImportError as e:
+            logger.debug(f"Playwright fetcher plugin not available: {e}")
+        except Exception as e:
+            logger.debug(f"Failed to register Playwright fetcher plugin: {e}")
     
     def disable_auto_discovery(self) -> None:
         """Disable automatic plugin discovery."""

@@ -35,6 +35,22 @@ SAFARI_CONFIG = {
     "max_retries": 2
 }
 
+# Playwright plugin configuration
+PLAYWRIGHT_CONFIG = {
+    "enabled": True,
+    "priority": 50,  # NORMAL priority - JavaScript rendering capability
+    "timeout_ms": 60000,  # 60 seconds timeout
+    "headless": True,
+    "viewport": {"width": 390, "height": 844},
+    "device_scale_factor": 3,
+    "locale": "zh-CN",
+    "default_user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+    "wait_strategy": "domcontentloaded",  # Options: load, domcontentloaded, networkidle
+    "scroll_to_bottom": True,
+    "scroll_delay": 800,  # ms to wait before scrolling
+    "page_load_delay": 600,  # ms to wait after scrolling
+}
+
 # Global plugin system configuration
 PLUGIN_SYSTEM_CONFIG = {
     "auto_discovery": True,
@@ -48,7 +64,8 @@ def get_plugin_config(plugin_name: str) -> dict:
     config_map = {
         "curl": CURL_CONFIG,
         "http": HTTP_CONFIG, 
-        "safari": SAFARI_CONFIG
+        "safari": SAFARI_CONFIG,
+        "playwright": PLAYWRIGHT_CONFIG
     }
     return config_map.get(plugin_name, {})
 

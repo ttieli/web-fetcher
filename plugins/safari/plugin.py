@@ -17,7 +17,7 @@ class SafariFetcherPlugin(BaseFetcherPlugin):
     """Plugin that handles requests using Safari browser automation."""
     
     def __init__(self):
-        super().__init__("safari_fetcher", FetchPriority.LOW)
+        super().__init__("safari_fetcher", FetchPriority.LOW)  # Lowest priority above FALLBACK
         self._safari_available = self._check_safari_availability()
     
     def _check_safari_availability(self) -> bool:
