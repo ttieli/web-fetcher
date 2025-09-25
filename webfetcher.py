@@ -38,6 +38,9 @@ from collections import deque
 # Core modules
 from core.downloader import SimpleDownloader
 
+# Parser modules
+import parsers
+
 # Safari extraction integration (auto-enabled on macOS)
 import platform
 try:
@@ -610,7 +613,7 @@ def docusaurus_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     if m:
         title = ihtml.unescape(re.sub(r'<[^>]+>', '', m.group(1))).strip()
     if not title:
-        title = extract_meta(html, 'og:title') or extract_meta(html, 'twitter:title')
+        title = parsers.extract_meta(html, 'og:title') or parsers.extract_meta(html, 'twitter:title')
     if not title:
         m2 = re.search(r'<title[^>]*>(.*?)</title>', html, re.I|re.S)
         if m2:
@@ -768,8 +771,8 @@ def docusaurus_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     parser.feed(html_tail)
     body = ''.join(parser.parts)
     body = re.sub(r'\n{3,}', '\n\n', body).strip()
-    date_only, date_time = parse_date_like(extract_meta(html, 'article:published_time') or extract_meta(html, 'og:updated_time'))
-    desc = extract_meta(html, 'description')
+    date_only, date_time = parsers.parse_date_like(parsers.extract_meta(html, 'article:published_time') or parsers.extract_meta(html, 'og:updated_time'))
+    desc = parsers.extract_meta(html, 'description')
     lines = [f"# {title}", f"- 标题: {title}", f"- 发布时间: {date_time}", f"- 来源: [{url}]({url})", f"- 抓取时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"]
     if body:
         lines += ["", body]
@@ -779,7 +782,7 @@ def docusaurus_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     metadata = {
         'description': desc,
         'images': parser.images,
-        'publish_time': extract_meta(html, 'article:published_time') or extract_meta(html, 'og:updated_time')
+        'publish_time': parsers.extract_meta(html, 'article:published_time') or parsers.extract_meta(html, 'og:updated_time')
     }
     return date_only, "\n\n".join(lines).strip() + "\n", metadata
 
@@ -918,15 +921,15 @@ def mkdocs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     parser.feed(html_tail)
     body = ''.join(parser.parts)
     body = re.sub(r'\n{3,}', '\n\n', body).strip()
-    date_only, date_time = parse_date_like(extract_meta(html, 'article:published_time') or extract_meta(html, 'og:updated_time'))
-    desc = extract_meta(html, 'description')
+    date_only, date_time = parsers.parse_date_like(parsers.extract_meta(html, 'article:published_time') or parsers.extract_meta(html, 'og:updated_time'))
+    desc = parsers.extract_meta(html, 'description')
     lines = [f"# {title}", f"- 标题: {title}", f"- 发布时间: {date_time}", f"- 来源: [{url}]({url})", f"- 抓取时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"]
     lines += ["", body or '(未能提取正文)']
     
     metadata = {
         'description': desc,
         'images': parser.images,
-        'publish_time': extract_meta(html, 'article:published_time') or extract_meta(html, 'og:updated_time')
+        'publish_time': parsers.extract_meta(html, 'article:published_time') or parsers.extract_meta(html, 'og:updated_time')
     }
     return date_only, "\n\n".join(lines).strip() + "\n", metadata
 
@@ -1749,164 +1752,14 @@ def try_render(url: str, ua: Optional[str] = None, timeout_ms: int = 60000) -> O
     return html
 
 
-def extract_meta(html: str, name_or_prop: str) -> str:
-    m = re.search(rf'<meta[^>]+(?:name|property)=["\']{re.escape(name_or_prop)}["\'][^>]+content=["\']([^"\']*)["\']', html, re.I)
-    return ihtml.unescape(m.group(1).strip()) if m else ""
 
 
-def extract_json_ld_content(html: str) -> dict:
-    """Extract content from JSON-LD structured data."""
-    import json
-    
-    result = {
-        'description': '',
-        'articleBody': '',
-        'datePublished': '',
-        'dateModified': '',
-        'author': ''
-    }
-    
-    # Find all JSON-LD scripts
-    pattern = r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>'
-    matches = re.findall(pattern, html, re.I | re.S)
-    
-    for match in matches:
-        try:
-            data = json.loads(match.strip())
-            
-            # Handle both single object and @graph array
-            items = data.get('@graph', [data]) if isinstance(data, dict) else [data]
-            
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                    
-                item_type = item.get('@type', '')
-                
-                # Check for Article-like types
-                if any(t in str(item_type) for t in ['Article', 'NewsArticle', 'BlogPosting']):
-                    result['description'] = item.get('description', result['description'])
-                    result['articleBody'] = item.get('articleBody', item.get('text', result['articleBody']))
-                    result['datePublished'] = item.get('datePublished', result['datePublished'])
-                    result['dateModified'] = item.get('dateModified', result['dateModified'])
-                    
-                    # Extract author
-                    author = item.get('author', {})
-                    if isinstance(author, dict):
-                        result['author'] = author.get('name', '')
-                    elif isinstance(author, str):
-                        result['author'] = author
-                
-                # Also check Person/Organization for government sites
-                elif 'Person' in str(item_type) or 'Organization' in str(item_type):
-                    if not result['description']:
-                        result['description'] = item.get('description', '')
-        except (json.JSONDecodeError, AttributeError):
-            continue
-    
-    return result
 
 
-def extract_from_modern_selectors(html: str) -> str:
-    """Enhanced content extraction for modern static site generators (Hugo, Jekyll, etc.)"""
-    import re
-    import html as ihtml
-    
-    # Define CSS selector patterns for modern static sites
-    content_selectors = [
-        # Hugo/Jekyll specific patterns
-        r'<div[^>]*class=["\'][^"\']*hero-content[^"\']*["\'][^>]*>(.*?)</div>',
-        r'<div[^>]*class=["\'][^"\']*post-content[^"\']*["\'][^>]*>(.*?)</div>',
-        r'<div[^>]*class=["\'][^"\']*article-content[^"\']*["\'][^>]*>(.*?)</div>',
-        r'<div[^>]*class=["\'][^"\']*content[^"\']*["\'][^>]*>(.*?)</div>',
-        
-        # Generic CMS patterns
-        r'<div[^>]*class=["\'][^"\']*entry-content[^"\']*["\'][^>]*>(.*?)</div>',
-        r'<div[^>]*class=["\'][^"\']*main-content[^"\']*["\'][^>]*>(.*?)</div>',
-        
-        # HTML5 semantic elements
-        r'<main[^>]*>(.*?)</main>',
-        r'<article[^>]*>(.*?)</article>',
-        r'<section[^>]*class=["\'][^"\']*content[^"\']*["\'][^>]*>(.*?)</section>',
-        
-        # Landing page specific patterns
-        r'<div[^>]*class=["\'][^"\']*intro[^"\']*["\'][^>]*>(.*?)</div>',
-        r'<div[^>]*class=["\'][^"\']*description[^"\']*["\'][^>]*>(.*?)</div>',
-        r'<div[^>]*class=["\'][^"\']*lead[^"\']*["\'][^>]*>(.*?)</div>',
-    ]
-    
-    # FIXED: Collect ALL matching content instead of returning first match
-    all_content = []
-    seen_starts = set()  # For intelligent deduplication
-    
-    for pattern in content_selectors:
-        matches = re.findall(pattern, html, re.I | re.S)
-        for match in matches:
-            # Clean and extract text content
-            text = extract_text_from_html_fragment(match)
-            if text and len(text.strip()) > 200:  # Higher threshold to avoid fragments
-                # Intelligent deduplication: use first 100 chars as signature
-                text_start = text[:100].strip()
-                if text_start not in seen_starts:
-                    all_content.append(text.strip())
-                    seen_starts.add(text_start)
-    
-    # Join all unique content blocks with proper paragraph spacing
-    return '\n\n'.join(all_content) if all_content else ''
 
 
-def extract_text_from_html_fragment(html_fragment: str) -> str:
-    """Extract clean text from HTML fragment, preserving paragraph structure"""
-    import re
-    import html as ihtml
-    
-    # Replace common block elements with double newlines for paragraph separation
-    html_fragment = re.sub(r'</(?:p|div|section|article|h[1-6]|li)>', '\n\n', html_fragment, flags=re.I)
-    html_fragment = re.sub(r'<(?:br|hr)[^>]*/?>', '\n', html_fragment, flags=re.I)
-    
-    # Replace list items and other elements with single newlines
-    html_fragment = re.sub(r'</(?:li|dd|dt)>', '\n', html_fragment, flags=re.I)
-    
-    # Remove all remaining HTML tags
-    html_fragment = re.sub(r'<[^>]+>', '', html_fragment)
-    
-    # Decode HTML entities
-    text = ihtml.unescape(html_fragment)
-    
-    # Clean up whitespace
-    lines = []
-    for line in text.split('\n'):
-        line = line.strip()
-        if line and not line.startswith('var ') and not line.startswith('function'):
-            lines.append(line)
-    
-    # Join paragraphs with double newlines, remove excessive spacing
-    result = '\n\n'.join(lines)
-    result = re.sub(r'\n{3,}', '\n\n', result)
-    
-    return result.strip()
 
 
-def parse_date_like(s: Optional[str]) -> tuple[str, str]:
-    if not s:
-        now = datetime.datetime.now()
-        return now.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d %H:%M:%S")
-    s = str(s)
-    m = re.match(r"^(\d{10,})(?::\d{2})?$", s)
-    dt = None
-    if m:
-        num = int(m.group(1))
-        dt = datetime.datetime.fromtimestamp(num/1000 if num > 10_000_000_000 else num)
-    if dt is None:
-        s2 = s.replace('年','-').replace('月','-').replace('日','').replace('/','-')
-        m2 = re.search(r'(20\d{2})-([01]?\d)-([0-3]?\d)', s2)
-        if m2:
-            y, mo, d = m2.groups()
-            dt = datetime.datetime(int(y), int(mo), int(d))
-    if dt is None:
-        now = datetime.datetime.now()
-        return now.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d %H:%M:%S")
-    return dt.strftime("%Y-%m-%d"), dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def ensure_unique_path(outdir: Path, base: str) -> Path:
@@ -1922,7 +1775,7 @@ def ensure_unique_path(outdir: Path, base: str) -> Path:
 
 
 def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
-    title = extract_meta(html, 'og:title')
+    title = parsers.extract_meta(html, 'og:title')
     if not title:
         m = re.search(r'<h1[^>]*class=["\'][^"\']*rich_media_title[^"\']*["\'][^>]*>(.*?)</h1>', html, re.I|re.S)
         if m:
@@ -1931,7 +1784,7 @@ def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     if not title:
         title = '未命名'
 
-    author = extract_meta(html, 'og:article:author')
+    author = parsers.extract_meta(html, 'og:article:author')
     if not author:
         m = re.search(r'<span[^>]*class=["\'][^"\']*rich_media_meta\s+rich_media_meta_text[^"\']*["\'][^>]*>(.*?)</span>', html, re.I|re.S)
         if m:
@@ -1943,7 +1796,7 @@ def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
         if m:
             pub = ihtml.unescape(m.group(1).strip())
             break
-    date_only, date_time = parse_date_like(pub)
+    date_only, date_time = parsers.parse_date_like(pub)
 
     class WxParser(HTMLParser):
         def __init__(self):
@@ -2718,7 +2571,7 @@ def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
         t = re.sub(r"\s*-\s*小红书\s*$", "", t)
         return t
     # title
-    title = clean_title(extract_meta(html, 'og:title') or extract_meta(html, 'twitter:title') or '')
+    title = clean_title(parsers.extract_meta(html, 'og:title') or parsers.extract_meta(html, 'twitter:title') or '')
     if not title:
         m = re.search(r'<title[^>]*>(.*?)</title>', html, re.I|re.S)
         if m:
@@ -2759,10 +2612,10 @@ def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     if not date_raw:
         m = re.search(r'"(datePublished|uploadDate)"\s*:\s*"([^"]+)"', html)
         if m: date_raw = m.group(2)
-    date_only, date_time = parse_date_like(date_raw)
+    date_only, date_time = parsers.parse_date_like(date_raw)
 
-    desc = extract_meta(html, 'description').replace('\t','\n\n').strip()
-    cover = extract_meta(html, 'og:image')
+    desc = parsers.extract_meta(html, 'description').replace('\t','\n\n').strip()
+    cover = parsers.extract_meta(html, 'og:image')
     
     # ENHANCED IMAGE EXTRACTION - Using XHSImageExtractor for comprehensive extraction
     try:
@@ -2891,7 +2744,7 @@ def dianping_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
         return t
 
     # Prefer page/og/twitter titles
-    title = clean_title(extract_meta(html, 'og:title') or extract_meta(html, 'twitter:title') or '')
+    title = clean_title(parsers.extract_meta(html, 'og:title') or parsers.extract_meta(html, 'twitter:title') or '')
     if not title:
         m = re.search(r'<title[^>]*>(.*?)</title>', html, re.I | re.S)
         if m:
@@ -2961,13 +2814,13 @@ def dianping_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
             hours = '; '.join(chunks)
 
     # Description
-    desc = extract_meta(html, 'description').strip()
+    desc = parsers.extract_meta(html, 'description').strip()
 
     # Publish time is not meaningful for shops; use now
-    date_only, date_time = parse_date_like(None)
+    date_only, date_time = parsers.parse_date_like(None)
 
     # Images: collect likely shop images from HTML and script JSONs
-    cover = extract_meta(html, 'og:image')
+    cover = parsers.extract_meta(html, 'og:image')
     imgs: list[str] = []
     seen = set()
     def consider(u: str):
@@ -3512,7 +3365,7 @@ def extract_list_content(html: str, base_url: str) -> tuple[str, List[ListItem]]
     
     try:
         # 1. 提取页面标题
-        page_title = extract_meta(html, 'og:title') or extract_meta(html, 'twitter:title')
+        page_title = parsers.extract_meta(html, 'og:title') or parsers.extract_meta(html, 'twitter:title')
         if not page_title:
             title_match = re.search(r'<title[^>]*>(.*?)</title>', html, re.I | re.S)
             if title_match:
@@ -3854,7 +3707,7 @@ def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_craw
     # 2. 如果是列表页面，使用专门的列表处理逻辑
     if page_type == PageType.LIST_INDEX:
         logging.info(f"Detected list page, using list extraction for: {url}")
-        page_title, list_items = extract_list_content(html, url)
+        page_title, list_items = parsers.extract_list_content(html, url)
         
         # 如果成功提取到列表项，使用列表格式输出
         if list_items and len(list_items) >= 3:  # 至少3个项目才认为是有效列表
@@ -3866,17 +3719,17 @@ def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_craw
     # 3. 文章页面处理（原有逻辑）
     logging.info(f"Processing as article page: {url}")
     
-    title = extract_meta(html, 'og:title') or extract_meta(html, 'twitter:title')
+    title = parsers.extract_meta(html, 'og:title') or parsers.extract_meta(html, 'twitter:title')
     if not title:
         m = re.search(r'<title[^>]*>(.*?)</title>', html, re.I|re.S)
         if m:
             title = ihtml.unescape(re.sub(r'<[^>]+>', '', m.group(1))).strip()
     title = title or '未命名'
-    date_only, date_time = parse_date_like(extract_meta(html, 'article:published_time') or extract_meta(html, 'og:updated_time'))
+    date_only, date_time = parsers.parse_date_like(parsers.extract_meta(html, 'article:published_time') or parsers.extract_meta(html, 'og:updated_time'))
     
     # Priority 1: Try JSON-LD extraction first
     desc = ''
-    json_ld = extract_json_ld_content(html)
+    json_ld = parsers.extract_json_ld_content(html)
     if json_ld.get('articleBody'):
         desc = json_ld['articleBody']
     elif json_ld.get('description'):
@@ -3884,7 +3737,7 @@ def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_craw
     
     # Priority 1.5: Modern static site generators (Hugo, Jekyll, etc.)
     if not desc:
-        desc = extract_from_modern_selectors(html)
+        desc = parsers.extract_from_modern_selectors(html)
         if desc:
             # 质量检查：如果内容太短或包含明显的版权信息，则不使用
             if (len(desc) < 200 or 
@@ -4021,12 +3874,12 @@ def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_craw
     
     # Priority 5: Fallback to meta description (existing code)
     if not desc:
-        desc = extract_meta(html, 'description').strip()
+        desc = parsers.extract_meta(html, 'description').strip()
     
     # Update date if JSON-LD has it and no meta date was found
-    original_meta_date = extract_meta(html, 'article:published_time') or extract_meta(html, 'og:updated_time')
+    original_meta_date = parsers.extract_meta(html, 'article:published_time') or parsers.extract_meta(html, 'og:updated_time')
     if json_ld.get('datePublished') and not original_meta_date:
-        date_only, date_time = parse_date_like(json_ld['datePublished'])
+        date_only, date_time = parsers.parse_date_like(json_ld['datePublished'])
     
     # Extract images and videos from content
     images = []
@@ -4068,7 +3921,7 @@ def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_craw
         'description': desc,
         'images': images,
         'videos': videos,
-        'publish_time': json_ld.get('datePublished') or extract_meta(html, 'article:published_time') or extract_meta(html, 'og:updated_time'),
+        'publish_time': json_ld.get('datePublished') or parsers.extract_meta(html, 'article:published_time') or parsers.extract_meta(html, 'og:updated_time'),
         'author': json_ld.get('author', ''),
         'filter_level': filter_level,
         'filter_stats': filter_stats
