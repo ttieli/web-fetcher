@@ -11,6 +11,7 @@ class FetchPriority(IntEnum):
     """Priority levels for fetcher plugins. Higher values = higher priority."""
     FALLBACK = 0      # Last resort fallback
     LOW = 10          # Low priority
+    MEDIUM = 50       # Medium priority
     NORMAL = 50       # Default priority  
     HIGH = 100        # High priority
     DOMAIN_OVERRIDE = 500  # Domain-specific priority override
