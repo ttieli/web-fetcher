@@ -1,0 +1,43 @@
+{
+  "timestamp": "2025-09-25T15:05:12.471882",
+  "tests": [
+    {
+      "name": "Port Availability Test",
+      "status": "PASS",
+      "message": "端口 9222 已开放且可访问",
+      "timestamp": "2025-09-25T15:05:12.472197"
+    },
+    {
+      "name": "Selenium Connection Test",
+      "status": "FAIL",
+      "message": "Selenium连接失败: Message: session not created: cannot connect to chrome at 127.0.0.1:9222\nfrom session not created: This version of ChromeDriver only supports Chrome version 131\nCurrent browser version is 140.0.7339.207; For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#sessionnotcreatedexception\nStacktrace:\n0   chromedriver                        0x0000000104d25db2 chromedriver + 6696370\n1   chromedriver                        0x0000000104d1dbca chromedriver + 6663114\n2   chromedriver                        0x0000000104725e3e chromedriver + 405054\n3   chromedriver                        0x00000001047656fe chromedriver + 665342\n4   chromedriver                        0x000000010476468d chromedriver + 661133\n5   chromedriver                        0x00000001047597ec chromedriver + 616428\n6   chromedriver                        0x00000001047a7ee3 chromedriver + 937699\n7   chromedriver                        0x00000001047a75e6 chromedriver + 935398\n8   chromedriver                        0x000000010479b613 chromedriver + 886291\n9   chromedriver                        0x0000000104768950 chromedriver + 678224\n10  chromedriver                        0x000000010476934e chromedriver + 680782\n11  chromedriver                        0x0000000104cf36a0 chromedriver + 6489760\n12  chromedriver                        0x0000000104cf6149 chromedriver + 6500681\n13  chromedriver                        0x0000000104cf5c6b chromedriver + 6499435\n14  chromedriver                        0x0000000104cf65d5 chromedriver + 6501845\n15  chromedriver                        0x0000000104cde454 chromedriver + 6403156\n16  chromedriver                        0x0000000104cf68bf chromedriver + 6502591\n17  chromedriver                        0x0000000104ccf884 chromedriver + 6342788\n18  chromedriver                        0x0000000104d0e2a8 chromedriver + 6599336\n19  chromedriver                        0x0000000104d0e465 chromedriver + 6599781\n20  chromedriver                        0x0000000104d1d798 chromedriver + 6662040\n21  libsystem_pthread.dylib             0x00007ff809df6e59 _pthread_start + 115\n22  libsystem_pthread.dylib             0x00007ff809df2857 thread_start + 15\n",
+      "timestamp": "2025-09-25T15:05:39.219130",
+      "details": {
+        "error": "Message: session not created: cannot connect to chrome at 127.0.0.1:9222\nfrom session not created: This version of ChromeDriver only supports Chrome version 131\nCurrent browser version is 140.0.7339.207; For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#sessionnotcreatedexception\nStacktrace:\n0   chromedriver                        0x0000000104d25db2 chromedriver + 6696370\n1   chromedriver                        0x0000000104d1dbca chromedriver + 6663114\n2   chromedriver                        0x0000000104725e3e chromedriver + 405054\n3   chromedriver                        0x00000001047656fe chromedriver + 665342\n4   chromedriver                        0x000000010476468d chromedriver + 661133\n5   chromedriver                        0x00000001047597ec chromedriver + 616428\n6   chromedriver                        0x00000001047a7ee3 chromedriver + 937699\n7   chromedriver                        0x00000001047a75e6 chromedriver + 935398\n8   chromedriver                        0x000000010479b613 chromedriver + 886291\n9   chromedriver                        0x0000000104768950 chromedriver + 678224\n10  chromedriver                        0x000000010476934e chromedriver + 680782\n11  chromedriver                        0x0000000104cf36a0 chromedriver + 6489760\n12  chromedriver                        0x0000000104cf6149 chromedriver + 6500681\n13  chromedriver                        0x0000000104cf5c6b chromedriver + 6499435\n14  chromedriver                        0x0000000104cf65d5 chromedriver + 6501845\n15  chromedriver                        0x0000000104cde454 chromedriver + 6403156\n16  chromedriver                        0x0000000104cf68bf chromedriver + 6502591\n17  chromedriver                        0x0000000104ccf884 chromedriver + 6342788\n18  chromedriver                        0x0000000104d0e2a8 chromedriver + 6599336\n19  chromedriver                        0x0000000104d0e465 chromedriver + 6599781\n20  chromedriver                        0x0000000104d1d798 chromedriver + 6662040\n21  libsystem_pthread.dylib             0x00007ff809df6e59 _pthread_start + 115\n22  libsystem_pthread.dylib             0x00007ff809df2857 thread_start + 15\n"
+      }
+    },
+    {
+      "name": "Page Navigation Test",
+      "status": "SKIP",
+      "message": "WebDriver未初始化，跳过测试",
+      "timestamp": "2025-09-25T15:05:40.224542"
+    },
+    {
+      "name": "Browser Control Test",
+      "status": "SKIP",
+      "message": "WebDriver未初始化，跳过测试",
+      "timestamp": "2025-09-25T15:05:41.226480"
+    },
+    {
+      "name": "Performance Metrics Test",
+      "status": "SKIP",
+      "message": "WebDriver未初始化，跳过测试",
+      "timestamp": "2025-09-25T15:05:42.228354"
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "passed": 1,
+    "failed": 4
+  }
+}

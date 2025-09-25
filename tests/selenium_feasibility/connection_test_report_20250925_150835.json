@@ -1,0 +1,133 @@
+{
+  "timestamp": "2025-09-25T15:08:03.757155",
+  "tests": [
+    {
+      "name": "Port Availability Test",
+      "status": "PASS",
+      "message": "端口 9222 已开放且可访问",
+      "timestamp": "2025-09-25T15:08:03.757538"
+    },
+    {
+      "name": "Selenium Connection Test",
+      "status": "PASS",
+      "message": "成功连接到Chrome Debug实例",
+      "timestamp": "2025-09-25T15:08:16.683878",
+      "details": {
+        "current_window": "E808997BB37BC923383603CBA2A21740",
+        "total_windows": 4,
+        "session_id": "7bba91237f034c9af209a2460613272e"
+      }
+    },
+    {
+      "name": "Page Navigation Test",
+      "status": "PASS",
+      "message": "成功导航到所有测试页面",
+      "timestamp": "2025-09-25T15:08:31.107419",
+      "details": {
+        "navigation_results": [
+          {
+            "url": "https://www.example.com",
+            "current_url": "https://www.example.com/",
+            "title": "Example Domain",
+            "load_time": "0.07s",
+            "success": true
+          },
+          {
+            "url": "https://www.google.com",
+            "current_url": "https://www.google.com/sorry/index?continue=https://www.google.com/&q=EgRo7t7iGOLU08YGIimhClcQ5haCxDSte5uNp3oLvig_J2CmywDPRakeCAguZNPTnNn5j9pfkTICclJaAUM",
+            "title": "https://www.google.com/",
+            "load_time": "6.53s",
+            "success": true
+          },
+          {
+            "url": "https://httpbin.org/html",
+            "current_url": "https://httpbin.org/html",
+            "title": "503 Service Temporarily Unavailable",
+            "load_time": "6.15s",
+            "success": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "Browser Control Test",
+      "status": "PASS",
+      "message": "所有浏览器控制功能正常",
+      "timestamp": "2025-09-25T15:08:32.547736",
+      "details": {
+        "control_tests": [
+          {
+            "test": "获取页面源码",
+            "success": true,
+            "details": "源码长度: 1233"
+          },
+          {
+            "test": "执行JavaScript",
+            "success": true,
+            "details": "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Ap..."
+          },
+          {
+            "test": "获取Cookies",
+            "success": true,
+            "details": "Cookie数量: 0"
+          },
+          {
+            "test": "窗口大小控制",
+            "success": true,
+            "details": "调整窗口: {'width': 1920, 'height': 968} -> {'width': 1024, 'height': 768}"
+          },
+          {
+            "test": "截图功能",
+            "success": true,
+            "details": "截图大小: 87848 bytes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Performance Metrics Test",
+      "status": "PASS",
+      "message": "成功收集性能指标",
+      "timestamp": "2025-09-25T15:08:34.341667",
+      "details": {
+        "performance_data": {
+          "memory": {
+            "jsHeapSizeLimit": 4294705152,
+            "totalJSHeapSize": 1319339,
+            "usedJSHeapSize": 928899
+          },
+          "navigation": {
+            "redirectCount": 0,
+            "type": 0
+          },
+          "timing": {
+            "domContentLoaded": 6,
+            "domInteractive": 6,
+            "loadComplete": 7,
+            "responseEnd": 0
+          }
+        },
+        "response_times": [
+          {
+            "url": "https://httpbin.org/html",
+            "response_time": "0.348s"
+          },
+          {
+            "url": "https://www.example.com",
+            "response_time": "0.033s"
+          },
+          {
+            "url": "https://httpbin.org/json",
+            "response_time": "0.344s"
+          }
+        ],
+        "average_response_time": "0.242s"
+      }
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0
+  }
+}
