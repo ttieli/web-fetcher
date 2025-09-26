@@ -42,6 +42,9 @@ from .extractor import (
 
 from .plugin import SafariFetcherPlugin
 
+# Backward compatibility alias
+SafariPlugin = SafariFetcherPlugin
+
 # Expose key components for external use
 __all__ = [
     # Configuration
@@ -59,5 +62,6 @@ __all__ = [
     'extract_with_safari_fallback',
     
     # Plugin
-    'SafariFetcherPlugin'
+    'SafariFetcherPlugin',
+    'SafariPlugin'  # Backward compatibility alias
 ]
