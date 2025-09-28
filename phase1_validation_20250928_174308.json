@@ -1,0 +1,45 @@
+{
+  "timestamp": "2025-09-28T17:43:08.680319",
+  "tests": [
+    {
+      "name": "BBC News Article",
+      "url": "https://www.bbc.com/news/technology-67890123",
+      "status": "error",
+      "error": "module 'webfetcher' has no attribute 'fetch_content'",
+      "has_content": false,
+      "content_length": 0
+    },
+    {
+      "name": "CNN Article",
+      "url": "https://edition.cnn.com/2024/01/15/tech/ai-news/index.html",
+      "status": "error",
+      "error": "module 'webfetcher' has no attribute 'fetch_content'",
+      "has_content": false,
+      "content_length": 0
+    },
+    {
+      "name": "Reuters Article",
+      "url": "https://www.reuters.com/technology/artificial-intelligence/",
+      "status": "error",
+      "error": "module 'webfetcher' has no attribute 'fetch_content'",
+      "has_content": false,
+      "content_length": 0
+    }
+  ],
+  "summary": {
+    "passed": 0,
+    "failed": 3,
+    "errors": [
+      "BBC News Article: module 'webfetcher' has no attribute 'fetch_content'",
+      "CNN Article: module 'webfetcher' has no attribute 'fetch_content'",
+      "Reuters Article: module 'webfetcher' has no attribute 'fetch_content'"
+    ]
+  },
+  "import_tests": {
+    "webfetcher_import": true,
+    "safari_plugin": false,
+    "errors": [
+      "Safari plugin import: No module named 'plugins.safari.safari_fetcher'"
+    ]
+  }
+}
