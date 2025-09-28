@@ -150,6 +150,45 @@ def ensure_output_dir(output_dir):
         print(f"警告: 无法创建输出目录 {output_dir}: {e}")
         return False
 
+def clean_wechat_url(url: str) -> str:
+    """
+    Clean WeChat URL by removing problematic parameters like poc_token.
+    poc_token causes WeChat to return error pages instead of content.
+    
+    Args:
+        url: WeChat URL that may contain poc_token
+        
+    Returns:
+        str: Cleaned URL without poc_token
+    """
+    if 'mp.weixin.qq.com' in url and 'poc_token=' in url:
+        # Remove poc_token parameter
+        import urllib.parse
+        parsed = urllib.parse.urlparse(url)
+        params = urllib.parse.parse_qs(parsed.query)
+        
+        # Remove poc_token from parameters
+        if 'poc_token' in params:
+            del params['poc_token']
+            
+        # Rebuild query string
+        new_query = urllib.parse.urlencode(params, doseq=True)
+        
+        # Rebuild URL
+        cleaned_url = urllib.parse.urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            new_query,
+            parsed.fragment
+        ))
+        
+        logger.info(f"✓ 已移除poc_token参数（该参数会导致微信返回错误页面）")
+        return cleaned_url
+    
+    return url
+
 def extract_url_from_text(text: str) -> tuple:
     """
     Extract URL from mixed text content (e.g., social media copy-paste).
@@ -233,6 +272,8 @@ def main():
     if extracted_url or 'http://' in cmd or 'https://' in cmd or ('.' in cmd and cmd not in ['help', '-h', '--help']):
         # Use extracted URL if available, otherwise process normally
         url = extracted_url if extracted_url else (cmd if cmd.startswith('http') else f'https://{cmd}')
+        # Clean WeChat URLs (remove poc_token that causes errors)
+        url = clean_wechat_url(url)
         # Parse output directory
         output_dir, remaining_args = parse_output_dir(raw_args[1:])
         ensure_output_dir(output_dir)
@@ -255,6 +296,9 @@ def main():
         
         if not url.startswith('http'):
             url = f'https://{url}'
+        
+        # Clean WeChat URLs (remove poc_token that causes errors)
+        url = clean_wechat_url(url)
         
         # Parse output directory
         output_dir, remaining_args = parse_output_dir(raw_args[2:])
