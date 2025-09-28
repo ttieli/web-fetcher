@@ -21,7 +21,6 @@ import re
 import http.client as http_client
 import urllib.parse
 import urllib.request
-import urllib.error
 import ssl
 import subprocess
 import sys
@@ -43,7 +42,17 @@ from core.downloader import SimpleDownloader
 import parsers
 
 # Safari integration removed - using urllib/curl only
+SAFARI_AVAILABLE = False
 
+# Plugin system integration (optional)
+PLUGIN_SYSTEM_AVAILABLE = False
+try:
+    from plugins import get_global_registry, FetchContext
+    PLUGIN_SYSTEM_AVAILABLE = True
+    logging.info("Plugin system available")
+except ImportError:
+    logging.debug("Plugin system not available - using legacy fetch methods")
+    PLUGIN_SYSTEM_AVAILABLE = False
 
 
 @dataclass
@@ -1003,6 +1012,52 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30)
     raise last_exception
 
 
+def fetch_html_with_plugins(url: str, ua: Optional[str] = None, timeout: int = 30) -> tuple[str, FetchMetrics]:
+    """
+    Fetch HTML using the plugin system with fallback to legacy methods.
+    
+    This function provides the new plugin-based fetch approach while maintaining
+    backward compatibility with the existing codebase.
+    
+    Returns:
+        tuple[str, FetchMetrics]: (html_content, fetch_metrics)
+    """
+    if not PLUGIN_SYSTEM_AVAILABLE:
+        # Fallback to legacy method
+        logging.debug("Plugin system not available, using legacy fetch method")
+        return fetch_html_with_retry(url, ua, timeout)
+    
+    try:
+        # Get the global plugin registry
+        registry = get_global_registry()
+        
+        # Create fetch context
+        context = FetchContext(
+            url=url,
+            user_agent=ua,
+            timeout=timeout,
+            max_retries=3
+        )
+        
+        # Attempt to fetch using plugins
+        result = registry.fetch_with_fallback(context)
+        
+        if result.success and result.html_content:
+            # Convert plugin result to legacy format
+            legacy_metrics = result.to_legacy_metrics()
+            return result.html_content, legacy_metrics
+        else:
+            # Plugin fetch failed, fallback to legacy method
+            logging.warning(f"Plugin fetch failed for {url}: {result.error_message}")
+            logging.info(f"Falling back to legacy fetch method for {url}")
+            return fetch_html_with_retry(url, ua, timeout)
+            
+    except Exception as e:
+        # Plugin system error, fallback to legacy method
+        logging.warning(f"Plugin system error for {url}: {e}")
+        logging.info(f"Falling back to legacy fetch method for {url}")
+        return fetch_html_with_retry(url, ua, timeout)
+
 
 def fetch_html_with_curl_metrics(url: str, ua: Optional[str] = None, timeout: int = 30) -> tuple[str, FetchMetrics]:
     """Fallback to curl for sites with SSL issues with metrics tracking"""
@@ -1266,9 +1321,9 @@ def fetch_html_original(url: str, ua: Optional[str] = None, timeout: int = 30) -
         metrics.error_message = str(e)
         raise
 
-# Public interface - using direct urllib/curl with retry fallback
-fetch_html = fetch_html_with_retry
-fetch_html_with_metrics = fetch_html_with_retry
+# Replace the public interface to use the plugin system with retry fallback
+fetch_html = fetch_html_with_plugins
+fetch_html_with_metrics = fetch_html_with_plugins
 
 
 def resolve_final_url(url: str, ua: Optional[str] = None, timeout: int = 10, max_redirects: int = 5) -> tuple[str, bool]:
