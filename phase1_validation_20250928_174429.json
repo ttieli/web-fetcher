@@ -1,0 +1,39 @@
+{
+  "timestamp": "2025-09-28T17:44:19.989174",
+  "tests": [
+    {
+      "name": "BBC News Article",
+      "url": "https://www.bbc.com/news/technology-67890123",
+      "status": "passed",
+      "error": null,
+      "has_content": true,
+      "content_length": 3347
+    },
+    {
+      "name": "CNN Article",
+      "url": "https://edition.cnn.com/2024/01/15/tech/ai-news/index.html",
+      "status": "passed",
+      "error": null,
+      "has_content": true,
+      "content_length": 1052
+    },
+    {
+      "name": "Reuters Article",
+      "url": "https://www.reuters.com/technology/artificial-intelligence/",
+      "status": "passed",
+      "error": null,
+      "has_content": true,
+      "content_length": 1693
+    }
+  ],
+  "summary": {
+    "passed": 3,
+    "failed": 0,
+    "errors": []
+  },
+  "import_tests": {
+    "webfetcher_import": true,
+    "safari_plugin": true,
+    "errors": []
+  }
+}
