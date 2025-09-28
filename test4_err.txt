@@ -1,0 +1,8 @@
+2025-09-28 10:28:49 - WARNING - Error resolving redirects for https://this-domain-should-not-exist-12345.com: <urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1032)>
+2025-09-28 10:28:49 - WARNING - Using urllib/static fetch per user preference (overriding heuristics)
+2025-09-28 10:28:49 - WARNING - Render decision: static fetch only
+2025-09-28 10:29:01 - ERROR - curl failed for https://this-domain-should-not-exist-12345.com: return code 35, stderr: b''
+2025-09-28 10:29:01 - ERROR - Failed to fetch with curl from https://this-domain-should-not-exist-12345.com: curl failed with code 35: b''
+2025-09-28 10:29:01 - WARNING - HTTP initial fetch failed for https://this-domain-should-not-exist-12345.com: Exception: curl failed with code 35: b''
+2025-09-28 10:29:01 - ERROR - All 4 HTTP attempts failed for https://this-domain-should-not-exist-12345.com, giving up
+2025-09-28 10:29:07 - ERROR - curl failed for https://this-domain-should-not-exist-12345.com: return code 35

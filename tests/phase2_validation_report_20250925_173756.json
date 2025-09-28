@@ -1,0 +1,109 @@
+{
+  "test_run_info": {
+    "timestamp": "2025-09-25T17:37:56.800182",
+    "phase": "Phase 2 - Selenium Plugin",
+    "goal": "Validate Selenium WebDriver Chrome Debug Connection"
+  },
+  "tests": {
+    "chrome_debug_detection": {
+      "success": false,
+      "error": "Selenium not available. Install with: pip install selenium webdriver-manager",
+      "exception_type": "ImportError"
+    },
+    "selenium_plugin_availability": {
+      "success": true,
+      "plugin_available": false,
+      "plugin_name": "SeleniumFetcherPlugin",
+      "priority": 50,
+      "capabilities": [
+        "javascript_execution",
+        "dynamic_content",
+        "chrome_debug_connection",
+        "session_reuse",
+        "retry_support"
+      ]
+    },
+    "chrome_manager_init": {
+      "success": false,
+      "error": "Selenium not available. Install with: pip install selenium webdriver-manager",
+      "exception_type": "ImportError"
+    },
+    "plugin_registration": {
+      "success": true,
+      "enabled_plugins": [
+        "HTTPFetcherPlugin",
+        "SeleniumFetcherPlugin"
+      ],
+      "registered_plugins": [
+        "http_fetcher"
+      ],
+      "selenium_enabled": true,
+      "selenium_registered": false,
+      "total_registered": 1
+    },
+    "content_extraction": {
+      "success": false,
+      "total_tested": 3,
+      "successful_extractions": [],
+      "failed_extractions": [
+        {
+          "url": "https://example.com",
+          "error": "Plugin cannot handle URL",
+          "attempts": 0
+        },
+        {
+          "url": "https://httpbin.org/json",
+          "error": "Plugin cannot handle URL",
+          "attempts": 0
+        },
+        {
+          "url": "https://httpbin.org/html",
+          "error": "Plugin cannot handle URL",
+          "attempts": 0
+        }
+      ],
+      "success_rate": 0.0
+    },
+    "error_handling": {
+      "success": false,
+      "error": "Selenium not available. Install with: pip install selenium webdriver-manager",
+      "exception_type": "ImportError"
+    },
+    "configuration_system": {
+      "success": true,
+      "enabled_plugins": [
+        "HTTPFetcherPlugin",
+        "SeleniumFetcherPlugin"
+      ],
+      "selenium_enabled": true,
+      "selenium_config": {
+        "debug_host": "127.0.0.1",
+        "debug_port": 9222,
+        "page_load_timeout": 30,
+        "implicit_wait": 10,
+        "script_timeout": 30,
+        "enable_headless": false,
+        "window_size": [
+          1920,
+          1080
+        ],
+        "max_connection_retries": 3,
+        "connection_retry_delay": 1.0,
+        "enable_images": false,
+        "enable_css": false,
+        "enable_javascript": true,
+        "wait_for_dynamic_content": true,
+        "dynamic_content_timeout": 5
+      },
+      "config_fields_count": 14
+    }
+  },
+  "summary": {
+    "total_tests": 7,
+    "passed_tests": 3,
+    "failed_tests": 4,
+    "success_rate": 0.42857142857142855,
+    "overall_status": "FAIL",
+    "chrome_debug_available": true
+  }
+}
