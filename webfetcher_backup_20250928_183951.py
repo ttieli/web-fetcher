@@ -41,8 +41,20 @@ from core.downloader import SimpleDownloader
 # Parser modules
 import parsers
 
-# Safari integration removed - using urllib/curl only
-SAFARI_AVAILABLE = False
+# Safari extraction integration (auto-enabled on macOS)
+import platform
+try:
+    # Auto-enable Safari on macOS systems
+    if platform.system() == "Darwin":
+        from plugins.safari.extractor import should_fallback_to_safari, extract_with_safari_fallback
+        SAFARI_AVAILABLE = True
+        logging.info("Safari integration auto-enabled on macOS")
+    else:
+        SAFARI_AVAILABLE = False
+        logging.info("Safari integration disabled - not running on macOS")
+except ImportError:
+    SAFARI_AVAILABLE = False
+    logging.warning("Safari integration unavailable - plugins.safari.extractor module not found")
 
 # Plugin system integration (optional)
 PLUGIN_SYSTEM_AVAILABLE = False
@@ -934,6 +946,50 @@ def calculate_backoff_delay(attempt: int, base_delay: float = BASE_DELAY) -> flo
     jitter = random.uniform(0, MAX_JITTER)
     return delay + jitter
 
+def requires_safari_preemptively(url: str) -> bool:
+    """
+    Check if a URL requires Safari preemptively based on known problematic domains.
+    
+    These domains are known to consistently block automated requests and require
+    Safari's browser-based approach from the start.
+    
+    Args:
+        url (str): The URL to check
+        
+    Returns:
+        bool: True if Safari should be used preemptively
+    """
+    if not SAFARI_AVAILABLE:
+        return False
+    
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower()
+        
+        # Remove www. prefix for consistent matching
+        if domain.startswith('www.'):
+            domain = domain[4:]
+        
+        # Known problematic domains that require Safari preemptively
+        problematic_domains = [
+            'ccdi.gov.cn',
+            'qcc.com', 
+            'tianyancha.com',
+            'gsxt.gov.cn'
+        ]
+        
+        # Check if the domain or any parent domain matches
+        for problematic_domain in problematic_domains:
+            if domain == problematic_domain or domain.endswith('.' + problematic_domain):
+                logging.info(f"Domain {domain} requires preemptive Safari usage")
+                return True
+                
+        return False
+        
+    except Exception as e:
+        logging.warning(f"Error checking preemptive Safari requirement for {url}: {e}")
+        return False
 
 def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30) -> tuple[str, FetchMetrics]:
     """
@@ -949,6 +1005,26 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30)
     start_time = time.time()
     last_exception = None
     
+    # Check if this URL requires preemptive Safari usage
+    if requires_safari_preemptively(url):
+        try:
+            logging.info(f"Using preemptive Safari for known problematic domain: {url}")
+            html, safari_metrics = extract_with_safari_fallback(url)
+            
+            # Convert Safari metrics to FetchMetrics format
+            metrics.primary_method = "safari"
+            metrics.fallback_method = "preemptive_safari"
+            metrics.fetch_duration = time.time() - start_time
+            metrics.final_status = "success"
+            metrics.error_message = None
+            metrics.total_attempts = 1
+            
+            return html, metrics
+            
+        except Exception as safari_error:
+            logging.warning(f"Preemptive Safari failed for {url}: {safari_error}")
+            logging.info(f"Falling back to standard HTTP methods for {url}")
+            # Continue with normal fetch process
     
     for attempt in range(MAX_RETRIES + 1):  # 0, 1, 2, 3 (4 total attempts)
         metrics.total_attempts = attempt + 1
@@ -980,6 +1056,29 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30)
             else:
                 logging.warning(f"Retry {attempt}/{MAX_RETRIES} failed for {url}: {type(e).__name__}: {e}")
             
+            # Immediate Safari fallback for HTTP 403 errors
+            if isinstance(e, urllib.error.HTTPError) and e.status == 403:
+                logging.warning(f"HTTP 403 Forbidden detected for {url} - immediately trying Safari fallback")
+                if SAFARI_AVAILABLE:
+                    try:
+                        logging.info(f"Using Safari fallback for HTTP 403: {url}")
+                        html, safari_metrics = extract_with_safari_fallback(url)
+                        
+                        # Convert Safari metrics to FetchMetrics format
+                        metrics.primary_method = "safari"
+                        metrics.fallback_method = "safari_403_trigger"
+                        metrics.fetch_duration = time.time() - start_time
+                        metrics.final_status = "success"
+                        metrics.error_message = None
+                        
+                        logging.info(f"Safari fallback successful for HTTP 403: {url}")
+                        return html, metrics
+                        
+                    except Exception as safari_error:
+                        logging.warning(f"Safari fallback failed for HTTP 403 {url}: {safari_error}")
+                        # Continue to normal error handling
+                else:
+                    logging.warning(f"HTTP 403 detected but Safari not available for {url}")
             
             # Check if we should retry this exception
             if not should_retry_exception(e):
@@ -991,9 +1090,29 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30)
                 else:
                     logging.info(f"Non-retryable error for {url}, failing immediately: {type(e).__name__}")
                 
-                # Store the exception for error reporting
+                # Store the exception for potential Safari fallback
                 last_exception = e
                 
+                # Check Safari fallback for non-retryable errors too
+                if SAFARI_AVAILABLE:
+                    try:
+                        logging.info(f"Non-retryable error encountered for {url}, checking Safari fallback...")
+                        if should_fallback_to_safari(url, "", e):
+                            logging.info(f"Using Safari fallback for non-retryable error: {url}")
+                            html, safari_metrics = extract_with_safari_fallback(url)
+                            
+                            # Convert Safari metrics to FetchMetrics format
+                            metrics.primary_method = "safari"
+                            metrics.fetch_duration = time.time() - start_time
+                            metrics.final_status = "success"
+                            metrics.error_message = None
+                            
+                            return html, metrics
+                        else:
+                            logging.debug(f"Safari fallback not triggered for non-retryable error: {url}")
+                    except Exception as safari_error:
+                        logging.warning(f"Safari fallback failed for non-retryable error {url}: {safari_error}")
+                        # Continue to original error handling
                 
                 metrics.fetch_duration = time.time() - start_time
                 metrics.final_status = "failed"
@@ -1004,7 +1123,28 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30)
             if attempt == MAX_RETRIES:
                 break
     
-    # All retry attempts exhausted
+    # All retry attempts exhausted - try Safari fallback before giving up
+    if SAFARI_AVAILABLE:
+        try:
+            logging.info(f"Standard fetch failed for {url}, checking Safari fallback...")
+            if should_fallback_to_safari(url, "", last_exception):
+                logging.info(f"Using Safari fallback for {url}")
+                html, safari_metrics = extract_with_safari_fallback(url)
+                
+                # Convert Safari metrics to FetchMetrics format
+                metrics.primary_method = "safari"
+                metrics.fetch_duration = time.time() - start_time
+                metrics.final_status = "success"
+                metrics.error_message = None
+                
+                return html, metrics
+            else:
+                logging.debug(f"Safari fallback not triggered for {url}")
+        except Exception as safari_error:
+            logging.warning(f"Safari fallback failed for {url}: {safari_error}")
+            # Continue to original error handling
+    
+    # All retry attempts exhausted and Safari fallback failed/unavailable
     metrics.fetch_duration = time.time() - start_time
     metrics.final_status = "failed"
     metrics.error_message = str(last_exception)
