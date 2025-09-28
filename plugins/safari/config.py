@@ -154,6 +154,8 @@ def detect_captcha_or_block(html_content: str, error_msg: str = "") -> bool:
     """
     Detect if content contains CAPTCHA or blocking indicators.
     
+    Improved version that avoids false positives from JavaScript code.
+    
     Args:
         html_content (str): HTML content to analyze
         error_msg (str): Error message from failed request
@@ -164,27 +166,59 @@ def detect_captcha_or_block(html_content: str, error_msg: str = "") -> bool:
     if not html_content and not error_msg:
         return False
     
-    # Check HTML content for CAPTCHA indicators
-    content_lower = html_content.lower()
-    for indicator in CAPTCHA_INDICATORS:
-        if indicator.lower() in content_lower:
-            logging.getLogger(__name__).info(f"CAPTCHA indicator detected: {indicator}")
+    # Remove script and style tags to avoid false positives from code
+    import re
+    
+    # Remove script tags and their content
+    clean_html = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
+    # Remove style tags and their content  
+    clean_html = re.sub(r'<style[^>]*>.*?</style>', '', clean_html, flags=re.DOTALL | re.IGNORECASE)
+    
+    # More specific patterns that indicate actual blocking
+    # These patterns check for user-visible blocking messages, not code artifacts
+    blocking_patterns = [
+        # CAPTCHA-specific patterns (case-insensitive)
+        (r'<[^>]*(?:captcha|seccaptcha)[^>]*>', 'CAPTCHA element detected'),
+        (r'(?:请|please).*(?:验证|verify|verification)', 'Verification request detected'),
+        (r'滑动.*验证|slide.*verify', 'Slider verification detected'),
+        (r'security\s+check|human\s+verification', 'Security check detected'),
+        
+        # Access denial patterns (must be in visible text, not code)
+        (r'<(?:h[1-6]|p|div)[^>]*>.*(?:access\s+denied|blocked\s+access|forbidden).*</(?:h[1-6]|p|div)>', 'Access denied message'),
+        (r'(?:您的|your).*(?:访问|access).*(?:被拒绝|denied|blocked)', 'Access blocked message'),
+        
+        # Bot detection patterns
+        (r'(?:robot|bot)\s+(?:check|verification|detected)', 'Bot detection'),
+        
+        # Cloudflare/DDoS protection
+        (r'cloudflare.*ray\s*id|cf-ray', 'Cloudflare protection detected'),
+        (r'ddos\s+protection|under\s+attack\s+mode', 'DDoS protection detected'),
+    ]
+    
+    # Check patterns on cleaned HTML (without script/style content)
+    content_lower = clean_html.lower()
+    
+    for pattern, description in blocking_patterns:
+        if re.search(pattern, content_lower, re.IGNORECASE):
+            logging.getLogger(__name__).info(f"Blocking indicator detected: {description}")
             return True
     
-    # Check error message for blocking patterns
-    error_lower = error_msg.lower()
-    for pattern in ERROR_PATTERNS:
-        if pattern.lower() in error_lower:
-            logging.getLogger(__name__).info(f"Block pattern detected: {pattern}")
-            return True
+    # Check error messages
+    if error_msg:
+        error_lower = error_msg.lower()
+        error_indicators = ['captcha', 'verification', 'challenge', 'blocked', 'denied', 'forbidden']
+        for indicator in error_indicators:
+            if indicator in error_lower:
+                logging.getLogger(__name__).info(f"Error indicator detected in error message: {indicator}")
+                return True
     
-    # Check for very short content (likely error page)
-    if html_content and len(html_content.strip()) < 500:
-        # Look for common error page indicators
+    # Check for very short content (likely error page) - but only on cleaned HTML
+    if clean_html and len(clean_html.strip()) < 500:
+        # Look for common error page indicators in the cleaned content
         error_indicators = ['error', 'blocked', 'denied', 'forbidden', 'unauthorized']
         for indicator in error_indicators:
             if indicator in content_lower:
-                logging.getLogger(__name__).info(f"Error page detected: {indicator}")
+                logging.getLogger(__name__).info(f"Error page detected (short content with indicator): {indicator}")
                 return True
     
     return False
