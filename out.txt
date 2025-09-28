@@ -1,0 +1,14 @@
+2025-09-28 10:19:14 - INFO - User selected: urllib method (via -u/--urllib)
+2025-09-28 10:19:14 - INFO - Starting webfetcher for URL: https://httpbin.org/html
+2025-09-28 10:19:21 - INFO - Using urllib/static fetch per user preference (overriding heuristics)
+2025-09-28 10:19:21 - INFO - Render decision: static fetch only
+2025-09-28 10:19:21 - INFO - Fetching HTML statically
+2025-09-28 10:19:21 - INFO - Safari integration auto-enabled on macOS
+2025-09-28 10:19:21 - INFO - Plugin system available
+2025-09-28 10:19:28 - INFO - Static fetch completed
+2025-09-28 10:19:28 - INFO - Selected parser: Generic
+2025-09-28 10:19:28 - INFO - Applying content filtering (level: safe) to: https://httpbin.org/html
+2025-09-28 10:19:28 - INFO - Content filtering completed. Removed elements: {}
+2025-09-28 10:19:28 - INFO - Processing as article page: https://httpbin.org/html
+2025-09-28 10:19:28 - INFO - Markdown file saved: 2025-09-28-101928 - 未命名.md
+2025-09-28-101928 - 未命名.md

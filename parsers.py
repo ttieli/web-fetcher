@@ -176,6 +176,10 @@ def extract_from_modern_selectors(html: str) -> str:
     
     # Define CSS selector patterns for modern static sites
     content_selectors = [
+        # News sites specific patterns (news.cn uses span#detailContent)
+        r'<span[^>]*id=["\']detailContent["\'][^>]*>(.*?)</span>',
+        r'<div[^>]*id=["\']detailContent["\'][^>]*>(.*?)</div>',
+        
         # Hugo/Jekyll specific patterns
         r'<div[^>]*class=["\'][^"\']*hero-content[^"\']*["\'][^>]*>(.*?)</div>',
         r'<div[^>]*class=["\'][^"\']*post-content[^"\']*["\'][^>]*>(.*?)</div>',
@@ -200,6 +204,42 @@ def extract_from_modern_selectors(html: str) -> str:
     # FIXED: Collect ALL matching content instead of returning first match
     all_content = []
     seen_starts = set()  # For intelligent deduplication
+    
+    # Special handling for news.cn style span#detailContent (non-greedy won't work due to nested spans)
+    if 'detailContent' in html:
+        import re
+        # Find the starting position of detailContent
+        match = re.search(r'<span[^>]*id=["\']detailContent["\'][^>]*>', html, re.I)
+        if match:
+            start_pos = match.end()
+            # Find the matching closing span by counting nested spans
+            span_count = 1
+            pos = start_pos
+            while span_count > 0 and pos < len(html):
+                # Look for opening span tags (must have > or space after 'span')
+                if html[pos:pos+5].lower() == '<span' and (pos+5 >= len(html) or html[pos+5] in ' >'):
+                    # Find the end of this opening tag
+                    end_tag = html.find('>', pos)
+                    if end_tag != -1:
+                        span_count += 1
+                        pos = end_tag + 1
+                    else:
+                        pos += 1
+                elif html[pos:pos+7].lower() == '</span>':
+                    span_count -= 1
+                    if span_count == 0:
+                        # Extract content between the tags
+                        content_html = html[start_pos:pos]
+                        text = extract_text_from_html_fragment(content_html)
+                        if text and len(text.strip()) > 50:  # Lower threshold for news content
+                            text_start = text[:100].strip()
+                            if text_start not in seen_starts:
+                                all_content.append(text.strip())
+                                seen_starts.add(text_start)
+                        break
+                    pos += 7
+                else:
+                    pos += 1
     
     for pattern in content_selectors:
         matches = re.findall(pattern, html, re.I | re.S)
