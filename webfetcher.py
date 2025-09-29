@@ -35,6 +35,23 @@ import random
 import signal
 from collections import deque
 
+# Selenium integration (Phase 2) - graceful degradation when not available
+try:
+    from selenium_config import SeleniumConfig
+    from selenium_fetcher import SeleniumFetcher, SeleniumMetrics, ChromeConnectionError, SeleniumFetchError, SeleniumTimeoutError, SeleniumNotAvailableError
+    SELENIUM_INTEGRATION_AVAILABLE = True
+except ImportError as e:
+    logging.debug(f"Selenium integration not available: {e}")
+    SELENIUM_INTEGRATION_AVAILABLE = False
+    # Create dummy classes to prevent import errors
+    class SeleniumConfig: pass
+    class SeleniumFetcher: pass
+    class SeleniumMetrics: pass
+    class ChromeConnectionError(Exception): pass
+    class SeleniumFetchError(Exception): pass
+    class SeleniumTimeoutError(Exception): pass
+    class SeleniumNotAvailableError(Exception): pass
+
 # Parser modules
 import parsers
 
@@ -133,13 +150,18 @@ class SimpleDownloader:
 class FetchMetrics:
     """Tracks metrics for web content fetching operations."""
     primary_method: str = ""  # urllib/playwright/local_file
-    fallback_method: Optional[str] = None  # (reserved for future use)
+    fallback_method: Optional[str] = None  # selenium (when used as fallback)
     total_attempts: int = 0
     fetch_duration: float = 0.0
     render_duration: float = 0.0
     ssl_fallback_used: bool = False
     final_status: str = "unknown"  # success/failed
     error_message: Optional[str] = None
+    
+    # Selenium-specific fields (Phase 2 integration)
+    selenium_wait_time: float = 0.0
+    chrome_connected: bool = False
+    js_detection_used: bool = False
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert metrics to dictionary for JSON serialization."""
@@ -151,7 +173,10 @@ class FetchMetrics:
             'render_duration': round(self.render_duration, 3),
             'ssl_fallback_used': self.ssl_fallback_used,
             'final_status': self.final_status,
-            'error_message': self.error_message
+            'error_message': self.error_message,
+            'selenium_wait_time': round(self.selenium_wait_time, 3),
+            'chrome_connected': self.chrome_connected,
+            'js_detection_used': self.js_detection_used
         }
     
     def get_summary(self) -> str:
@@ -169,6 +194,16 @@ class FetchMetrics:
         
         if self.ssl_fallback_used:
             summary += " | SSL fallback used"
+        
+        # Add Selenium-specific information
+        if self.chrome_connected:
+            summary += " | Chrome session connected"
+        
+        if self.selenium_wait_time > 0:
+            summary += f" | Selenium wait: {self.selenium_wait_time:.2f}s"
+        
+        if self.js_detection_used:
+            summary += " | JS detection used"
             
         return summary
 
@@ -681,12 +716,22 @@ def calculate_backoff_delay(attempt: int, base_delay: float = BASE_DELAY) -> flo
     return delay + jitter
 
 
-def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30) -> tuple[str, FetchMetrics]:
+def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30, 
+                         fetch_mode: str = 'auto') -> tuple[str, FetchMetrics]:
     """
-    Fetch HTML with exponential backoff retry logic.
+    Fetch HTML with exponential backoff retry logic and optional Selenium fallback.
     
-    Retries network/temporary errors up to MAX_RETRIES times with exponential backoff.
-    Immediately fails on client errors (4xx) and non-retryable server errors.
+    Phase 2: Implements loop-free session-first fallback strategy:
+    1. Try urllib first (existing retry logic)
+    2. If urllib fails AND fetch_mode allows Selenium, check Chrome debug session availability
+    3. If Chrome session available, use Selenium fallback (preserves login state)
+    4. If no Chrome session OR Selenium unavailable, accept empty result (no retry loops)
+    
+    Args:
+        url: Target URL to fetch
+        ua: User agent string (optional)
+        timeout: Network timeout in seconds
+        fetch_mode: 'auto' (urllib->selenium), 'urllib' (urllib only), 'selenium' (selenium only)
     
     Returns:
         tuple[str, FetchMetrics]: (html_content, fetch_metrics)
@@ -695,7 +740,12 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30)
     start_time = time.time()
     last_exception = None
     
+    # Phase 2: Handle selenium-only mode first
+    if fetch_mode == 'selenium':
+        metrics.primary_method = "selenium"
+        return _try_selenium_fetch(url, ua, timeout, metrics, start_time)
     
+    # Try urllib first (fetch_mode: 'auto' or 'urllib')
     for attempt in range(MAX_RETRIES + 1):  # 0, 1, 2, 3 (4 total attempts)
         metrics.total_attempts = attempt + 1
         
@@ -726,7 +776,6 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30)
             else:
                 logging.warning(f"Retry {attempt}/{MAX_RETRIES} failed for {url}: {type(e).__name__}: {e}")
             
-            
             # Check if we should retry this exception
             if not should_retry_exception(e):
                 # Special handling for HTTP 307 redirect loops
@@ -737,10 +786,11 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30)
                 else:
                     logging.info(f"Non-retryable error for {url}, failing immediately: {type(e).__name__}")
                 
+                # Phase 2: Immediate Selenium fallback for non-retryable errors (if enabled)
+                if fetch_mode == 'auto':
+                    return _try_selenium_fallback_after_urllib_failure(url, ua, timeout, metrics, start_time, str(e))
+                
                 # Store the exception for error reporting
-                last_exception = e
-                
-                
                 metrics.fetch_duration = time.time() - start_time
                 metrics.final_status = "failed"
                 metrics.error_message = str(e)
@@ -750,7 +800,11 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30)
             if attempt == MAX_RETRIES:
                 break
     
-    # All retry attempts exhausted
+    # Phase 2: All urllib retry attempts exhausted - try Selenium fallback if enabled
+    if fetch_mode == 'auto':
+        return _try_selenium_fallback_after_urllib_failure(url, ua, timeout, metrics, start_time, str(last_exception))
+    
+    # urllib-only mode or Selenium not enabled - fail normally
     metrics.fetch_duration = time.time() - start_time
     metrics.final_status = "failed"
     metrics.error_message = str(last_exception)
@@ -759,6 +813,176 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30)
 
 
 
+def _create_empty_metrics_with_guidance() -> FetchMetrics:
+    """
+    Create empty metrics with helpful guidance message.
+    Used when both urllib and Selenium fail or Selenium is unavailable.
+    """
+    metrics = FetchMetrics(
+        primary_method="failed",
+        final_status="failed",
+        error_message="Both urllib and Selenium failed. To enable Selenium fallback, start Chrome debug session with: ./config/chrome-debug.sh"
+    )
+    return metrics
+
+
+def _try_selenium_fetch(url: str, ua: Optional[str], timeout: int, metrics: FetchMetrics, start_time: float) -> tuple[str, FetchMetrics]:
+    """
+    Try Selenium fetch as primary method (selenium-only mode).
+    
+    Args:
+        url: Target URL
+        ua: User agent (ignored - Chrome uses its own)
+        timeout: Timeout in seconds
+        metrics: FetchMetrics object to update
+        start_time: Start time for duration calculation
+        
+    Returns:
+        tuple[str, FetchMetrics]: (html_content, updated_metrics)
+    """
+    if not SELENIUM_INTEGRATION_AVAILABLE:
+        logging.error("Selenium mode requested but Selenium integration not available")
+        metrics.fetch_duration = time.time() - start_time
+        metrics.final_status = "failed"
+        metrics.error_message = "Selenium integration not available - install requirements-selenium.txt"
+        return "", metrics
+    
+    try:
+        # Load Selenium configuration
+        config = SeleniumConfig()
+        
+        # Create and use Selenium fetcher
+        with SeleniumFetcher(config._config) as fetcher:
+            # Check if Chrome debug session is available
+            if not fetcher.is_chrome_debug_available():
+                metrics.fetch_duration = time.time() - start_time
+                metrics.final_status = "failed"
+                metrics.error_message = f"Chrome debug session not available on port {fetcher.debug_port}. Start with: ./config/chrome-debug.sh"
+                return "", metrics
+            
+            # Connect to Chrome
+            success, message = fetcher.connect_to_chrome()
+            if not success:
+                metrics.fetch_duration = time.time() - start_time
+                metrics.final_status = "failed"
+                metrics.error_message = message
+                return "", metrics
+            
+            # Fetch HTML using Selenium
+            html_content, selenium_metrics = fetcher.fetch_html_selenium(url, ua, timeout)
+            
+            # Update main metrics with Selenium data
+            metrics.fetch_duration = time.time() - start_time
+            metrics.final_status = "success"
+            metrics.selenium_wait_time = selenium_metrics.selenium_wait_time
+            metrics.chrome_connected = selenium_metrics.chrome_connected
+            metrics.js_detection_used = selenium_metrics.js_detection_used
+            
+            logging.info(f"✓ Selenium fetch successful for {url}")
+            return html_content, metrics
+            
+    except (ChromeConnectionError, SeleniumFetchError, SeleniumTimeoutError) as e:
+        logging.error(f"Selenium fetch failed for {url}: {e}")
+        metrics.fetch_duration = time.time() - start_time
+        metrics.final_status = "failed"
+        metrics.error_message = str(e)
+        return "", metrics
+        
+    except Exception as e:
+        logging.error(f"Unexpected error in Selenium fetch for {url}: {e}")
+        metrics.fetch_duration = time.time() - start_time
+        metrics.final_status = "failed"
+        metrics.error_message = f"Unexpected Selenium error: {e}"
+        return "", metrics
+
+
+def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], timeout: int, 
+                                               metrics: FetchMetrics, start_time: float,
+                                               urllib_error: str) -> tuple[str, FetchMetrics]:
+    """
+    Try Selenium fallback after urllib failure. Implements loop-free session-first strategy.
+    
+    CRITICAL: This function implements the core Phase 2 fallback logic:
+    1. Check if Chrome debug session is available (NO new instance creation)
+    2. If available, connect and fetch
+    3. If not available, accept empty result with guidance (NO retry loops)
+    
+    Args:
+        url: Target URL
+        ua: User agent (ignored - Chrome uses its own)
+        timeout: Timeout in seconds
+        metrics: FetchMetrics object to update
+        start_time: Start time for duration calculation
+        urllib_error: Error message from urllib failure
+        
+    Returns:
+        tuple[str, FetchMetrics]: (html_content, updated_metrics)
+    """
+    logging.info(f"urllib failed for {url}, attempting Selenium fallback...")
+    
+    if not SELENIUM_INTEGRATION_AVAILABLE:
+        logging.warning("Selenium fallback requested but integration not available")
+        metrics.fetch_duration = time.time() - start_time
+        metrics.final_status = "failed"
+        metrics.error_message = f"urllib failed: {urllib_error}. Selenium fallback not available - install requirements-selenium.txt"
+        return "", metrics
+    
+    try:
+        # Load Selenium configuration
+        config = SeleniumConfig()
+        
+        # Create Selenium fetcher - graceful degradation approach
+        fetcher = SeleniumFetcher(config._config)
+        
+        # CRITICAL: Check Chrome debug session availability BEFORE attempting connection
+        if not fetcher.is_chrome_debug_available():
+            logging.info("Chrome debug session not available for fallback, accepting empty result")
+            metrics.fetch_duration = time.time() - start_time
+            metrics.final_status = "failed"
+            metrics.error_message = (
+                f"urllib failed: {urllib_error}. "
+                f"Chrome debug session not available on port {fetcher.debug_port}. "
+                f"Start Chrome debug session with: ./config/chrome-debug.sh"
+            )
+            return "", metrics
+        
+        # Chrome debug session available - attempt connection and fetch
+        with fetcher:
+            success, message = fetcher.connect_to_chrome()
+            if not success:
+                logging.warning(f"Failed to connect to Chrome debug session: {message}")
+                metrics.fetch_duration = time.time() - start_time
+                metrics.final_status = "failed"
+                metrics.error_message = f"urllib failed: {urllib_error}. Chrome connection failed: {message}"
+                return "", metrics
+            
+            # Attempt Selenium fetch
+            html_content, selenium_metrics = fetcher.fetch_html_selenium(url, ua, timeout)
+            
+            # Update metrics - urllib failed, Selenium succeeded
+            metrics.fallback_method = "selenium"
+            metrics.fetch_duration = time.time() - start_time
+            metrics.final_status = "success"
+            metrics.selenium_wait_time = selenium_metrics.selenium_wait_time
+            metrics.chrome_connected = selenium_metrics.chrome_connected
+            metrics.js_detection_used = selenium_metrics.js_detection_used
+            
+            logging.info(f"✓ Selenium fallback successful for {url} after urllib failure")
+            return html_content, metrics
+            
+    except (ChromeConnectionError, SeleniumFetchError, SeleniumTimeoutError) as e:
+        logging.error(f"Selenium fallback failed for {url}: {e}")
+        metrics.fetch_duration = time.time() - start_time
+        metrics.final_status = "failed"
+        metrics.error_message = f"urllib failed: {urllib_error}. Selenium fallback failed: {e}"
+        return "", metrics
+        
+    except Exception as e:
+        logging.error(f"Unexpected error in Selenium fallback for {url}: {e}")
+        metrics.fetch_duration = time.time() - start_time
+        metrics.final_status = "failed"
+        metrics.error_message = f"urllib failed: {urllib_error}. Unexpected Selenium error: {e}"
+        return "", metrics
 
 
 def extract_charset_from_headers(response) -> Optional[str]:
@@ -4063,6 +4287,13 @@ def main():
                     help='Delay between crawl requests in seconds (default: 0.5)')
     ap.add_argument('--format', choices=['markdown', 'html', 'both'], default='markdown',
                     help='Output format: markdown (default), html, or both')
+    
+    # Phase 2: Selenium integration arguments
+    ap.add_argument('--fetch-mode', choices=['auto', 'urllib', 'selenium'], default='auto',
+                    help='Fetch method: auto (urllib->selenium fallback), urllib (urllib only), selenium (selenium only) (default: auto)')
+    ap.add_argument('--selenium-timeout', type=int, default=30,
+                    help='Selenium page load timeout in seconds (default: 30)')
+    
     args = ap.parse_args()
     
     # Check for legacy mode environment variable
@@ -4232,7 +4463,9 @@ def main():
             
         if html is None:
             logging.info("Fetching HTML statically")
-            html, fetch_metrics = fetch_html(url, ua=ua, timeout=args.timeout)
+            # Phase 2: Use selenium-timeout when selenium mode, otherwise use regular timeout
+            fetch_timeout = args.selenium_timeout if args.fetch_mode == 'selenium' else args.timeout
+            html, fetch_metrics = fetch_html(url, ua=ua, timeout=fetch_timeout, fetch_mode=args.fetch_mode)
             logging.info("Static fetch completed")
 
     # Try to download file if it's a downloadable type
