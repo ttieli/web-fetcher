@@ -851,6 +851,15 @@ def _try_selenium_fetch(url: str, ua: Optional[str], timeout: int, metrics: Fetc
         # Load Selenium configuration
         config = SeleniumConfig()
         
+        # Check if actual Selenium package is available before creating fetcher
+        from selenium_fetcher import SELENIUM_AVAILABLE
+        if not SELENIUM_AVAILABLE:
+            logging.error("Selenium package not installed (selenium library missing)")
+            metrics.fetch_duration = time.time() - start_time
+            metrics.final_status = "failed"
+            metrics.error_message = "Selenium package not installed. Run: pip install selenium PyYAML lxml"
+            return "", metrics
+        
         # Create and use Selenium fetcher
         with SeleniumFetcher(config._config) as fetcher:
             # Check if Chrome debug session is available
@@ -930,6 +939,15 @@ def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], tim
     try:
         # Load Selenium configuration
         config = SeleniumConfig()
+        
+        # Check if actual Selenium package is available
+        from selenium_fetcher import SELENIUM_AVAILABLE
+        if not SELENIUM_AVAILABLE:
+            logging.warning("Selenium package not installed, cannot use as fallback")
+            metrics.fetch_duration = time.time() - start_time
+            metrics.final_status = "failed"
+            metrics.error_message = f"urllib failed: {urllib_error}. Selenium package not installed. Run: pip install selenium PyYAML lxml"
+            return "", metrics
         
         # Create Selenium fetcher - graceful degradation approach
         fetcher = SeleniumFetcher(config._config)
@@ -4291,10 +4309,20 @@ def main():
     # Phase 2: Selenium integration arguments
     ap.add_argument('--fetch-mode', choices=['auto', 'urllib', 'selenium'], default='auto',
                     help='Fetch method: auto (urllib->selenium fallback), urllib (urllib only), selenium (selenium only) (default: auto)')
+    ap.add_argument('-s', '--selenium', action='store_true',
+                    help='Shortcut for --fetch-mode selenium (force Selenium for JavaScript rendering)')
+    ap.add_argument('-u', '--urllib', action='store_true',
+                    help='Shortcut for --fetch-mode urllib (force urllib without Selenium fallback)')
     ap.add_argument('--selenium-timeout', type=int, default=30,
                     help='Selenium page load timeout in seconds (default: 30)')
     
     args = ap.parse_args()
+    
+    # Handle shortcuts for fetch modes
+    if args.selenium:
+        args.fetch_mode = 'selenium'
+    elif args.urllib:
+        args.fetch_mode = 'urllib'
     
     # Check for legacy mode environment variable
     if os.environ.get('WF_LEGACY_IMAGE_MODE'):
