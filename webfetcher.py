@@ -23,7 +23,6 @@ import urllib.parse
 import urllib.request
 import urllib.error
 import ssl
-import subprocess
 import sys
 from typing import Optional, List, Dict, Set, Any
 from dataclasses import dataclass
@@ -39,7 +38,7 @@ from collections import deque
 # Parser modules
 import parsers
 
-# Safari integration removed - using urllib/curl only
+# Safari integration removed - using urllib only
 
 
 # === EMBEDDED DOWNLOADER MODULE ===
@@ -133,8 +132,8 @@ class SimpleDownloader:
 @dataclass
 class FetchMetrics:
     """Tracks metrics for web content fetching operations."""
-    primary_method: str = ""  # urllib/curl/playwright/local_file
-    fallback_method: Optional[str] = None  # curl (when SSL fails)
+    primary_method: str = ""  # urllib/playwright/local_file
+    fallback_method: Optional[str] = None  # (reserved for future use)
     total_attempts: int = 0
     fetch_duration: float = 0.0
     render_duration: float = 0.0
@@ -216,7 +215,7 @@ def is_url_encoded(text: str) -> bool:
 
 def validate_and_encode_url(url: str) -> str:
     """
-    Validate URL and ensure safe encoding for subprocess calls.
+    Validate URL and ensure safe encoding for HTTP requests.
     
     Properly handles Unicode characters (e.g., Chinese), spaces, and already-encoded URLs.
     Converts IRI (Internationalized Resource Identifier) to proper URI format.
@@ -225,7 +224,7 @@ def validate_and_encode_url(url: str) -> str:
         url: URL to validate and encode (can contain Unicode or spaces)
         
     Returns:
-        str: Safely encoded URL ready for curl/subprocess
+        str: Safely encoded URL ready for HTTP requests
         
     Raises:
         ValueError: If URL is invalid or contains unsafe patterns
@@ -760,65 +759,6 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30)
 
 
 
-def fetch_html_with_curl_metrics(url: str, ua: Optional[str] = None, timeout: int = 30) -> tuple[str, FetchMetrics]:
-    """Fallback to curl for sites with SSL issues with metrics tracking"""
-    metrics = FetchMetrics(primary_method="curl")
-    ua = ua or "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0 Safari/537.36"
-    
-    try:
-        # Validate and encode URL for safe subprocess execution
-        validated_url = validate_and_encode_url(url)
-        
-        cmd = [
-            'curl', '-k', '-s', '-L',  # -k ignores SSL, -s silent, -L follow redirects
-            '--max-time', str(timeout),
-            '-H', f'User-Agent: {ua}',
-            '-H', 'Accept-Language: zh-CN,zh;q=0.9',
-            '--compressed',  # Accept compressed responses
-            validated_url
-        ]
-        
-        logging.debug(f"Executing curl command for URL: {validated_url}")
-        result = subprocess.run(cmd, capture_output=True, text=False, timeout=timeout+5)
-        
-        if result.returncode == 0:
-            # 使用智能解码处理curl获取的字节数据
-            html = smart_decode(result.stdout)
-            metrics.final_status = "success"
-            return html, metrics
-        else:
-            # Log curl error details for debugging
-            error_msg = f"curl failed with code {result.returncode}: {result.stderr}"
-            logging.error(f"curl failed for {validated_url}: return code {result.returncode}, stderr: {result.stderr}")
-            metrics.final_status = "failed"
-            metrics.error_message = error_msg
-            raise Exception(error_msg)
-            
-    except ValueError as e:
-        # URL validation error
-        error_msg = f"Invalid URL for curl: {e}"
-        logging.error(f"URL validation failed for curl: {e}")
-        metrics.final_status = "failed"
-        metrics.error_message = error_msg
-        raise Exception(error_msg)
-    except subprocess.TimeoutExpired:
-        error_msg = f"curl timeout for {url}"
-        logging.error(error_msg)
-        metrics.final_status = "failed"
-        metrics.error_message = error_msg
-        raise Exception(error_msg)
-    except Exception as e:
-        error_msg = f"Failed to fetch with curl from {url}: {e}"
-        logging.error(error_msg)
-        metrics.final_status = "failed"
-        metrics.error_message = error_msg
-        raise
-
-
-def fetch_html_with_curl(url: str, ua: Optional[str] = None, timeout: int = 30) -> str:
-    """Fallback to curl for sites with SSL issues (legacy interface)"""
-    html, _ = fetch_html_with_curl_metrics(url, ua, timeout)
-    return html
 
 
 def extract_charset_from_headers(response) -> Optional[str]:
@@ -976,7 +916,7 @@ def smart_decode(data: bytes, response=None) -> str:
 
 def fetch_html_original(url: str, ua: Optional[str] = None, timeout: int = 30) -> tuple[str, FetchMetrics]:
     """
-    Fetch HTML using urllib with optional curl fallback for SSL issues.
+    Fetch HTML using urllib with enhanced SSL error handling.
     
     Returns:
         tuple[str, FetchMetrics]: (html_content, fetch_metrics)
@@ -1003,26 +943,20 @@ def fetch_html_original(url: str, ua: Optional[str] = None, timeout: int = 30) -
             return html, metrics
             
     except Exception as e:
-        # If SSL error, try curl as fallback
+        # If SSL error, provide enhanced error reporting
         if "SSL" in str(e) or "CERTIFICATE" in str(e).upper():
-            logging.info(f"SSL error detected, falling back to curl for {url}")
-            html, curl_metrics = fetch_html_with_curl_metrics(url, ua, timeout)
-            
-            # Update metrics to reflect curl fallback
-            metrics.ssl_fallback_used = True
-            metrics.fallback_method = "curl"
-            metrics.final_status = curl_metrics.final_status
-            if curl_metrics.error_message:
-                metrics.error_message = curl_metrics.error_message
-            
-            return html, metrics
+            error_msg = f"SSL verification failed for {url}. Consider using different SSL handling."
+            logging.error(error_msg)
+            metrics.final_status = "failed"
+            metrics.error_message = error_msg
+            return "", metrics
             
         logging.error(f"Failed to fetch HTML from {url}: {e}")
         metrics.final_status = "failed"
         metrics.error_message = str(e)
         raise
 
-# Public interface - using direct urllib/curl with retry fallback
+# Public interface - using direct urllib with retry fallback
 fetch_html = fetch_html_with_retry
 fetch_html_with_metrics = fetch_html_with_retry
 
