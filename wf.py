@@ -10,7 +10,6 @@ wf - WebFetcher的便捷命令行工具
 """
 import sys
 import os
-import subprocess
 from pathlib import Path
 import logging
 import re
@@ -411,9 +410,27 @@ def main():
 
 def run_webfetcher(args):
     """运行webfetcher.py并传递参数"""
-    cmd = [sys.executable, str(WEBFETCHER_PATH)] + args
+    # Import webfetcher module and call its main function directly
+    import importlib.util
+    
     try:
-        subprocess.run(cmd)
+        # Load webfetcher.py as a module
+        spec = importlib.util.spec_from_file_location("webfetcher", WEBFETCHER_PATH)
+        webfetcher_module = importlib.util.module_from_spec(spec)
+        
+        # Temporarily modify sys.argv to pass arguments to webfetcher
+        original_argv = sys.argv
+        sys.argv = ['webfetcher'] + args
+        
+        try:
+            # Execute the module to make its functions available
+            spec.loader.exec_module(webfetcher_module)
+            # Call the main function
+            webfetcher_module.main()
+        finally:
+            # Restore original sys.argv
+            sys.argv = original_argv
+            
     except KeyboardInterrupt:
         print("\n已取消")
         sys.exit(1)
