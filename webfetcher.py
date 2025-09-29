@@ -3928,6 +3928,40 @@ def rewrite_and_download_assets(md: str, md_base: str, outdir: Path, ua: str, as
     return md2
 
 
+def determine_output_format(args, url, content_type=None):
+    """
+    Determine the appropriate output format based on CLI args and context.
+    
+    Args:
+        args: Parsed command line arguments containing format preference
+        url: Target URL being processed  
+        content_type: Optional content type hint
+        
+    Returns:
+        tuple: (should_output_markdown: bool, should_output_html: bool)
+        
+    Examples:
+        args.format='markdown' -> (True, False)
+        args.format='html' -> (False, True) 
+        args.format='both' -> (True, True)
+    """
+    # Validate input format preference
+    format_choice = getattr(args, 'format', 'markdown')
+    
+    # Log format decision for debugging
+    logging.debug(f"Output format requested: {format_choice} for URL: {url}")
+    
+    # Determine output requirements based on format choice
+    if format_choice == 'html':
+        return (False, True)
+    elif format_choice == 'both':
+        return (True, True) 
+    else:  # 'markdown' or any other value defaults to markdown
+        if format_choice != 'markdown':
+            logging.warning(f"Unknown format '{format_choice}', defaulting to markdown")
+        return (True, False)
+
+
 def main():
     ap = argparse.ArgumentParser(
         description='Fetch a URL (WeChat/XHS/generic) and save as Markdown.',
@@ -3955,6 +3989,8 @@ def main():
                     help='Maximum pages to crawl (default: 1000, max: 1000)')
     ap.add_argument('--crawl-delay', type=float, default=0.5,
                     help='Delay between crawl requests in seconds (default: 0.5)')
+    ap.add_argument('--format', choices=['markdown', 'html', 'both'], default='markdown',
+                    help='Output format: markdown (default), html, or both')
     args = ap.parse_args()
     
     # Check for legacy mode environment variable
