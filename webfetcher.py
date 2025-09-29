@@ -40,7 +40,7 @@ from collections import deque
 from core.downloader import SimpleDownloader
 
 # Parser modules
-import parsers
+from core import parsers
 
 # Safari integration removed - using urllib/curl only
 
