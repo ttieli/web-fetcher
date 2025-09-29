@@ -506,9 +506,22 @@ wf - WebFetcher便捷命令
   wf fast example.com -o ./output --timeout 10
   wf site python.org -- ~/docs/ --max-pages 100
   
+  # Selenium集成（Phase 2新功能）
+  wf example.com --fetch-mode selenium    # 强制使用Selenium
+  wf example.com --fetch-mode auto        # 自动回退（默认）
+  wf example.com --selenium-timeout 60    # 设置Selenium超时
+  
   # 设置默认输出目录后
   export WF_OUTPUT_DIR=~/Documents/web-content
   wf example.com                    # 自动保存到~/Documents/web-content
+
+Selenium集成说明:
+  --fetch-mode auto     # urllib失败时自动切换到Selenium（默认）
+  --fetch-mode urllib   # 仅使用urllib
+  --fetch-mode selenium # 仅使用Selenium（需要Chrome调试会话）
+  --selenium-timeout 30 # Selenium页面加载超时（秒）
+  
+  启动Chrome调试会话: ./config/chrome-debug.sh
 
 原始命令:
   wf [任何webfetcher参数]           # 直接传递给webfetcher.py

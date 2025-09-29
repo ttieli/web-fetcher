@@ -1,0 +1,63 @@
+# Optional Selenium dependencies for Web_Fetcher
+# OPTIMIZED: Chrome DevTools Protocol approach for session preservation
+# Install with: pip install -r requirements-selenium.txt
+
+# Core Selenium for CDP connection (NO ChromeDriver needed)
+# Version 4.15.0+ required for stable debuggerAddress support
+selenium>=4.15.0,<5.0.0
+
+# Configuration management
+# PyYAML for loading selenium_defaults.yaml configuration
+pyyaml>=6.0.0,<7.0.0
+
+# Optional: Better HTML parsing for JS detection
+# lxml provides faster and more reliable HTML parsing
+lxml>=4.9.0,<5.0.0
+
+# REMOVED: webdriver-manager - conflicts with CDP-only approach
+# webdriver-manager is NOT needed because we connect to existing Chrome debug port
+# This avoids ChromeDriver version management complexity
+
+# REMOVED: explicit ChromeDriver dependency - not needed for debug port connection
+# ChromeDriver is handled by the existing chrome-debug.sh script
+
+# Dependencies already available in base environment:
+# - requests (for Chrome debug port health checks)
+# - logging (Python standard library)
+# - time (Python standard library)
+# - pathlib (Python standard library)
+# - dataclasses (Python 3.7+ standard library)
+# - typing (Python standard library)
+
+# Installation Instructions:
+# 1. Basic installation:
+#    pip install -r requirements-selenium.txt
+#
+# 2. Development installation (with additional tools):
+#    pip install -r requirements-selenium.txt
+#    pip install pytest  # For running tests
+#
+# 3. Verify installation:
+#    python -c "from selenium_fetcher import SeleniumFetcher; print('✓ Selenium ready')"
+#
+# 4. Start Chrome debug session:
+#    ./config/chrome-debug.sh
+#
+# 5. Test connection:
+#    curl http://localhost:9222/json/version
+
+# Version Rationale:
+# - selenium>=4.15.0: Stable debuggerAddress support, reliable CDP connection
+# - pyyaml>=6.0.0: Modern YAML parsing with security improvements
+# - lxml>=4.9.0: Stable HTML parsing with comprehensive selector support
+
+# Compatibility Notes:
+# - Python 3.7+: Required for dataclasses and modern typing support
+# - Chrome 90+: Required for stable remote debugging protocol
+# - macOS/Linux: Tested platforms (Windows support via WSL)
+
+# Security Considerations:
+# - No additional network dependencies beyond requests
+# - All connections are localhost-only (debug port 9222)
+# - No external binary downloads (webdriver-manager excluded)
+# - Uses existing Chrome installation via debug port
