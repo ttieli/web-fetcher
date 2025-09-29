@@ -3122,7 +3122,7 @@ def process_pagination(initial_url: str, initial_html: str, parser_func, ua: str
                 break
                 
             logging.info(f"Following pagination to: {next_url}")
-            current_html = fetch_html(next_url, ua=ua, timeout=30)
+            current_html, _ = fetch_html(next_url, ua=ua, timeout=30)  # Fix: properly unpack tuple return value
             current_url = next_url
             depth += 1
             
@@ -3617,7 +3617,7 @@ def crawl_site(start_url: str, ua: str, max_depth: int = 10,
     if crawl_strategy == 'category_first':
         # First, fetch the homepage to detect government site and extract categories
         try:
-            homepage_html = fetch_html(start_url, ua=ua, timeout=30)
+            homepage_html, _ = fetch_html(start_url, ua=ua, timeout=30)  # Fix: properly unpack tuple return value
             
             # Detect if it's a government site
             is_government = detect_government_site(start_url, homepage_html)
@@ -3686,7 +3686,7 @@ def crawl_site(start_url: str, ua: str, max_depth: int = 10,
                 sys.stderr.flush()
             
             # Fetch page using original URL (preserves case)
-            html = fetch_html(current_url, ua=ua, timeout=30)
+            html, _ = fetch_html(current_url, ua=ua, timeout=30)  # Fix: properly unpack tuple return value
             visited_normalized.add(current_normalized)
             url_mapping[current_normalized] = current_url
             
