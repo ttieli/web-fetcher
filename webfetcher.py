@@ -4223,8 +4223,22 @@ def main():
                 md = rewrite_and_download_assets(md, md_base, outdir, ua, args.assets_root)
                 logging.info("Asset downloads completed")
             
-            path.write_text(md, encoding='utf-8')
-            logging.info(f"Markdown file saved: {path}")
+            # Determine output formats needed
+            output_markdown, output_html = determine_output_format(args, url)
+            
+            # Write markdown file if requested
+            if output_markdown:
+                path.write_text(md, encoding='utf-8')
+                logging.info(f"Markdown file saved: {path}")
+            
+            # Write HTML file if requested
+            if output_html:
+                try:
+                    html_path = get_html_output_path(args, url, base)
+                    write_html_file(crawled_pages[0][1], html_path, url, title)  # Use first page's HTML
+                    logging.info(f"HTML file saved: {html_path}")
+                except Exception as e:
+                    logging.error(f"Failed to write HTML output: {e}")
             
             # Generate JSON output if requested
             if args.json:
@@ -4245,7 +4259,13 @@ def main():
                 json_path.write_text(json.dumps(json_data, ensure_ascii=False, indent=2), encoding='utf-8')
                 logging.info(f"JSON data saved: {json_path}")
             
-            print(str(path))
+            # Print primary output path(s)
+            if output_markdown and output_html:
+                print(f"{path}\n{html_path}")
+            elif output_html:
+                print(str(html_path))
+            else:
+                print(str(path))
             return  # Exit the main function after crawling is complete
             
         else:
@@ -4346,8 +4366,22 @@ def main():
     if fetch_metrics:
         md = add_metrics_to_markdown(md, fetch_metrics)
     
-    path.write_text(md, encoding='utf-8')
-    logging.info(f"Markdown file saved: {path}")
+    # Determine output formats needed
+    output_markdown, output_html = determine_output_format(args, url)
+    
+    # Write markdown file if requested
+    if output_markdown:
+        path.write_text(md, encoding='utf-8')
+        logging.info(f"Markdown file saved: {path}")
+    
+    # Write HTML file if requested
+    if output_html:
+        try:
+            html_path = get_html_output_path(args, url, base)
+            write_html_file(html, html_path, url, title)
+            logging.info(f"HTML file saved: {html_path}")
+        except Exception as e:
+            logging.error(f"Failed to write HTML output: {e}")
     
     # Generate JSON output if requested
     if args.json:
@@ -4372,7 +4406,13 @@ def main():
         json_path.write_text(json.dumps(json_data, ensure_ascii=False, indent=2), encoding='utf-8')
         logging.info(f"JSON data saved: {json_path}")
     
-    print(str(path))
+    # Print primary output path(s)
+    if output_markdown and output_html:
+        print(f"{path}\n{html_path}")
+    elif output_html:
+        print(str(html_path))
+    else:
+        print(str(path))
 
 
 if __name__ == '__main__':
