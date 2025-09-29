@@ -3962,6 +3962,144 @@ def determine_output_format(args, url, content_type=None):
         return (True, False)
 
 
+def write_html_file(content, output_path, url, title=None):
+    """
+    Write HTML content to file with proper formatting and metadata.
+    
+    Args:
+        content (str): Raw HTML content to write
+        output_path (str): Full path where HTML file should be saved
+        url (str): Source URL for metadata/comments  
+        title (str, optional): Page title for HTML head
+        
+    Returns:
+        str: Absolute path of written file
+        
+    Raises:
+        IOError: If file writing fails
+        ValueError: If content or path is invalid
+    """
+    import os
+    from datetime import datetime
+    
+    # Validate inputs
+    if not content:
+        raise ValueError("Content cannot be empty")
+    if not output_path:
+        raise ValueError("Output path cannot be empty")
+    
+    # Ensure output directory exists
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    
+    # Generate HTML document if content is just a fragment
+    if not content.strip().startswith('<!DOCTYPE') and not content.strip().startswith('<html'):
+        # Create full HTML document
+        page_title = title or "Web Content"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        full_html = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{page_title}</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; margin: 2rem; }}
+        .metadata {{ color: #666; font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 1rem; margin-bottom: 2rem; }}
+        .content {{ max-width: 800px; }}
+    </style>
+</head>
+<body>
+    <div class="metadata">
+        <p><strong>Source:</strong> <a href="{url}">{url}</a></p>
+        <p><strong>Generated:</strong> {timestamp}</p>
+        <p><strong>Tool:</strong> WebFetcher</p>
+    </div>
+    <div class="content">
+        {content}
+    </div>
+</body>
+</html>"""
+        content = full_html
+    
+    # Write file with UTF-8 encoding
+    try:
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        logging.debug(f"HTML file written: {output_path}")
+        return os.path.abspath(output_path)
+        
+    except IOError as e:
+        logging.error(f"Failed to write HTML file {output_path}: {e}")
+        raise
+
+
+def get_html_output_path(args, url, base_filename=None):
+    """
+    Generate appropriate HTML output file path based on configuration.
+    
+    Args:
+        args: Parsed command line arguments
+        url (str): Source URL for filename generation
+        base_filename (str, optional): Base name override
+        
+    Returns:
+        str: Absolute path for HTML output file
+        
+    Examples:
+        URL: https://example.com/article -> example.com_article.html
+        With base_filename: custom -> custom.html
+    """
+    import os
+    from urllib.parse import urlparse
+    
+    # Determine output directory
+    if hasattr(args, 'outdir') and args.outdir:
+        output_dir = args.outdir
+    else:
+        output_dir = "output"
+    
+    # Generate filename
+    if base_filename:
+        # Use provided base filename
+        filename = f"{base_filename}.html"
+    else:
+        # Generate from URL using existing patterns
+        try:
+            parsed = urlparse(url)
+            # Create safe filename from URL
+            domain = parsed.netloc.replace('www.', '').replace(':', '_')
+            path_part = parsed.path.strip('/').replace('/', '_').replace('.', '_')
+            
+            if path_part:
+                filename = f"{domain}_{path_part}.html"
+            else:
+                filename = f"{domain}.html"
+                
+            # Clean up filename (remove unsafe characters)
+            filename = "".join(c for c in filename if c.isalnum() or c in '._-')
+            
+        except Exception:
+            # Fallback to simple timestamp-based name
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"webpage_{timestamp}.html"
+    
+    # Create full path
+    full_path = os.path.join(output_dir, filename)
+    
+    # Handle duplicate files by adding counter
+    counter = 1
+    original_path = full_path
+    while os.path.exists(full_path):
+        name, ext = os.path.splitext(original_path)
+        full_path = f"{name}_{counter}{ext}"
+        counter += 1
+    
+    return os.path.abspath(full_path)
+
+
 def main():
     ap = argparse.ArgumentParser(
         description='Fetch a URL (WeChat/XHS/generic) and save as Markdown.',
