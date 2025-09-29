@@ -38,8 +38,7 @@ try:
     from selenium.common.exceptions import (
         WebDriverException, 
         TimeoutException, 
-        NoSuchElementException,
-        ConnectionRefusedException
+        NoSuchElementException
     )
     SELENIUM_AVAILABLE = True
 except ImportError as e:
@@ -50,7 +49,6 @@ except ImportError as e:
     class WebDriverException(Exception): pass
     class TimeoutException(Exception): pass
     class NoSuchElementException(Exception): pass
-    class ConnectionRefusedException(Exception): pass
 
 
 class ChromeConnectionError(Exception):
