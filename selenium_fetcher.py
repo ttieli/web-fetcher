@@ -7,9 +7,16 @@ Designed to maintain login states and avoid automation detection.
 Architecture: Uses Chrome's debug port (9222) to connect to existing browser sessions
 launched by config/chrome-debug.sh, preserving all cookies and login states.
 
+Phase 2 Enhancements:
+- Robust Chrome/ChromeDriver version mismatch detection
+- Clear, actionable error messages with solutions
+- Smart retry logic that avoids retrying version mismatches
+- Enhanced Chrome version parsing and tracking
+- Improved connection error handling
+
 Author: Cody (Claude Code)
 Date: 2025-09-29
-Version: 1.0 (Phase 1)
+Version: 2.0 (Phase 2 - Robust Chrome Connection Enhancement)
 """
 
 import logging
@@ -49,6 +56,59 @@ except ImportError as e:
     class WebDriverException(Exception): pass
     class TimeoutException(Exception): pass
     class NoSuchElementException(Exception): pass
+
+
+# Error Message Templates
+class ErrorMessages:
+    """Centralized error message templates with actionable solutions"""
+    
+    VERSION_MISMATCH = """
+Chrome/ChromeDriver version mismatch detected:
+- Chrome version: {chrome_version}
+- ChromeDriver version: {chromedriver_version}
+
+SOLUTION: Update ChromeDriver to match Chrome version:
+1. Download ChromeDriver from: https://chromedriver.chromium.org/downloads
+2. Or install via: brew install --cask chromedriver (macOS)
+3. Or install via: npm install -g chromedriver
+4. Ensure ChromeDriver is in PATH and matches Chrome version
+
+Current Chrome: {chrome_version}
+Required ChromeDriver: {required_version}
+"""
+
+    CONNECTION_FAILED = """
+Chrome debug connection failed:
+{error_details}
+
+SOLUTION: Ensure Chrome debug session is running:
+1. Start Chrome with debug port: ./config/chrome-debug.sh
+2. Or manually: google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-debug
+3. Verify Chrome is running on port {debug_port}
+4. Check that no firewall is blocking localhost:{debug_port}
+"""
+
+    DEBUG_SESSION_UNAVAILABLE = """
+Chrome debug session not available on port {debug_port}.
+
+SOLUTION: Start Chrome debug session:
+1. Run: ./config/chrome-debug.sh
+2. Or manually: google-chrome --remote-debugging-port={debug_port} --user-data-dir=/tmp/chrome-debug
+3. Wait for Chrome to fully load before retrying
+4. Verify browser is responsive at: http://localhost:{debug_port}/json/version
+
+Make sure Chrome is running with debug port enabled before using Selenium fetcher.
+"""
+
+    SELENIUM_UNAVAILABLE = """
+Selenium dependencies not available.
+
+SOLUTION: Install Selenium requirements:
+1. Run: pip install -r requirements-selenium.txt
+2. Or install manually: pip install selenium
+3. Ensure ChromeDriver is installed and in PATH
+4. Restart application after installation
+"""
 
 
 class ChromeConnectionError(Exception):
@@ -109,6 +169,11 @@ class SeleniumFetcher:
         self.driver = None
         self._connection_established = False
         
+        # Version tracking for better error handling
+        self.chrome_version = None
+        self.chrome_version_info = None
+        self.chromedriver_version = None
+        
         # Extract configuration values
         chrome_config = self.config.get('chrome', {})
         self.debug_port = chrome_config.get('debug_port', 9222)
@@ -136,12 +201,128 @@ class SeleniumFetcher:
         """
         return SELENIUM_AVAILABLE
     
+    def _parse_chrome_version(self, version_info: Dict[str, Any]) -> Optional[str]:
+        """
+        Parse Chrome version from debug session version info.
+        
+        Args:
+            version_info: Response from /json/version endpoint
+            
+        Returns:
+            Chrome version string (e.g., "131.0.6778.108") or None
+        """
+        try:
+            browser_info = version_info.get('Browser', '')
+            
+            # Parse version from browser string like "Chrome/131.0.6778.108"
+            if 'Chrome/' in browser_info:
+                version_part = browser_info.split('Chrome/')[1]
+                version = version_part.split(' ')[0]  # Take first part before any spaces
+                return version
+            
+            # Fallback: try other version fields
+            if 'webKitVersion' in version_info:
+                webkit_version = version_info['webKitVersion']
+                # Extract version number if format is like "537.36 (@cfede9db2, Chrome/131.0.6778.108)"
+                if 'Chrome/' in webkit_version:
+                    chrome_part = webkit_version.split('Chrome/')[1]
+                    version = chrome_part.split(')')[0]  # Remove closing parenthesis
+                    return version
+                    
+            return None
+            
+        except Exception as e:
+            logging.debug(f"Error parsing Chrome version: {e}")
+            return None
+    
+    def _parse_chromedriver_version(self, error_message: str) -> Optional[str]:
+        """
+        Extract ChromeDriver version from WebDriverException error message.
+        
+        Args:
+            error_message: WebDriverException message string
+            
+        Returns:
+            ChromeDriver version string or None
+        """
+        try:
+            # Common patterns in ChromeDriver error messages:
+            # "session not created: This version of ChromeDriver only supports Chrome version 131"
+            # "ChromeDriver 131.0.6778.69"
+            # "only supports Chrome version 131"
+            
+            # Pattern 1: "only supports Chrome version X"
+            if "only supports Chrome version" in error_message:
+                parts = error_message.split("only supports Chrome version")
+                if len(parts) > 1:
+                    version_part = parts[1].strip()
+                    # Extract just the version number
+                    version = version_part.split()[0].split('.')[0]  # Get major version
+                    return version
+            
+            # Pattern 2: "ChromeDriver X.Y.Z.W"
+            if "ChromeDriver" in error_message:
+                import re
+                # Look for version pattern after "ChromeDriver"
+                match = re.search(r'ChromeDriver\s+(\d+\.\d+\.\d+\.?\d*)', error_message)
+                if match:
+                    return match.group(1)
+            
+            return None
+            
+        except Exception as e:
+            logging.debug(f"Error parsing ChromeDriver version: {e}")
+            return None
+    
+    def _is_version_mismatch_error(self, error_message: str) -> bool:
+        """
+        Detect if WebDriverException is due to Chrome/ChromeDriver version mismatch.
+        
+        Args:
+            error_message: WebDriverException message string
+            
+        Returns:
+            True if error appears to be version mismatch
+        """
+        version_mismatch_indicators = [
+            "only supports Chrome version",
+            "version of ChromeDriver only supports",
+            "Current browser version is",
+            "ChromeDriver supports Chrome",
+            "supports Chrome version",  # Added to catch "ChromeDriver X supports Chrome version Y"
+            "session not created",
+            "version mismatch"
+        ]
+        
+        error_lower = error_message.lower()
+        return any(indicator.lower() in error_lower for indicator in version_mismatch_indicators)
+    
+    def _get_required_chromedriver_version(self, chrome_version: str) -> str:
+        """
+        Get the required ChromeDriver version for a given Chrome version.
+        
+        Args:
+            chrome_version: Chrome version string (e.g., "131.0.6778.108")
+            
+        Returns:
+            Required ChromeDriver major version (e.g., "131")
+        """
+        try:
+            # ChromeDriver major version should match Chrome major version
+            major_version = chrome_version.split('.')[0]
+            return major_version
+        except Exception:
+            return "unknown"
+    
     def is_chrome_debug_available(self) -> bool:
         """
         Check if Chrome debug session is running on configured port.
         
         CRITICAL: This prevents attempting connection to non-existent session.
         Uses Chrome DevTools Protocol to verify session availability.
+        
+        Enhanced in Phase 2: Now parses and stores Chrome version information
+        for better error handling and version mismatch detection.
         
         Returns:
             True if Chrome debug session is responsive
@@ -154,7 +335,19 @@ class SeleniumFetcher:
                 response = requests.get(debug_url, timeout=2)
                 if response.status_code == 200:
                     version_info = response.json()
-                    logging.debug(f"Chrome debug session detected: {version_info.get('Browser', 'Unknown')}")
+                    
+                    # Store version information for error handling
+                    self.chrome_version_info = version_info
+                    self.chrome_version = self._parse_chrome_version(version_info)
+                    
+                    browser_info = version_info.get('Browser', 'Unknown')
+                    logging.debug(f"Chrome debug session detected: {browser_info}")
+                    
+                    if self.chrome_version:
+                        logging.info(f"Chrome version detected: {self.chrome_version}")
+                    else:
+                        logging.warning("Could not parse Chrome version from debug session")
+                    
                     return True
                 else:
                     logging.debug(f"Chrome debug port {self.debug_port} not responsive: {response.status_code}")
@@ -167,7 +360,19 @@ class SeleniumFetcher:
                         if response.getcode() == 200:
                             response_data = response.read().decode('utf-8')
                             version_info = json.loads(response_data)
-                            logging.debug(f"Chrome debug session detected: {version_info.get('Browser', 'Unknown')}")
+                            
+                            # Store version information for error handling
+                            self.chrome_version_info = version_info
+                            self.chrome_version = self._parse_chrome_version(version_info)
+                            
+                            browser_info = version_info.get('Browser', 'Unknown')
+                            logging.debug(f"Chrome debug session detected: {browser_info}")
+                            
+                            if self.chrome_version:
+                                logging.info(f"Chrome version detected: {self.chrome_version}")
+                            else:
+                                logging.warning("Could not parse Chrome version from debug session")
+                            
                             return True
                         else:
                             logging.debug(f"Chrome debug port {self.debug_port} not responsive: {response.getcode()}")
@@ -231,17 +436,19 @@ class SeleniumFetcher:
         This method implements the core session-preservation strategy by connecting
         to an existing Chrome browser launched by config/chrome-debug.sh.
         
+        Enhanced in Phase 2: Improved error handling with version mismatch detection
+        and smarter retry logic that doesn't retry on version mismatches.
+        
         Returns:
             Tuple of (success: bool, message: str)
         """
         if not self.is_available():
-            return False, "Selenium dependencies not available - install requirements-selenium.txt"
+            return False, ErrorMessages.SELENIUM_UNAVAILABLE.strip()
         
         if not self.is_chrome_debug_available():
-            return False, (
-                "Chrome debug session not available on port {port}. "
-                "Start Chrome debug session with: ./config/chrome-debug.sh"
-            ).format(port=self.debug_port)
+            return False, ErrorMessages.DEBUG_SESSION_UNAVAILABLE.format(
+                debug_port=self.debug_port
+            ).strip()
         
         connection_start = time.time()
         
@@ -276,14 +483,50 @@ class SeleniumFetcher:
                 return True, f"Connected to Chrome debug session (port {self.debug_port})"
                 
             except WebDriverException as e:
-                logging.warning(f"Chrome connection attempt {attempt + 1} failed: {e}")
+                error_msg = str(e)
+                logging.warning(f"Chrome connection attempt {attempt + 1} failed: {error_msg}")
+                
+                # Check if this is a version mismatch error
+                if self._is_version_mismatch_error(error_msg):
+                    # Parse ChromeDriver version from error message
+                    chromedriver_version = self._parse_chromedriver_version(error_msg)
+                    self.chromedriver_version = chromedriver_version
+                    
+                    # Create detailed version mismatch error message
+                    chrome_version = self.chrome_version or "unknown"
+                    chromedriver_version_display = chromedriver_version or "unknown"
+                    required_version = self._get_required_chromedriver_version(chrome_version) if chrome_version != "unknown" else "unknown"
+                    
+                    version_error = ErrorMessages.VERSION_MISMATCH.format(
+                        chrome_version=chrome_version,
+                        chromedriver_version=chromedriver_version_display,
+                        required_version=required_version
+                    )
+                    
+                    logging.error(f"Version mismatch detected - Chrome: {chrome_version}, ChromeDriver: {chromedriver_version_display}")
+                    
+                    # Don't retry on version mismatch - it won't succeed
+                    return False, version_error.strip()
+                
+                # For non-version-mismatch errors, continue with retry logic
                 if attempt == self.max_connection_attempts - 1:
-                    return False, f"Failed to connect to Chrome debug session after {self.max_connection_attempts} attempts: {e}"
-                time.sleep(1)  # Brief pause before retry
+                    # Last attempt failed - return detailed error
+                    connection_error = ErrorMessages.CONNECTION_FAILED.format(
+                        error_details=error_msg,
+                        debug_port=self.debug_port
+                    )
+                    return False, connection_error.strip()
+                
+                # Brief pause before retry (but only for non-version-mismatch errors)
+                time.sleep(1)
                 
             except Exception as e:
                 logging.error(f"Unexpected error connecting to Chrome: {e}")
-                return False, f"Unexpected Chrome connection error: {e}"
+                unexpected_error = ErrorMessages.CONNECTION_FAILED.format(
+                    error_details=f"Unexpected error: {e}",
+                    debug_port=self.debug_port
+                )
+                return False, unexpected_error.strip()
         
         return False, "Maximum connection attempts exceeded"
     
@@ -478,14 +721,33 @@ class SeleniumFetcher:
         """
         return self._connection_established and self.driver is not None
     
+    def get_version_info(self) -> Dict[str, Any]:
+        """
+        Get Chrome and ChromeDriver version information.
+        
+        Returns:
+            Dictionary with version details
+        """
+        return {
+            'chrome_version': self.chrome_version,
+            'chromedriver_version': self.chromedriver_version,
+            'chrome_version_info': self.chrome_version_info,
+            'version_compatible': (
+                self.chrome_version and self.chromedriver_version and
+                self.chrome_version.split('.')[0] == self.chromedriver_version.split('.')[0]
+            ) if self.chrome_version and self.chromedriver_version else None
+        }
+    
     def get_connection_status(self) -> Dict[str, Any]:
         """
         Get detailed connection status information.
         
+        Enhanced in Phase 2: Now includes version information
+        
         Returns:
             Dictionary with connection status details
         """
-        return {
+        status = {
             'selenium_available': self.is_available(),
             'chrome_debug_available': self.is_chrome_debug_available(),
             'connected': self.is_connected(),
@@ -494,3 +756,8 @@ class SeleniumFetcher:
             'preserve_session': self.preserve_session,
             'connection_established': self._connection_established
         }
+        
+        # Add version information
+        status.update(self.get_version_info())
+        
+        return status

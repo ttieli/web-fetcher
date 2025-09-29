@@ -862,19 +862,21 @@ def _try_selenium_fetch(url: str, ua: Optional[str], timeout: int, metrics: Fetc
         
         # Create and use Selenium fetcher
         with SeleniumFetcher(config._config) as fetcher:
-            # Check if Chrome debug session is available
-            if not fetcher.is_chrome_debug_available():
-                metrics.fetch_duration = time.time() - start_time
-                metrics.final_status = "failed"
-                metrics.error_message = f"Chrome debug session not available on port {fetcher.debug_port}. Start with: ./config/chrome-debug.sh"
-                return "", metrics
-            
-            # Connect to Chrome
+            # Connect to Chrome - enhanced with version mismatch detection and better error messages
             success, message = fetcher.connect_to_chrome()
             if not success:
                 metrics.fetch_duration = time.time() - start_time
                 metrics.final_status = "failed"
                 metrics.error_message = message
+                
+                # Log specific error types for better debugging
+                if "version mismatch" in message.lower():
+                    logging.error(f"Chrome/ChromeDriver version mismatch detected: {message}")
+                elif "debug session not available" in message.lower():
+                    logging.error(f"Chrome debug session unavailable: {message}")
+                else:
+                    logging.error(f"Chrome connection failed: {message}")
+                
                 return "", metrics
             
             # Fetch HTML using Selenium
