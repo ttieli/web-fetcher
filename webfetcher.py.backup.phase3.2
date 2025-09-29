@@ -584,6 +584,334 @@ def normalize_media_url(u: str) -> str:
     return u
 
 
+def docusaurus_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
+    # Detect title: prefer H1 within doc markdown; fallback to og/title
+    title = ''
+    # H1 inside theme-doc-markdown
+    m = re.search(r'<(?:article|div)[^>]+class=["\'][^"\']*theme-doc-markdown[^"\']*["\'][\s\S]*?<h1[^>]*>(.*?)</h1>', html, re.I)
+    if m:
+        title = ihtml.unescape(re.sub(r'<[^>]+>', '', m.group(1))).strip()
+    if not title:
+        title = parsers.extract_meta(html, 'og:title') or parsers.extract_meta(html, 'twitter:title')
+    if not title:
+        m2 = re.search(r'<title[^>]*>(.*?)</title>', html, re.I|re.S)
+        if m2:
+            title = ihtml.unescape(re.sub(r'<[^>]+>', '', m2.group(1))).strip()
+    title = title or '未命名'
+
+    # Choose a root container: element with class including theme-doc-markdown or markdown
+    root_start = None
+    for pat in (r'<(?:article|div)[^>]+class=["\'][^"\']*theme-doc-markdown[^"\']*["\']',
+                r'<(?:article|div)[^>]+class=["\'][^"\']*\bmarkdown\b[^"\']*["\']'):
+        ms = re.search(pat, html, re.I)
+        if ms:
+            root_start = ms.start()
+            break
+    # If not found, fallback to <main>
+    if root_start is None:
+        ms = re.search(r'<main[^>]*>', html, re.I)
+        root_start = ms.start() if ms else 0
+    html_tail = html[root_start:]
+
+    base_url = url
+
+    class DocParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.capture = False
+            self.depth = 0
+            self.parts: list[str] = []
+            self.link_stack: list[Optional[str]] = []  # None means no bracket opened
+            self.list_stack: list[tuple[bool,int]] = []  # (ordered, next_index)
+            self.in_pre = False
+            self.code_lang = ''
+            self.blockquote_level = 0
+            self.in_script = False
+            self.images: list[str] = []
+
+        def push_parbreak(self):
+            if self.parts and not self.parts[-1].endswith('\n\n'):
+                self.parts.append('\n\n')
+
+        def handle_starttag(self, tag, attrs):
+            a = dict(attrs)
+            cls = a.get('class','') or ''
+            if not self.capture and ('theme-doc-markdown' in cls or re.search(r'\bmarkdown\b', cls or '') or tag == 'main'):
+                self.capture = True
+                self.depth = 1
+                return
+            if self.capture:
+                self.depth += 1
+                if tag in ('p','div','section'): self.push_parbreak()
+                elif tag == 'br': self.parts.append('\n')
+                elif tag == 'h1': self.parts.append('\n\n# ')
+                elif tag == 'h2': self.parts.append('\n\n## ')
+                elif tag == 'h3': self.parts.append('\n\n### ')
+                elif tag == 'h4': self.parts.append('\n\n#### ')
+                elif tag == 'h5': self.parts.append('\n\n##### ')
+                elif tag == 'h6': self.parts.append('\n\n###### ')
+                elif tag == 'blockquote':
+                    self.blockquote_level += 1
+                    self.parts.append('\n\n' + '> ' * self.blockquote_level)
+                elif tag == 'ul':
+                    self.list_stack.append((False, 0))
+                    self.parts.append('\n')
+                elif tag == 'ol':
+                    self.list_stack.append((True, 1))
+                    self.parts.append('\n')
+                elif tag == 'li':
+                    indent = '  ' * max(0, len(self.list_stack)-1)
+                    if self.list_stack and self.list_stack[-1][0]:
+                        ordered, idx = self.list_stack[-1]
+                        self.parts.append(f"\n{indent}{idx}. ")
+                        self.list_stack[-1] = (ordered, idx+1)
+                    else:
+                        self.parts.append(f"\n{indent}- ")
+                elif tag == 'pre':
+                    self.in_pre = True
+                    self.code_lang = ''
+                    self.parts.append('\n\n```\n')
+                elif tag == 'script':
+                    self.in_script = True
+                elif tag == 'code':
+                    if self.in_pre:
+                        # language from class like language-python
+                        cls = a.get('class','') or ''
+                        m = re.search(r'language-([\w+-]+)', cls)
+                        if m:
+                            # replace opening fence with language
+                            if self.parts and self.parts[-1].endswith('```\n'):
+                                self.parts[-1] = self.parts[-1][:-4] + m.group(1) + '\n'
+                    else:
+                        self.parts.append('`')
+                elif tag == 'img':
+                    src = a.get('src') or a.get('data-src')
+                    if src:
+                        src = resolve_url_with_context(base_url, src)
+                        src = normalize_media_url(src)
+                        self.images.append(src)
+                        self.parts.append(f"\n\n![]({src})\n\n")
+                elif tag == 'a':
+                    href = a.get('href') or ''
+                    if href and not href.startswith('#'):
+                        href = href.strip().split()[0]
+                        href = href.split(' target=')[0]
+                        href = href.strip('"\'')
+                        href = resolve_url_with_context(base_url, href)
+                        href = normalize_media_url(href)
+                        self.link_stack.append(href)
+                        self.parts.append('[')
+                    else:
+                        self.link_stack.append(None)
+
+        def handle_endtag(self, tag):
+            if self.capture:
+                if tag == 'a':
+                    href = self.link_stack.pop() if self.link_stack else None
+                    if href is not None:
+                        self.parts.append(f"]({href})")
+                elif tag == 'blockquote':
+                    self.blockquote_level = max(0, self.blockquote_level-1)
+                    self.parts.append('\n\n')
+                elif tag == 'pre':
+                    self.in_pre = False
+                    self.parts.append('\n```\n\n')
+                elif tag == 'script':
+                    self.in_script = False
+                elif tag == 'code':
+                    if not self.in_pre:
+                        self.parts.append('`')
+                elif tag in ('ul','ol'):
+                    if self.list_stack:
+                        self.list_stack.pop()
+                        self.parts.append('\n')
+                self.depth -= 1
+                if self.depth == 0:
+                    self.capture = False
+
+        def handle_data(self, data):
+            if self.capture and not self.in_script:
+                if self.in_pre:
+                    self.parts.append(data)
+                else:
+                    t = data.replace('\r','')
+                    if t.strip():
+                        if t.strip() == '¶':
+                            return
+                        if self.blockquote_level:
+                            # indent blockquote lines
+                            pref = '> ' * self.blockquote_level
+                            lines = [pref + ihtml.unescape(x) for x in t.splitlines() if x.strip()]
+                            self.parts.append('\n'.join(lines))
+                        else:
+                            self.parts.append(ihtml.unescape(t))
+
+    parser = DocParser()
+    parser.feed(html_tail)
+    body = ''.join(parser.parts)
+    body = re.sub(r'\n{3,}', '\n\n', body).strip()
+    date_only, date_time = parsers.parse_date_like(parsers.extract_meta(html, 'article:published_time') or parsers.extract_meta(html, 'og:updated_time'))
+    desc = parsers.extract_meta(html, 'description')
+    lines = [f"# {title}", f"- 标题: {title}", f"- 发布时间: {date_time}", f"- 来源: [{url}]({url})", f"- 抓取时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"]
+    if body:
+        lines += ["", body]
+    else:
+        lines += ["", '(未能提取正文)']
+    
+    metadata = {
+        'description': desc,
+        'images': parser.images,
+        'publish_time': parsers.extract_meta(html, 'article:published_time') or parsers.extract_meta(html, 'og:updated_time')
+    }
+    return date_only, "\n\n".join(lines).strip() + "\n", metadata
+
+
+def mkdocs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
+    # Title from h1 within md-typeset, else <title>
+    title = ''
+    m = re.search(r'<article[^>]+class=["\'][^"\']*md-content__inner[^"\']*["\'][\s\S]*?<h1[^>]*>(.*?)</h1>', html, re.I)
+    if m:
+        title = ihtml.unescape(re.sub(r'<[^>]+>', '', m.group(1))).strip()
+    if not title:
+        m2 = re.search(r'<title[^>]*>(.*?)</title>', html, re.I|re.S)
+        if m2:
+            title = ihtml.unescape(re.sub(r'<[^>]+>', '', m2.group(1))).strip()
+    title = title or '未命名'
+
+    # Use the article md-typeset region as root
+    ms = re.search(r'<article[^>]+class=["\'][^"\']*md-content__inner[^"\']*["\']', html, re.I)
+    root_start = ms.start() if ms else 0
+    html_tail = html[root_start:]
+
+    base_url = url
+
+    class MkParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.capture = False
+            self.depth = 0
+            self.parts: list[str] = []
+            self.link_stack: list[Optional[str]] = []
+            self.list_stack: list[tuple[bool,int]] = []
+            self.in_pre = False
+            self.blockquote_level = 0
+            self.in_script = False
+            self.images: list[str] = []
+
+        def handle_starttag(self, tag, attrs):
+            a = dict(attrs)
+            cls = a.get('class','') or ''
+            if not self.capture and ('md-content__inner' in cls or tag == 'article'):
+                self.capture = True
+                self.depth = 1
+                return
+            if self.capture:
+                self.depth += 1
+                if tag in ('p','div','section'): self.parts.append('\n\n')
+                elif tag == 'br': self.parts.append('\n')
+                elif tag == 'h1': self.parts.append('\n\n# ')
+                elif tag == 'h2': self.parts.append('\n\n## ')
+                elif tag == 'h3': self.parts.append('\n\n### ')
+                elif tag == 'h4': self.parts.append('\n\n#### ')
+                elif tag == 'h5': self.parts.append('\n\n##### ')
+                elif tag == 'h6': self.parts.append('\n\n###### ')
+                elif tag == 'blockquote':
+                    self.blockquote_level += 1
+                    self.parts.append('\n\n' + '> ' * self.blockquote_level)
+                elif tag == 'ul':
+                    self.list_stack.append((False, 0))
+                    self.parts.append('\n')
+                elif tag == 'ol':
+                    self.list_stack.append((True, 1))
+                    self.parts.append('\n')
+                elif tag == 'li':
+                    indent = '  ' * max(0, len(self.list_stack)-1)
+                    if self.list_stack and self.list_stack[-1][0]:
+                        ordered, idx = self.list_stack[-1]
+                        self.parts.append(f"\n{indent}{idx}. ")
+                        self.list_stack[-1] = (ordered, idx+1)
+                    else:
+                        self.parts.append(f"\n{indent}- ")
+                elif tag == 'pre':
+                    self.in_pre = True
+                    self.parts.append('\n\n```\n')
+                elif tag == 'script':
+                    self.in_script = True
+                elif tag == 'code':
+                    if not self.in_pre:
+                        self.parts.append('`')
+                elif tag == 'img':
+                    src = a.get('src') or a.get('data-src')
+                    if src:
+                        src = resolve_url_with_context(base_url, src)
+                        src = normalize_media_url(src)
+                        self.images.append(src)
+                        self.parts.append(f"\n\n![]({src})\n\n")
+                elif tag == 'a':
+                    href = a.get('href') or ''
+                    if href and not href.startswith('#'):
+                        href = href.strip().split()[0]
+                        href = href.split(' target=')[0]
+                        href = href.strip('"\'')
+                        href = resolve_url_with_context(base_url, href)
+                        href = normalize_media_url(href)
+                        self.link_stack.append(href)
+                        self.parts.append('[')
+                    else:
+                        self.link_stack.append(None)
+
+        def handle_endtag(self, tag):
+            if self.capture:
+                if tag == 'a':
+                    href = self.link_stack.pop() if self.link_stack else None
+                    if href is not None:
+                        self.parts.append(f"]({href})")
+                elif tag == 'blockquote':
+                    self.blockquote_level = max(0, self.blockquote_level-1)
+                    self.parts.append('\n\n')
+                elif tag == 'pre':
+                    self.in_pre = False
+                    self.parts.append('\n```\n\n')
+                elif tag == 'script':
+                    self.in_script = False
+                elif tag == 'code':
+                    if not self.in_pre:
+                        self.parts.append('`')
+                elif tag in ('ul','ol'):
+                    if self.list_stack:
+                        self.list_stack.pop()
+                        self.parts.append('\n')
+                self.depth -= 1
+                if self.depth == 0:
+                    self.capture = False
+
+        def handle_data(self, data):
+            if self.capture and not self.in_script:
+                if self.in_pre:
+                    self.parts.append(data)
+                else:
+                    t = data.replace('\r','')
+                    if t.strip():
+                        if t.strip() == '¶':
+                            return
+                        self.parts.append(ihtml.unescape(t))
+
+    parser = MkParser()
+    parser.feed(html_tail)
+    body = ''.join(parser.parts)
+    body = re.sub(r'\n{3,}', '\n\n', body).strip()
+    date_only, date_time = parsers.parse_date_like(parsers.extract_meta(html, 'article:published_time') or parsers.extract_meta(html, 'og:updated_time'))
+    desc = parsers.extract_meta(html, 'description')
+    lines = [f"# {title}", f"- 标题: {title}", f"- 发布时间: {date_time}", f"- 来源: [{url}]({url})", f"- 抓取时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"]
+    lines += ["", body or '(未能提取正文)']
+    
+    metadata = {
+        'description': desc,
+        'images': parser.images,
+        'publish_time': parsers.extract_meta(html, 'article:published_time') or parsers.extract_meta(html, 'og:updated_time')
+    }
+    return date_only, "\n\n".join(lines).strip() + "\n", metadata
+
 
 def should_retry_exception(exc: Exception) -> bool:
     """Determine if an exception warrants a retry attempt."""
@@ -2218,6 +2546,236 @@ def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
 
 
 
+def raw_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
+    """
+    Raw mode parser - 尽可能保留所有内容的解析器
+    
+    设计原则：
+    1. 宁可冗余，不可遗漏
+    2. 保持原始结构
+    3. 最小化处理
+    4. 明确标记不同类型的内容
+    """
+    
+    # 智能解析：优先使用BeautifulSoup，降级到HTMLParser
+    BeautifulSoup = get_beautifulsoup_parser()
+    
+    if BeautifulSoup:
+        # 使用BeautifulSoup进行解析（更宽容的解析器）
+        soup = BeautifulSoup(html, 'html.parser')
+        parser_used = "BeautifulSoup"
+    else:
+        # 降级到HTMLParser方案
+        logging.warning("BeautifulSoup不可用，使用HTMLParser降级解析。建议安装: pip install beautifulsoup4")
+        return extract_with_htmlparser(html, url)
+    
+    # 1. 提取基本元数据
+    title = soup.title.string if soup.title else '未命名'
+    
+    # 2. 移除不需要的元素（但保守处理）
+    for tag in soup(['script', 'style', 'noscript']):
+        tag.decompose()
+    
+    # 3. 构建内容列表
+    content_parts = []
+    
+    # 3.1 保留所有meta信息
+    meta_section = ["## 页面元数据\n"]
+    for meta in soup.find_all('meta'):
+        if meta.get('name'):
+            meta_section.append(f"- {meta.get('name')}: {meta.get('content', '')}")
+        elif meta.get('property'):
+            meta_section.append(f"- {meta.get('property')}: {meta.get('content', '')}")
+    
+    if len(meta_section) > 1:
+        content_parts.append('\n'.join(meta_section))
+    
+    # 3.2 提取主体内容（保持结构）
+    content_parts.append("\n## 页面内容\n")
+    
+    def extract_text_with_structure(element, level=0):
+        """递归提取文本，保持结构"""
+        output = []
+        
+        if element.name:
+            # 处理标题
+            if element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+                h_level = int(element.name[1])
+                output.append('#' * h_level + ' ' + element.get_text(strip=True))
+            
+            # 处理段落
+            elif element.name == 'p':
+                text = element.get_text(strip=True)
+                if text:  # 即使很短也保留
+                    output.append(text)
+            
+            # 处理列表
+            elif element.name in ['ul', 'ol']:
+                for li in element.find_all('li', recursive=False):
+                    output.append('- ' + li.get_text(strip=True))
+            
+            # 处理表格（简单ASCII表示）
+            elif element.name == 'table':
+                output.append("\n[表格内容]")
+                for row in element.find_all('tr'):
+                    cells = row.find_all(['td', 'th'])
+                    if cells:
+                        row_text = ' | '.join(cell.get_text(strip=True) for cell in cells)
+                        output.append('| ' + row_text + ' |')
+            
+            # 处理图片
+            elif element.name == 'img':
+                alt = element.get('alt', '')
+                src = element.get('src', '')
+                output.append(f"[图片: {alt or src}]")
+            
+            # 处理视频
+            elif element.name == 'video':
+                src = element.get('src', '多个源')
+                output.append(f"[视频: {src}]")
+            
+            # 处理音频
+            elif element.name == 'audio':
+                src = element.get('src', '多个源')
+                output.append(f"[音频: {src}]")
+            
+            # 处理链接（保留链接文本和URL）
+            elif element.name == 'a':
+                href = element.get('href', '')
+                text = element.get_text(strip=True)
+                if text and href:
+                    output.append(f"[{text}]({href})")
+                elif text:
+                    output.append(text)
+            
+            # 处理块引用
+            elif element.name == 'blockquote':
+                text = element.get_text(strip=True)
+                if text:
+                    output.append('> ' + text)
+            
+            # 处理预格式化文本
+            elif element.name in ['pre', 'code']:
+                text = element.get_text(strip=False)  # 保留空白
+                if text:
+                    output.append('```\n' + text + '\n```')
+            
+            # 其他块级元素
+            elif element.name in ['div', 'section', 'article', 'main', 'aside', 'header', 'footer']:
+                # 递归处理子元素
+                for child in element.children:
+                    if hasattr(child, 'name'):
+                        child_output = extract_text_with_structure(child, level + 1)
+                        output.extend(child_output)
+                    elif isinstance(child, str):
+                        text = child.strip()
+                        if text and len(text) > 1:  # 保留几乎所有文本
+                            output.append(text)
+            
+            # 处理其他内联元素
+            elif element.name in ['span', 'strong', 'em', 'b', 'i', 'u']:
+                text = element.get_text(strip=True)
+                if text:
+                    output.append(text)
+        
+        return output
+    
+    # 提取body内容
+    body = soup.body if soup.body else soup
+    body_content = []
+    
+    # 直接处理body的子元素
+    for child in body.children:
+        if hasattr(child, 'name'):
+            child_output = extract_text_with_structure(child, 0)
+            body_content.extend(child_output)
+        elif isinstance(child, str):
+            text = child.strip()
+            if text and len(text) > 1:  # 保留几乎所有文本
+                body_content.append(text)
+    
+    # 去除连续空行，但保留段落结构
+    cleaned_content = []
+    prev_empty = False
+    for line in body_content:
+        if not line:
+            if not prev_empty:
+                cleaned_content.append('')
+                prev_empty = True
+        else:
+            cleaned_content.append(line)
+            prev_empty = False
+    
+    content_parts.extend(cleaned_content)
+    
+    # 3.3 提取所有链接（作为附录）
+    all_links = []
+    for a in soup.find_all('a', href=True):
+        href = a.get('href')
+        text = a.get_text(strip=True)
+        if href and not href.startswith('#'):
+            # 解析相对URL
+            if not href.startswith(('http://', 'https://', '//')):
+                from urllib.parse import urljoin
+                href = urljoin(url, href)
+            all_links.append(f"- [{text or '无文本'}]({href})")
+    
+    if all_links:
+        content_parts.append("\n## 页面链接汇总\n")
+        content_parts.extend(all_links[:100])  # 限制最多100个链接
+        if len(all_links) > 100:
+            content_parts.append(f"\n... 还有 {len(all_links) - 100} 个链接未显示")
+    
+    # 3.4 提取所有图片
+    all_images = []
+    for img in soup.find_all('img', src=True):
+        src = img.get('src')
+        alt = img.get('alt', '')
+        if src and not src.startswith('data:'):
+            # 解析相对URL
+            if not src.startswith(('http://', 'https://', '//')):
+                from urllib.parse import urljoin
+                src = urljoin(url, src)
+            all_images.append(src)
+    
+    if all_images:
+        content_parts.append("\n## 页面图片汇总\n")
+        for img_url in all_images[:50]:  # 限制最多50张图片
+            content_parts.append(f"![]({img_url})")
+        if len(all_images) > 50:
+            content_parts.append(f"\n... 还有 {len(all_images) - 50} 张图片未显示")
+    
+    # 4. 构建最终的Markdown
+    current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    date_only = datetime.datetime.now().strftime('%Y-%m-%d')
+    
+    md_lines = [
+        f"# {title}",
+        "",
+        "## 文档信息",
+        f"- 标题: {title}",
+        f"- 来源: [{url}]({url})",
+        f"- 抓取时间: {current_time}",
+        f"- 解析模式: Raw (完整内容模式)",
+        "",
+        *content_parts
+    ]
+    
+    # 5. 构建元数据
+    metadata = {
+        'parser': 'raw',
+        'parser_used': parser_used,
+        'title': title,
+        'url': url,
+        'scraped_at': current_time,
+        'content_length': len(html),
+        'text_length': sum(len(part) for part in content_parts if isinstance(part, str)),
+        'images_count': len(all_images),
+        'links_count': len(all_links),
+        'description': f'Raw mode extraction using {parser_used} - complete content preservation'
+    }
+    
+    return date_only, '\n'.join(md_lines), metadata
 
 
 def detect_page_type(html: str, url: Optional[str] = None, is_crawling: bool = False) -> PageType:
@@ -3861,6 +4419,10 @@ def main():
     ap.add_argument('--save-html', nargs='?', const=True, help='Save fetched/rendered HTML snapshot before parsing (optional path).')
     ap.add_argument('--json', action='store_true', help='Output structured JSON alongside Markdown')
     ap.add_argument('--verbose', action='store_true', help='Enable verbose logging (INFO level)')
+    ap.add_argument('--follow-pagination', action='store_true', 
+                    help='Follow next/previous links to aggregate multi-page documents (MkDocs/Docusaurus only)')
+    ap.add_argument('--raw', action='store_true', 
+                    help='Use raw parser mode (complete content preservation, no filtering)')
     ap.add_argument('--filter', choices=['none', 'safe', 'moderate', 'aggressive'], default='safe',
                     help='Content filtering level: none (no filtering), safe (remove scripts/ads), moderate (+ navigation), aggressive (+ metadata) (default: safe)')
     ap.add_argument('--crawl-site', action='store_true',
@@ -3889,6 +4451,10 @@ def main():
         logging.warning(f"Requested pages {args.max_pages} exceeds maximum {MAX_CRAWL_PAGES}, using {MAX_CRAWL_PAGES}")
         args.max_pages = MAX_CRAWL_PAGES
     
+    # Handle --raw flag override for filtering
+    if args.raw:
+        logging.info("Raw mode enabled, disabling content filtering")
+        args.filter = 'none'
     
     setup_logging(args.verbose)
     # Validate and encode URL for proper Unicode handling
@@ -3932,9 +4498,19 @@ def main():
         if crawled_pages:
             # Detect appropriate parser from first page
             first_html = crawled_pages[0][1]
-            # Always use generic parser for crawling
-            parser_func = generic_to_markdown
-            parser_name = "Generic"
+            if args.raw:
+                parser_func = raw_to_markdown
+                parser_name = "Raw"
+                logging.info("Using Raw parser for site content (user requested)")
+            elif re.search(r'theme-doc-markdown|class="[^"]*\\bmarkdown\\b', first_html, re.I):
+                parser_func = docusaurus_to_markdown
+                parser_name = "Docusaurus"
+            elif re.search(r'md-content__inner\s+md-typeset', first_html, re.I):
+                parser_func = mkdocs_to_markdown
+                parser_name = "MkDocs"
+            else:
+                parser_func = generic_to_markdown
+                parser_name = "Generic"
             
             logging.info(f"Using {parser_name} parser for site content")
             
@@ -4048,7 +4624,12 @@ def main():
             logging.warning(f"Failed to save HTML snapshot: {e}")
 
     # Parser selection
-    if 'mp.weixin.qq.com' in host:
+    if args.raw:
+        logging.info("Selected parser: Raw (user requested)")
+        parser_name = "Raw"
+        date_only, md, metadata = raw_to_markdown(html, url)
+        rendered = False
+    elif 'mp.weixin.qq.com' in host:
         logging.info("Selected parser: WeChat")
         parser_name = "WeChat"
         date_only, md, metadata = wechat_to_markdown(html, url)
@@ -4058,6 +4639,47 @@ def main():
         parser_name = "Xiaohongshu"
         date_only, md, metadata = xhs_to_markdown(html, url)
         rendered = should_render
+    elif 'dianping.com' in host:
+        logging.info("Selected parser: Dianping")
+        parser_name = "Dianping"
+        date_only, md, metadata = dianping_to_markdown(html, url)
+        rendered = should_render
+    elif 'ebchina.com' in host and 'class="N_title"' in html:
+        # EB China news list page
+        logging.info("Selected parser: EB China News List")
+        parser_name = "EBChina_NewsList"
+        date_only, md, metadata = ebchina_news_list_to_markdown(html, url)
+        rendered = False
+    elif re.search(r'theme-doc-markdown|class=\"[^\"]*\\bmarkdown\\b', html, re.I):
+        logging.info("Selected parser: Docusaurus")
+        parser_name = "Docusaurus"
+        # Multi-page support for Docusaurus
+        if args.follow_pagination:
+            logging.info("Multi-page mode enabled, following pagination links...")
+            pages = process_pagination(url, html, docusaurus_to_markdown, ua)
+            if len(pages) > 1:
+                logging.info(f"Aggregated {len(pages)} pages into single document")
+                date_only, md, metadata = aggregate_multi_page_content(pages)
+            else:
+                date_only, md, metadata = pages[0]
+        else:
+            date_only, md, metadata = docusaurus_to_markdown(html, url)
+        rendered = False
+    elif re.search(r'md-content__inner\s+md-typeset', html, re.I):
+        logging.info("Selected parser: MkDocs")
+        parser_name = "MkDocs"
+        # Multi-page support for MkDocs
+        if args.follow_pagination:
+            logging.info("Multi-page mode enabled, following pagination links...")
+            pages = process_pagination(url, html, mkdocs_to_markdown, ua)
+            if len(pages) > 1:
+                logging.info(f"Aggregated {len(pages)} pages into single document")
+                date_only, md, metadata = aggregate_multi_page_content(pages)
+            else:
+                date_only, md, metadata = pages[0]
+        else:
+            date_only, md, metadata = mkdocs_to_markdown(html, url)
+        rendered = False
     else:
         logging.info("Selected parser: Generic")
         parser_name = "Generic"
