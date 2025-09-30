@@ -26,6 +26,8 @@ perf_test*/
 *.test.md
 *.test.json
 test_*_validation.py
+test_error.md/
+validate_phase*.py
 
 # Temporary architecture review documents
 architecture_review_*.md
