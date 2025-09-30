@@ -55,6 +55,18 @@ except ImportError as e:
 # Parser modules
 import parsers
 
+# Error handler integration (Task 1 Phase 2)
+try:
+    from error_handler import ErrorClassifier, ErrorReporter, ErrorCategory
+    ERROR_HANDLER_AVAILABLE = True
+except ImportError as e:
+    logging.debug(f"Error handler not available: {e}")
+    ERROR_HANDLER_AVAILABLE = False
+    # Create dummy classes to prevent import errors
+    class ErrorClassifier: pass
+    class ErrorReporter: pass
+    class ErrorCategory: pass
+
 # Safari integration removed - using urllib only
 
 
@@ -4499,6 +4511,40 @@ def generate_failure_markdown(url: str, metrics: FetchMetrics, exception=None) -
     Returns:
         str: 格式化的失败Markdown内容
     """
+    # If error_handler is available, use it for enhanced reporting
+    if ERROR_HANDLER_AVAILABLE:
+        try:
+            # Step 1: Initialize error_handler components
+            classifier = ErrorClassifier()
+            reporter = ErrorReporter(classifier)
+
+            # Step 2: Convert FetchMetrics to error_handler expected format
+            metrics_dict = {
+                'primary_method': getattr(metrics, 'primary_method', 'unknown'),
+                'final_status': getattr(metrics, 'final_status', 'failed'),
+                'error_message': getattr(metrics, 'error_message', 'Unknown error'),
+                'total_duration': getattr(metrics, 'total_duration', 0.0),
+                'status_code': getattr(metrics, 'status_code', None),
+                'fetch_duration': getattr(metrics, 'fetch_duration', 0.0),
+                'fallback_method': getattr(metrics, 'fallback_method', None),
+                'total_attempts': getattr(metrics, 'total_attempts', 1),
+            }
+
+            # Step 3: Use ErrorReporter to generate report
+            markdown_report = reporter.generate_markdown_report(
+                url=url,
+                metrics=metrics_dict,
+                exception=exception
+            )
+
+            # Step 4: Return report (backward compatible)
+            return markdown_report
+
+        except Exception as e:
+            # Fallback to original implementation if error_handler fails
+            logging.warning(f"Error handler failed, using fallback: {e}")
+
+    # Original implementation (fallback when error_handler is not available or fails)
     # Detect system language from LANG environment variable
     lang = os.environ.get('LANG', '').lower()
     is_chinese = 'zh' in lang or 'cn' in lang
