@@ -4370,6 +4370,103 @@ def get_html_output_path(args, url, base_filename=None):
     return os.path.abspath(full_path)
 
 
+def format_selenium_error(exception):
+    """
+    格式化Selenium相关错误为用户友好的输出
+
+    Args:
+        exception: Selenium相关的异常对象
+
+    Returns:
+        str: 格式化的错误消息字符串
+    """
+    exception_type = type(exception).__name__
+    error_message = str(exception)
+
+    # Split error message into sections
+    problem = ""
+    solution = ""
+    command = ""
+
+    # Parse the error message to extract PROBLEM, SOLUTION, and COMMAND
+    lines = error_message.split('\n')
+    current_section = None
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Identify sections
+        if 'SOLUTION:' in line:
+            current_section = 'solution'
+            # Extract text after SOLUTION: on same line
+            solution_text = line.split('SOLUTION:', 1)[-1].strip()
+            if solution_text:
+                solution += solution_text + '\n'
+            continue
+
+        # Extract commands (prioritize shell scripts, then chrome commands, then pip install)
+        if './config/chrome-debug.sh' in line:
+            # Extract shell script command (highest priority)
+            if ':' in line:
+                cmd_part = line.split(':', 1)[-1].strip()
+            else:
+                cmd_part = line.strip()
+            if cmd_part:
+                command = cmd_part  # Override any previous command
+        elif ('--remote-debugging-port' in line or 'pip install' in line) and not command:
+            # Extract chrome or pip command (lower priority)
+            if ':' in line:
+                cmd_part = line.split(':', 1)[-1].strip()
+            else:
+                cmd_part = line.strip()
+            if cmd_part:
+                command = cmd_part
+
+        # Accumulate text based on current section
+        if current_section == 'solution':
+            if stripped and not stripped.startswith('SOLUTION:'):
+                solution += stripped + '\n'
+        elif not current_section:
+            # Before SOLUTION section, this is the problem
+            if stripped and 'SOLUTION:' not in line:
+                problem += stripped + '\n'
+
+    # Clean up sections
+    problem = problem.strip()
+    solution = solution.strip()
+    command = command.strip()
+
+    # If we couldn't parse sections, fall back to simple format
+    if not problem:
+        problem = error_message.split('SOLUTION:')[0].strip()
+
+    if not solution and 'SOLUTION:' in error_message:
+        solution = error_message.split('SOLUTION:', 1)[-1].strip()
+
+    # Build formatted output
+    output = []
+    output.append("=" * 40)
+    output.append(f"ERROR: {exception_type}")
+    output.append("=" * 40)
+    output.append("")
+    output.append("PROBLEM:")
+    output.append(problem)
+    output.append("")
+
+    if solution:
+        output.append("SOLUTION:")
+        output.append(solution)
+        output.append("")
+
+    if command:
+        output.append("COMMAND:")
+        output.append(command)
+
+    output.append("=" * 40)
+
+    return '\n'.join(output)
+
+
 def main():
     ap = argparse.ArgumentParser(
         description='Fetch a URL (WeChat/XHS/generic) and save as Markdown.',
@@ -4594,7 +4691,9 @@ def main():
                 logging.info("Static fetch completed")
             except (ChromeConnectionError, SeleniumNotAvailableError, SeleniumFetchError, SeleniumTimeoutError) as e:
                 logging.error(f"Selenium fetch failed: {e}")
-                print(f"Error: {e}", file=sys.stderr)
+                # Phase 3 Step 1: Use structured error formatting
+                formatted_error = format_selenium_error(e)
+                print(formatted_error, file=sys.stderr)
                 sys.exit(1)
 
     # Try to download file if it's a downloadable type
