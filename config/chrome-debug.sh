@@ -48,6 +48,13 @@ else
     exec "${CHROME_APP}" \
       --remote-debugging-port="${PORT}" \
       --user-data-dir="${PROFILE_DIR}" \
+      --remote-allow-origins=* \
       --no-first-run \
+      --no-default-browser-check \
+      --disable-popup-blocking \
+      --disable-translate \
+      --disable-background-timer-throttling \
+      --disable-renderer-backgrounding \
+      --disable-device-discovery-notifications \
       "$@"
 fi
