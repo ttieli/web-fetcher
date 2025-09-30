@@ -170,35 +170,54 @@ def extract_json_ld_content(html: str) -> dict:
 
 
 def extract_from_modern_selectors(html: str) -> str:
-    """Enhanced content extraction for modern static site generators (Hugo, Jekyll, etc.)"""
+    """
+    Enhanced content extraction for modern static site generators and SPAs.
+
+    Phase 1 Optimization:
+    - Prioritize HTML5 semantic tags (main, article) for better SPA support
+    - Add SPA container selectors (div#root, div#app, div#__next)
+    - Increase content validation threshold to 500 bytes
+    - Implement smart selection when multiple candidates exist
+    """
     import re
     import html as ihtml
-    
-    # Define CSS selector patterns for modern static sites
+
+    # PHASE 1: Optimized selector priority order
+    # Higher priority selectors come first for better performance
     content_selectors = [
-        # News sites specific patterns (news.cn uses span#detailContent)
-        r'<span[^>]*id=["\']detailContent["\'][^>]*>(.*?)</span>',
-        r'<div[^>]*id=["\']detailContent["\'][^>]*>(.*?)</div>',
-        
-        # Hugo/Jekyll specific patterns
-        r'<div[^>]*class=["\'][^"\']*hero-content[^"\']*["\'][^>]*>(.*?)</div>',
-        r'<div[^>]*class=["\'][^"\']*post-content[^"\']*["\'][^>]*>(.*?)</div>',
-        r'<div[^>]*class=["\'][^"\']*article-content[^"\']*["\'][^>]*>(.*?)</div>',
-        r'<div[^>]*class=["\'][^"\']*content[^"\']*["\'][^>]*>(.*?)</div>',
-        
-        # Generic CMS patterns
-        r'<div[^>]*class=["\'][^"\']*entry-content[^"\']*["\'][^>]*>(.*?)</div>',
-        r'<div[^>]*class=["\'][^"\']*main-content[^"\']*["\'][^>]*>(.*?)</div>',
-        
-        # HTML5 semantic elements
+        # Priority 1: HTML5 semantic elements (most reliable for SPAs like React.dev)
         r'<main[^>]*>(.*?)</main>',
         r'<article[^>]*>(.*?)</article>',
+
+        # Priority 2: SPA framework containers (React, Vue, Next.js)
+        r'<div[^>]*id=["\']root["\'][^>]*>(.*?)</div>',
+        r'<div[^>]*id=["\']app["\'][^>]*>(.*?)</div>',
+        r'<div[^>]*id=["\']__next["\'][^>]*>(.*?)</div>',
+
+        # Priority 3: ARIA roles for accessibility-focused sites
+        r'<div[^>]*role=["\']main["\'][^>]*>(.*?)</div>',
+
+        # Priority 4: News sites specific patterns (news.cn uses span#detailContent)
+        r'<span[^>]*id=["\']detailContent["\'][^>]*>(.*?)</span>',
+        r'<div[^>]*id=["\']detailContent["\'][^>]*>(.*?)</div>',
+
+        # Priority 5: Generic CMS patterns
+        r'<div[^>]*class=["\'][^"\']*main-content[^"\']*["\'][^>]*>(.*?)</div>',
+        r'<div[^>]*class=["\'][^"\']*entry-content[^"\']*["\'][^>]*>(.*?)</div>',
+
+        # Priority 6: Hugo/Jekyll specific patterns
+        r'<div[^>]*class=["\'][^"\']*post-content[^"\']*["\'][^>]*>(.*?)</div>',
+        r'<div[^>]*class=["\'][^"\']*article-content[^"\']*["\'][^>]*>(.*?)</div>',
+        r'<div[^>]*class=["\'][^"\']*hero-content[^"\']*["\'][^>]*>(.*?)</div>',
+        r'<div[^>]*class=["\'][^"\']*content[^"\']*["\'][^>]*>(.*?)</div>',
+
+        # Priority 7: Generic content sections
         r'<section[^>]*class=["\'][^"\']*content[^"\']*["\'][^>]*>(.*?)</section>',
-        
-        # Landing page specific patterns
+
+        # Priority 8: Landing page patterns (LOWER priority to avoid short snippets)
         r'<div[^>]*class=["\'][^"\']*intro[^"\']*["\'][^>]*>(.*?)</div>',
         r'<div[^>]*class=["\'][^"\']*description[^"\']*["\'][^>]*>(.*?)</div>',
-        r'<div[^>]*class=["\'][^"\']*lead[^"\']*["\'][^>]*>(.*?)</div>',
+        # NOTE: div.lead moved to lower priority due to React.dev issue (25 bytes extracted)
     ]
     
     # FIXED: Collect ALL matching content instead of returning first match
@@ -241,19 +260,50 @@ def extract_from_modern_selectors(html: str) -> str:
                 else:
                     pos += 1
     
-    for pattern in content_selectors:
+    # PHASE 1: Smart content extraction with validation
+    # Collect candidates with their metadata for intelligent selection
+    candidates = []  # List of (selector_priority, content_length, text_content)
+
+    for priority_index, pattern in enumerate(content_selectors):
         matches = re.findall(pattern, html, re.I | re.S)
         for match in matches:
             # Clean and extract text content
             text = extract_text_from_html_fragment(match)
-            if text and len(text.strip()) > 200:  # Higher threshold to avoid fragments
+            content_length = len(text.strip())
+
+            # PHASE 1: Increased validation threshold from 200 to 500 bytes
+            # This prevents extraction of short snippets like the 25-byte div.lead on React.dev
+            if text and content_length >= 500:
                 # Intelligent deduplication: use first 100 chars as signature
                 text_start = text[:100].strip()
                 if text_start not in seen_starts:
-                    all_content.append(text.strip())
+                    candidates.append((priority_index, content_length, text.strip()))
                     seen_starts.add(text_start)
-    
-    # Join all unique content blocks with proper paragraph spacing
+
+    # PHASE 1: Smart selection strategy
+    # If we have multiple candidates, prefer higher priority AND substantial content
+    if candidates:
+        # Sort by: 1) priority (lower index = higher priority), 2) content length (longer = better)
+        # For same priority, choose the longest content
+        candidates.sort(key=lambda x: (x[0], -x[1]))
+
+        # Strategy: Take the best candidate from the highest priority level
+        best_priority = candidates[0][0]
+        best_candidates = [c for c in candidates if c[0] == best_priority]
+
+        # If multiple candidates at same priority, take the longest
+        best_candidate = max(best_candidates, key=lambda x: x[1])
+        all_content.append(best_candidate[2])
+
+        # Also include other high-quality candidates if they add value
+        for priority, length, text in candidates:
+            if priority != best_priority and length > 1000:  # Only add substantial additional content
+                text_start = text[:100].strip()
+                if text_start not in seen_starts:
+                    all_content.append(text)
+                    seen_starts.add(text_start)
+
+    # Join all selected content blocks with proper paragraph spacing
     return '\n\n'.join(all_content) if all_content else ''
 
 

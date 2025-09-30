@@ -3031,11 +3031,13 @@ def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_craw
         desc = json_ld['description']
     
     # Priority 1.5: Modern static site generators (Hugo, Jekyll, etc.)
+    # PHASE 1: Using optimized parsers.extract_from_modern_selectors with 500-byte threshold
     if not desc:
         desc = parsers.extract_from_modern_selectors(html)
         if desc:
-            # 质量检查：如果内容太短或包含明显的版权信息，则不使用
-            if (len(desc) < 200 or 
+            # PHASE 1: Quality check threshold aligned with parser threshold (500 bytes minimum)
+            # This prevents accepting short snippets that passed old 200-byte threshold
+            if (len(desc) < 500 or
                 any(keyword in desc.lower() for keyword in ['版权所有', 'copyright', '运维保障', 'icp备案'])):
                 desc = ''  # 重置，继续后续priority
     
