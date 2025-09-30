@@ -1283,8 +1283,8 @@ def fetch_html_original(url: str, ua: Optional[str] = None, timeout: int = 30) -
             logging.error(error_msg)
             metrics.final_status = "failed"
             metrics.error_message = error_msg
-            return "", metrics
-            
+            raise
+
         logging.error(f"Failed to fetch HTML from {url}: {e}")
         metrics.final_status = "failed"
         metrics.error_message = str(e)
