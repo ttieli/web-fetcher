@@ -57,3 +57,10 @@ env/
 # Documentation build outputs
 docs/_build/
 site/
+
+# ChromeDriver binaries (platform-specific)
+chromedriver-mac-arm64/
+chromedriver-mac-x64/
+chromedriver-linux64/
+chromedriver-win64/
+chromedriver
