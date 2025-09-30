@@ -4,28 +4,37 @@
 ## 当前任务状态 / Current Task Status
 *更新时间 / Last Updated: 2025-09-30*
 
-### 🔵 进行中 / In Progress
-**Task 1: 完成Selenium错误提示优化**
-- 状态：Phase 3待完成（Phase 1-2已完成）
-- 优先级：高
-- 下一步：实现用户友好的错误提示和解决方案指导
+### ⚪ 待开始任务 / Pending Tasks
 
-### ⚪ 待开始 / Pending
-**Task 2: 优化失败报告生成格式**
+**Task 1: 优化失败报告生成格式**
+- 状态：未开始
+- 优先级：高
+- 背景：Selenium失败时仍生成与成功相似的Markdown，用户易误解
+- 目标：生成醒目的失败报告，标题和文件名明确标识失败状态
+- 建议：立即开始此任务，直接改善用户体验
+
+**Task 2: 建立统一错误处理框架**
 - 状态：未开始
 - 优先级：中
-- 前置条件：Task 1 Phase 3完成后开始
+- 背景：错误处理逻辑分散，不利于维护和扩展
+- 目标：创建统一的错误报告模块，支持多引擎扩展
+- 前置条件：Task 1完成后开始
 
-**Task 3: 建立统一错误处理框架**
+**Task 3: 新增Chrome调试守护脚本**
 - 状态：未开始
 - 优先级：低
-- 前置条件：Task 1和Task 2完成后开始
+- 背景：需手动启动Chrome调试实例，影响自动化流程
+- 目标：自动检测并启动Chrome调试实例
+- 前置条件：可独立进行，但建议在Task 1-2完成后实施
 
 ## 已完成工作 / Completed Work
 
 ### ✅ 近期完成 / Recently Completed
-1. **Task 1 Phase 1**: Chrome连接超时快速失败机制 (commit c433919)
-2. **Task 1 Phase 2**: 异常传播与非零退出码 (commit e904999)
+1. **Task 1: 完成Selenium错误提示优化** (全部完成)
+   - Phase 1: Chrome连接超时快速失败 (commit c433919)
+   - Phase 2: 异常传播与非零退出码 (commit e904999)
+   - Phase 3: 结构化错误输出 + 双语支持 (commits 3b69606 + 221af70)
+   - 最终状态更新 (commit 74f1286)
 
 ## 任务优先级说明 / Priority Description
 
