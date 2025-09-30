@@ -417,7 +417,7 @@ class ErrorReporter:
 
         # Initialize report sections / 初始化报告部分
         report_lines = [
-            "# Error Report / 错误报告",
+            "# ⚠️ Error Report / 错误报告",
             "",
             f"**Generated:** {timestamp}",
             f"**URL:** {url}",
@@ -425,16 +425,35 @@ class ErrorReporter:
         ]
 
         # Error classification section / 错误分类部分
-        if exception:
-            category = self.classifier.classify(exception)
-            root_cause = self.classifier.extract_root_cause(exception)
-            error_chain = self.classifier.get_error_chain(exception)
+        # Check if there's an error (either through exception or metrics)
+        has_error = exception is not None or metrics.get('final_status') == 'failed'
+
+        if has_error:
+            # Extract error information from exception or metrics
+            if exception:
+                category = self.classifier.classify(exception)
+                root_cause = self.classifier.extract_root_cause(exception)
+                error_chain = self.classifier.get_error_chain(exception)
+                error_type = type(exception).__name__
+                error_message = str(exception)
+            else:
+                # Classify based on error_message from metrics
+                error_message = metrics.get('error_message', 'Unknown error')
+                error_type = metrics.get('primary_method', 'Unknown')
+
+                # Create a mock exception for classification
+                try:
+                    raise Exception(error_message)
+                except Exception as mock_exc:
+                    category = self.classifier.classify(mock_exc)
+                    root_cause = error_message
+                    error_chain = []
 
             report_lines.extend([
                 "## Error Summary / 错误摘要",
                 "",
-                f"**Error Type:** {type(exception).__name__}",
-                f"**Error Message:** {str(exception)}",
+                f"**Error Type:** {error_type}",
+                f"**Error Message:** {error_message}",
                 "",
                 "## Error Classification / 错误分类",
                 "",
@@ -448,7 +467,7 @@ class ErrorReporter:
             ])
 
             # Error chain section / 错误链部分
-            if len(error_chain) > 1:
+            if exception and len(error_chain) > 1:
                 report_lines.extend([
                     "## Error Chain / 错误链",
                     "",
@@ -477,17 +496,18 @@ class ErrorReporter:
                 report_lines.append(f"- {cause}")
             report_lines.append("")
 
-            # Technical details / 技术详情
-            report_lines.extend([
-                "## Technical Details / 技术详情",
-                "",
-                "### Full Traceback / 完整堆栈跟踪",
-                "",
-                "```",
-                traceback.format_exc().strip(),
-                "```",
-                "",
-            ])
+            # Technical details / 技术详情 (only include traceback if exception exists)
+            if exception:
+                report_lines.extend([
+                    "## Technical Details / 技术详情",
+                    "",
+                    "### Full Traceback / 完整堆栈跟踪",
+                    "",
+                    "```",
+                    traceback.format_exc().strip(),
+                    "```",
+                    "",
+                ])
         else:
             report_lines.extend([
                 "## Status / 状态",

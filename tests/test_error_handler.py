@@ -302,7 +302,7 @@ class TestErrorReporter(unittest.TestCase):
         )
 
         # Verify report structure
-        self.assertIn("# Error Report", report)
+        self.assertIn("Error Report", report)  # Updated to check without emoji
         self.assertIn("Error Summary", report)
         self.assertIn("Error Classification", report)
         self.assertIn("Root Cause Analysis", report)
@@ -329,7 +329,7 @@ class TestErrorReporter(unittest.TestCase):
         )
 
         # Verify report structure
-        self.assertIn("# Error Report", report)
+        self.assertIn("Error Report", report)  # Updated to check without emoji
         self.assertIn("Status", report)
         self.assertIn("No errors occurred", report)
         self.assertIn("Metrics", report)
@@ -464,7 +464,7 @@ class TestIntegration(unittest.TestCase):
             )
 
             # Verify complete report
-            self.assertIn("# Error Report", report)
+            self.assertIn("Error Report", report)  # Updated to check without emoji
             self.assertIn("network_connection", report)
             self.assertIn("ConnectionError", report)
             self.assertIn("Troubleshooting Steps", report)
