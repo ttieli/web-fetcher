@@ -4380,6 +4380,26 @@ def format_selenium_error(exception):
     Returns:
         str: 格式化的错误消息字符串
     """
+    # Detect system language from LANG environment variable
+    lang = os.environ.get('LANG', '').lower()
+    is_chinese = 'zh' in lang or 'cn' in lang
+
+    # Define bilingual labels
+    if is_chinese:
+        labels = {
+            'error': '错误',
+            'problem': '问题',
+            'solution': '解决方案',
+            'command': '命令'
+        }
+    else:
+        labels = {
+            'error': 'ERROR',
+            'problem': 'PROBLEM',
+            'solution': 'SOLUTION',
+            'command': 'COMMAND'
+        }
+
     exception_type = type(exception).__name__
     error_message = str(exception)
 
@@ -4446,20 +4466,20 @@ def format_selenium_error(exception):
     # Build formatted output
     output = []
     output.append("=" * 40)
-    output.append(f"ERROR: {exception_type}")
+    output.append(f"{labels['error']}: {exception_type}")
     output.append("=" * 40)
     output.append("")
-    output.append("PROBLEM:")
+    output.append(f"{labels['problem']}:")
     output.append(problem)
     output.append("")
 
     if solution:
-        output.append("SOLUTION:")
+        output.append(f"{labels['solution']}:")
         output.append(solution)
         output.append("")
 
     if command:
-        output.append("COMMAND:")
+        output.append(f"{labels['command']}:")
         output.append(command)
 
     output.append("=" * 40)
