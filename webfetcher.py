@@ -4487,6 +4487,158 @@ def format_selenium_error(exception):
     return '\n'.join(output)
 
 
+def generate_failure_markdown(url: str, metrics: FetchMetrics, exception=None) -> str:
+    """
+    生成失败报告的Markdown内容
+
+    Args:
+        url: 目标URL
+        metrics: FetchMetrics对象，包含失败详情
+        exception: 可选的异常对象
+
+    Returns:
+        str: 格式化的失败Markdown内容
+    """
+    # Detect system language from LANG environment variable
+    lang = os.environ.get('LANG', '').lower()
+    is_chinese = 'zh' in lang or 'cn' in lang
+
+    # Get current timestamp
+    current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    # Extract error information
+    error_type = type(exception).__name__ if exception else metrics.primary_method or "Unknown"
+    error_description = metrics.error_message or str(exception) if exception else "No error details available"
+
+    # Build markdown content
+    output = []
+
+    # Title with warning emoji
+    if is_chinese:
+        output.append("# ⚠️ 网页抓取失败\n")
+    else:
+        output.append("# ⚠️ Web Fetch Failed\n")
+
+    # URL information
+    if is_chinese:
+        output.append(f"**目标URL**: {url}\n")
+    else:
+        output.append(f"**Target URL**: {url}\n")
+
+    # Error summary (blockquote format)
+    if is_chinese:
+        output.append(f"> **错误类型**: {error_type}")
+        output.append(f"> **失败时间**: {current_time}")
+        output.append(f"> **错误描述**: {error_description}\n")
+    else:
+        output.append(f"> **Error Type**: {error_type}")
+        output.append(f"> **Failed At**: {current_time}")
+        output.append(f"> **Description**: {error_description}\n")
+
+    # Troubleshooting steps
+    if is_chinese:
+        output.append("## 故障排除步骤\n")
+
+        # Check if Selenium-related error
+        if 'selenium' in metrics.primary_method.lower() or (exception and 'Chrome' in error_type):
+            output.append("1. **检查Chrome浏览器是否正在运行**")
+            output.append("   - 确保Chrome以调试模式启动")
+            output.append("   - 运行命令: `./config/chrome-debug.sh` 或")
+            output.append("   - 手动启动: `/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome_debug_profile`\n")
+            output.append("2. **验证网络连接**")
+            output.append("   - 检查是否能访问目标网站")
+            output.append("   - 尝试在浏览器中手动打开URL\n")
+            output.append("3. **检查端口占用**")
+            output.append("   - 确认9222端口未被其他程序占用")
+            output.append("   - 运行: `lsof -i :9222`\n")
+        else:
+            output.append("1. **检查网络连接**")
+            output.append("   - 验证互联网连接是否正常")
+            output.append("   - 尝试访问其他网站\n")
+            output.append("2. **验证URL有效性**")
+            output.append("   - 确认URL格式正确")
+            output.append("   - 检查目标网站是否可访问\n")
+            output.append("3. **尝试其他抓取方法**")
+            output.append("   - 使用 `--fetch-mode selenium` 尝试JavaScript渲染")
+            output.append("   - 或使用 `--fetch-mode urllib` 尝试简单抓取\n")
+
+        output.append("4. **查看详细日志**")
+        output.append("   - 使用 `--verbose` 参数获取更多信息\n")
+    else:
+        output.append("## Troubleshooting Steps\n")
+
+        # Check if Selenium-related error
+        if 'selenium' in metrics.primary_method.lower() or (exception and 'Chrome' in error_type):
+            output.append("1. **Check if Chrome browser is running**")
+            output.append("   - Ensure Chrome is started in debug mode")
+            output.append("   - Run command: `./config/chrome-debug.sh` or")
+            output.append("   - Manual start: `/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome_debug_profile`\n")
+            output.append("2. **Verify network connection**")
+            output.append("   - Check if you can access the target website")
+            output.append("   - Try opening the URL manually in browser\n")
+            output.append("3. **Check port availability**")
+            output.append("   - Ensure port 9222 is not occupied by another program")
+            output.append("   - Run: `lsof -i :9222`\n")
+        else:
+            output.append("1. **Check network connection**")
+            output.append("   - Verify internet connection is working")
+            output.append("   - Try accessing other websites\n")
+            output.append("2. **Verify URL validity**")
+            output.append("   - Ensure URL format is correct")
+            output.append("   - Check if target website is accessible\n")
+            output.append("3. **Try alternative fetch methods**")
+            output.append("   - Use `--fetch-mode selenium` for JavaScript rendering")
+            output.append("   - Or use `--fetch-mode urllib` for simple fetch\n")
+
+        output.append("4. **View detailed logs**")
+        output.append("   - Use `--verbose` flag for more information\n")
+
+    # Technical details (collapsible)
+    if is_chinese:
+        output.append("<details>")
+        output.append("<summary>技术细节 / Technical Details</summary>\n")
+    else:
+        output.append("<details>")
+        output.append("<summary>Technical Details</summary>\n")
+
+    output.append(f"- **Fetch Method**: {metrics.primary_method or 'N/A'}")
+    if metrics.fallback_method:
+        output.append(f"- **Fallback Method**: {metrics.fallback_method}")
+    output.append(f"- **Status**: {metrics.final_status}")
+    output.append(f"- **Duration**: {metrics.fetch_duration:.2f}s")
+    output.append(f"- **Total Attempts**: {metrics.total_attempts}")
+    if metrics.error_message:
+        output.append(f"- **Error**: {metrics.error_message}")
+
+    output.append("\n</details>")
+
+    return '\n'.join(output)
+
+
+def get_failure_filename(timestamp: str, url: str) -> str:
+    """
+    生成失败报告的文件名
+
+    Args:
+        timestamp: 时间戳字符串（格式：YYYY-MM-DD-HHMMSS）
+        url: 目标URL
+
+    Returns:
+        str: 失败文件的基础名称（不含扩展名）
+    """
+    from urllib.parse import urlparse
+
+    # Extract domain from URL
+    parsed = urlparse(url)
+    domain = parsed.hostname or 'unknown'
+
+    # Clean domain name using existing sanitize_filename function
+    sanitized_domain = sanitize_filename(domain)
+
+    # Return formatted filename (without extension)
+    return f"FAILED_{timestamp} - {sanitized_domain}"
+
+
 def main():
     ap = argparse.ArgumentParser(
         description='Fetch a URL (WeChat/XHS/generic) and save as Markdown.',
