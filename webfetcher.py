@@ -404,38 +404,118 @@ class ContentFilter:
             tag.decompose()
     
     def _remove_hidden_elements(self, soup):
-        """Remove visually hidden elements"""
+        """Remove visually hidden elements with precise class matching
+
+        Phase 2 Fix: Changed from substring matching to exact word matching.
+        Previously matched any class containing "hidden" (e.g., "mx-auto-hidden"),
+        now only matches complete class names like "hidden", "visually-hidden", etc.
+        """
+        # Semantic HTML5 tags white-list: NEVER delete these
+        semantic_tags = {'body', 'html', 'main', 'article', 'section',
+                        'nav', 'header', 'footer', 'aside'}
+
         # Elements with display:none or visibility:hidden
         for element in soup.find_all(style=lambda x: x and ('display:none' in x.replace(' ', '') or 'visibility:hidden' in x.replace(' ', ''))):
+            # Protect semantic tags
+            if element.name in semantic_tags:
+                continue
             self.removed_elements.append(f"hidden: {element.name}")
             element.decompose()
-            
-        # Common hidden classes
-        hidden_classes = ['hidden', 'sr-only', 'screen-reader-only', 'visually-hidden', 'invisible']
-        for class_name in hidden_classes:
-            for element in soup.find_all(class_=lambda x: x and class_name in x):
-                self.removed_elements.append(f"hidden class: {element.name}")
-                element.decompose()
+
+        # Common hidden classes - Phase 2 Fix: exact class name matching only
+        # Only match standalone "hidden" class, not Tailwind utility classes like "overflow-hidden"
+        hidden_classes = [
+            'hidden',           # Plain hidden class
+            'sr-only',          # Screen reader only
+            'screen-reader-only',
+            'visually-hidden',  # Visually hidden
+            'invisible',        # Invisible class
+            'hide',             # Alternative hidden class
+            'd-none'            # Bootstrap hidden class
+        ]
+
+        # Build list first to avoid modification during iteration
+        elements_to_remove = []
+        for element in soup.find_all():
+            if not element or not hasattr(element, 'get'):
+                continue
+
+            elem_classes = element.get('class', [])
+            if not elem_classes:
+                continue
+
+            # Check if element has any exact hidden class (not as substring)
+            has_hidden_class = any(cls in hidden_classes for cls in elem_classes)
+
+            if has_hidden_class:
+                # Protect semantic tags
+                if element.name in semantic_tags:
+                    continue
+                elements_to_remove.append(element)
+
+        # Remove collected elements
+        for element in elements_to_remove:
+            self.removed_elements.append(f"hidden class: {element.name}")
+            element.decompose()
     
     def _remove_ads_and_popups(self, soup):
-        """Remove advertisement and popup elements"""
-        # Common ad selectors
+        """Remove advertisement and popup elements with precise selectors
+
+        Phase 2 Fix: Replaced broad selectors like '[class*="ad"]' which incorrectly
+        matched semantic classes like "antialiased" (used by Tailwind CSS), causing
+        entire body tags to be removed on 30-50% of modern websites.
+
+        Now using precise selectors that match exact ad patterns while protecting
+        semantic HTML5 tags (body, main, article, etc.).
+        """
+        # Precise ad selectors - Phase 2 Fix
+        # Only match explicit ad-related patterns, not substrings in unrelated classes
         ad_selectors = [
-            '[id*="ad"]', '[class*="ad"]', '[id*="advertisement"]', '[class*="advertisement"]',
-            '[id*="banner"]', '[class*="banner"]', '[id*="popup"]', '[class*="popup"]',
-            '[id*="modal"]', '[class*="modal"]', '[class*="overlay"]',
-            '[class*="promo"]', '[class*="sponsored"]'
+            # ID selectors: precise prefix/suffix matching
+            '[id^="ad-"]', '[id^="ad_"]', '[id$="-ad"]', '[id$="_ad"]',
+            '[id="ad"]', '[id="ads"]', '[id="advertisement"]',
+
+            # Class selectors: complete class names only
+            '.ad', '.ads', '.ad-container', '.ad-wrapper',
+            '.advertisement', '.adsbygoogle', '.ad-slot', '.ad-banner',
+            '.ad-unit', '.ad-content', '.ad-box', '.ad-space',
+
+            # Common ad networks
+            '.google-ad', '.amazon-ad', '.facebook-ad',
+
+            # Explicit banner and popup patterns (must contain both keywords)
+            '[id*="banner"][id*="ad"]',
+            '[class*="popup"][class*="modal"]',
+
+            # Promotional and sponsored content
+            '.promo', '.promo-banner', '.sponsored', '.sponsored-content'
         ]
-        
+
+        # Semantic HTML5 tags white-list: NEVER delete these
+        semantic_tags = {'body', 'html', 'main', 'article', 'section',
+                        'nav', 'header', 'footer', 'aside'}
+
         for selector in ad_selectors:
             try:
                 for element in soup.select(selector):
-                    # Avoid removing main content areas
-                    if not any(main_class in str(element.get('class', [])).lower() 
-                             for main_class in ['main', 'content', 'article', 'post']):
-                        self.removed_elements.append(f"ad: {element.name}")
-                        element.decompose()
-            except:
+                    # CRITICAL: Protect semantic tags (Phase 2 Fix)
+                    if element.name in semantic_tags:
+                        continue
+
+                    # Protect main content areas (preserve original logic)
+                    elem_classes = ' '.join(element.get('class', [])).lower()
+                    elem_id = element.get('id', '').lower()
+
+                    protected_keywords = ['main', 'content', 'article', 'post', 'entry']
+                    if any(kw in elem_classes or kw in elem_id
+                           for kw in protected_keywords):
+                        continue
+
+                    # Safe to remove: not semantic, not main content
+                    self.removed_elements.append(f"ad: {element.name}")
+                    element.decompose()
+            except Exception as e:
+                # Silently continue on selector errors
                 continue
     
     def _remove_navigation_elements(self, soup):
