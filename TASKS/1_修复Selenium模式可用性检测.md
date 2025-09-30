@@ -1,4 +1,4 @@
-# 1.修复Selenium模式可用性检测
+# 1_修复Selenium模式可用性检测
 
 ## 背景
 - 当前 `webfetcher.py:829-907` 在 `-s/--fetch-mode selenium` 下仍可能误报 "Selenium integration not available"，并在失败后返回空字符串继续执行。
