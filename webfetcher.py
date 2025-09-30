@@ -4861,11 +4861,67 @@ def main():
             try:
                 html, fetch_metrics = fetch_html(url, ua=ua, timeout=fetch_timeout, fetch_mode=args.fetch_mode)
                 logging.info("Static fetch completed")
+
+                # Phase 2: Check if fetch failed
+                if fetch_metrics and fetch_metrics.final_status == "failed":
+                    logging.warning(f"Fetch failed: {fetch_metrics.error_message}")
+
+                    # Generate failure report
+                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+                    failure_filename = get_failure_filename(timestamp, url)
+                    failure_path = outdir / f"{failure_filename}.md"
+
+                    failure_md = generate_failure_markdown(url, fetch_metrics, None)
+                    failure_path.write_text(failure_md, encoding='utf-8')
+                    logging.info(f"Failure report saved: {failure_path}")
+                    print(str(failure_path))
+                    sys.exit(1)
+
             except (ChromeConnectionError, SeleniumNotAvailableError, SeleniumFetchError, SeleniumTimeoutError) as e:
                 logging.error(f"Selenium fetch failed: {e}")
                 # Phase 3 Step 1: Use structured error formatting
                 formatted_error = format_selenium_error(e)
                 print(formatted_error, file=sys.stderr)
+
+                # Phase 2: Generate failure report instead of exiting immediately
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+                failure_filename = get_failure_filename(timestamp, url)
+                failure_path = outdir / f"{failure_filename}.md"
+
+                # Create minimal FetchMetrics for failure report
+                failure_metrics = FetchMetrics(
+                    primary_method="selenium",
+                    final_status="failed",
+                    error_message=str(e)
+                )
+
+                failure_md = generate_failure_markdown(url, failure_metrics, e)
+                failure_path.write_text(failure_md, encoding='utf-8')
+                logging.info(f"Failure report saved: {failure_path}")
+                print(str(failure_path))
+                sys.exit(1)
+
+            except Exception as e:
+                # Phase 2: Catch urllib and other fetch failures
+                logging.error(f"Fetch failed: {e}")
+                print(f"Error: {e}", file=sys.stderr)
+
+                # Generate failure report
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+                failure_filename = get_failure_filename(timestamp, url)
+                failure_path = outdir / f"{failure_filename}.md"
+
+                # Create minimal FetchMetrics for failure report
+                failure_metrics = FetchMetrics(
+                    primary_method="urllib",
+                    final_status="failed",
+                    error_message=str(e)
+                )
+
+                failure_md = generate_failure_markdown(url, failure_metrics, e)
+                failure_path.write_text(failure_md, encoding='utf-8')
+                logging.info(f"Failure report saved: {failure_path}")
+                print(str(failure_path))
                 sys.exit(1)
 
     # Try to download file if it's a downloadable type
