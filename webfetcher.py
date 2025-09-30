@@ -909,37 +909,48 @@ def _create_empty_metrics_with_guidance() -> FetchMetrics:
 def _try_selenium_fetch(url: str, ua: Optional[str], timeout: int, metrics: FetchMetrics, start_time: float) -> tuple[str, FetchMetrics]:
     """
     Try Selenium fetch as primary method (selenium-only mode).
-    
+
+    Phase 2 Enhancement: Raises exceptions on failure instead of returning empty string.
+    This ensures proper error propagation and non-zero exit codes.
+
     Args:
         url: Target URL
         ua: User agent (ignored - Chrome uses its own)
         timeout: Timeout in seconds
         metrics: FetchMetrics object to update
         start_time: Start time for duration calculation
-        
+
     Returns:
         tuple[str, FetchMetrics]: (html_content, updated_metrics)
+
+    Raises:
+        SeleniumNotAvailableError: When Selenium integration is not available
+        ChromeConnectionError: When Chrome connection fails
+        SeleniumFetchError: When Selenium fetch fails
+        SeleniumTimeoutError: When fetch times out
     """
     if not SELENIUM_INTEGRATION_AVAILABLE:
-        logging.error("Selenium mode requested but Selenium integration not available")
+        error_msg = "Selenium integration not available - install requirements-selenium.txt"
+        logging.error(f"Selenium mode requested but Selenium integration not available")
         metrics.fetch_duration = time.time() - start_time
         metrics.final_status = "failed"
-        metrics.error_message = "Selenium integration not available - install requirements-selenium.txt"
-        return "", metrics
-    
+        metrics.error_message = error_msg
+        raise SeleniumNotAvailableError(error_msg)
+
     try:
         # Load Selenium configuration
         config = SeleniumConfig()
-        
+
         # Check if actual Selenium package is available before creating fetcher
         from selenium_fetcher import SELENIUM_AVAILABLE
         if not SELENIUM_AVAILABLE:
-            logging.error("Selenium package not installed (selenium library missing)")
+            error_msg = "Selenium package not installed. Run: pip install selenium PyYAML lxml"
+            logging.error(f"Selenium package not installed (selenium library missing)")
             metrics.fetch_duration = time.time() - start_time
             metrics.final_status = "failed"
-            metrics.error_message = "Selenium package not installed. Run: pip install selenium PyYAML lxml"
-            return "", metrics
-        
+            metrics.error_message = error_msg
+            raise SeleniumNotAvailableError(error_msg)
+
         # Create and use Selenium fetcher
         with SeleniumFetcher(config._config) as fetcher:
             # Connect to Chrome - enhanced with version mismatch detection and better error messages
@@ -948,7 +959,7 @@ def _try_selenium_fetch(url: str, ua: Optional[str], timeout: int, metrics: Fetc
                 metrics.fetch_duration = time.time() - start_time
                 metrics.final_status = "failed"
                 metrics.error_message = message
-                
+
                 # Log specific error types for better debugging
                 if "version mismatch" in message.lower():
                     logging.error(f"Chrome/ChromeDriver version mismatch detected: {message}")
@@ -956,35 +967,34 @@ def _try_selenium_fetch(url: str, ua: Optional[str], timeout: int, metrics: Fetc
                     logging.error(f"Chrome debug session unavailable: {message}")
                 else:
                     logging.error(f"Chrome connection failed: {message}")
-                
-                return "", metrics
-            
+
+                # Phase 2: Raise exception instead of returning empty string
+                raise ChromeConnectionError(message)
+
             # Fetch HTML using Selenium
             html_content, selenium_metrics = fetcher.fetch_html_selenium(url, ua, timeout)
-            
+
             # Update main metrics with Selenium data
             metrics.fetch_duration = time.time() - start_time
             metrics.final_status = "success"
             metrics.selenium_wait_time = selenium_metrics.selenium_wait_time
             metrics.chrome_connected = selenium_metrics.chrome_connected
             metrics.js_detection_used = selenium_metrics.js_detection_used
-            
+
             logging.info(f"✓ Selenium fetch successful for {url}")
             return html_content, metrics
-            
-    except (ChromeConnectionError, SeleniumFetchError, SeleniumTimeoutError) as e:
-        logging.error(f"Selenium fetch failed for {url}: {e}")
-        metrics.fetch_duration = time.time() - start_time
-        metrics.final_status = "failed"
-        metrics.error_message = str(e)
-        return "", metrics
-        
+
+    except (ChromeConnectionError, SeleniumFetchError, SeleniumTimeoutError, SeleniumNotAvailableError):
+        # Re-raise Selenium-specific exceptions to propagate them up
+        raise
+
     except Exception as e:
         logging.error(f"Unexpected error in Selenium fetch for {url}: {e}")
         metrics.fetch_duration = time.time() - start_time
         metrics.final_status = "failed"
-        metrics.error_message = f"Unexpected Selenium error: {e}"
-        return "", metrics
+        error_msg = f"Unexpected Selenium error: {e}"
+        metrics.error_message = error_msg
+        raise SeleniumFetchError(error_msg) from e
 
 
 def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], timeout: int, 
@@ -4577,8 +4587,15 @@ def main():
             logging.info("Fetching HTML statically")
             # Phase 2: Use selenium-timeout when selenium mode, otherwise use regular timeout
             fetch_timeout = args.selenium_timeout if args.fetch_mode == 'selenium' else args.timeout
-            html, fetch_metrics = fetch_html(url, ua=ua, timeout=fetch_timeout, fetch_mode=args.fetch_mode)
-            logging.info("Static fetch completed")
+
+            # Phase 2 Enhancement: Catch Selenium exceptions and exit with non-zero code
+            try:
+                html, fetch_metrics = fetch_html(url, ua=ua, timeout=fetch_timeout, fetch_mode=args.fetch_mode)
+                logging.info("Static fetch completed")
+            except (ChromeConnectionError, SeleniumNotAvailableError, SeleniumFetchError, SeleniumTimeoutError) as e:
+                logging.error(f"Selenium fetch failed: {e}")
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
 
     # Try to download file if it's a downloadable type
     downloader = SimpleDownloader()
