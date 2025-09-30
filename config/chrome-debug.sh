@@ -57,4 +57,48 @@ else
       --disable-renderer-backgrounding \
       --disable-device-discovery-notifications \
       "$@"
+
+    # 启动标志说明 / Launch Flags Explanation:
+    #
+    # --remote-debugging-port=${PORT}
+    #   启用Chrome DevTools协议的远程调试端口
+    #   Enable Chrome DevTools Protocol remote debugging port
+    #
+    # --user-data-dir="${PROFILE_DIR}"
+    #   指定Chrome用户配置目录，确保使用独立的配置文件
+    #   Specify Chrome user data directory for isolated profile
+    #
+    # --remote-allow-origins=*  【关键标志 / CRITICAL FLAG】
+    #   允许所有来源访问远程调试端口，解决CORS限制
+    #   这是Selenium WebDriver连接成功的必需标志
+    #   Allow all origins to access remote debugging port, resolving CORS restrictions
+    #   Required for Selenium WebDriver to successfully connect
+    #
+    # --no-first-run
+    #   跳过首次运行向导，避免弹出欢迎页面
+    #   Skip first-run wizard and welcome page
+    #
+    # --no-default-browser-check
+    #   禁用默认浏览器检查提示
+    #   Disable default browser check prompt
+    #
+    # --disable-popup-blocking
+    #   禁用弹窗阻止功能，确保自动化测试中的弹窗正常显示
+    #   Disable popup blocking for automated testing
+    #
+    # --disable-translate
+    #   禁用页面翻译提示，减少不必要的界面干扰
+    #   Disable translation prompts
+    #
+    # --disable-background-timer-throttling
+    #   禁用后台标签页的定时器节流，确保后台脚本正常运行
+    #   Disable background tab timer throttling for consistent script execution
+    #
+    # --disable-renderer-backgrounding
+    #   禁用渲染器后台化，确保后台标签页的渲染正常进行
+    #   Disable renderer backgrounding for consistent rendering
+    #
+    # --disable-device-discovery-notifications
+    #   禁用设备发现通知（如投屏设备提示）
+    #   Disable device discovery notifications
 fi
