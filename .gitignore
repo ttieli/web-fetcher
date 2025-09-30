@@ -25,6 +25,10 @@ assets/
 perf_test*/
 *.test.md
 *.test.json
+test_*_validation.py
+
+# Temporary architecture review documents
+architecture_review_*.md
 
 # Temporary files
 temp.*
