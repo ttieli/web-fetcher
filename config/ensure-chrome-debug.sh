@@ -1359,6 +1359,358 @@ get_chrome_tab_info() {
     return 0
 }
 
+# save_chrome_session() - Save current Chrome tabs to a session file
+# Parameters:
+#   session_file (optional, default: ~/.chrome-debug-session.json)
+# Returns:
+#   0 - Success
+#   1 - Failed to save
+# Output:
+#   Session file path on success
+#   Error message on failure
+save_chrome_session() {
+    local session_file="${1:-$HOME/.chrome-debug-session.json}"
+
+    log_debug "Saving Chrome session to: ${session_file}"
+
+    # Create parent directory if needed
+    local session_dir=$(dirname "${session_file}")
+    if [ ! -d "${session_dir}" ]; then
+        if ! mkdir -p "${session_dir}" 2>/dev/null; then
+            log_error "Failed to create session directory: ${session_dir}"
+            return 1
+        fi
+    fi
+
+    # Get all current tabs
+    local tabs_data
+    tabs_data=$(list_chrome_tabs "${PORT}" "json" 2>/dev/null)
+    if [ $? -ne 0 ] || [ -z "${tabs_data}" ]; then
+        log_error "Failed to retrieve Chrome tabs"
+        return 1
+    fi
+
+    # Get Chrome version
+    local chrome_version
+    chrome_version=$(get_chrome_version "${PORT}" 2>/dev/null || echo "unknown")
+
+    # Get current timestamp in ISO 8601 format
+    local timestamp
+    if command -v date >/dev/null 2>&1; then
+        timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "unknown")
+    else
+        timestamp="unknown"
+    fi
+
+    # Build session JSON
+    # Extract tab info from JSON array and rebuild as session format
+    local session_json
+    if command -v jq >/dev/null 2>&1; then
+        # Use jq for robust JSON construction
+        session_json=$(echo "${tabs_data}" | jq -c \
+            --arg ts "${timestamp}" \
+            --arg ver "${chrome_version}" \
+            '{
+                timestamp: $ts,
+                chrome_version: $ver,
+                tabs: [.[] | {id: .id, url: .url, title: .title}]
+            }' 2>/dev/null)
+    else
+        # Fallback: manual JSON construction
+        local tabs_array="["
+        local first=true
+        echo "${tabs_data}" | grep -o '"id":"[^"]*","url":"[^"]*","title":"[^"]*"' | while IFS= read -r tab_line; do
+            if [ "${first}" = true ]; then
+                first=false
+            else
+                tabs_array="${tabs_array},"
+            fi
+            tabs_array="${tabs_array}{${tab_line}}"
+        done
+        tabs_array="${tabs_array}]"
+        session_json="{\"timestamp\":\"${timestamp}\",\"chrome_version\":\"${chrome_version}\",\"tabs\":${tabs_array}}"
+    fi
+
+    # Validate session JSON
+    if [ -z "${session_json}" ] || [ "${session_json}" = "null" ]; then
+        log_error "Failed to build session JSON"
+        return 1
+    fi
+
+    # Write to file
+    if ! echo "${session_json}" | tee "${session_file}" >/dev/null 2>&1; then
+        log_error "Failed to write session file: ${session_file}"
+        return 1
+    fi
+
+    log_info "Chrome session saved to: ${session_file}"
+    [ "${QUIET_MODE}" != "true" ] && echo "${session_file}"
+    return 0
+}
+
+# restore_chrome_session() - Restore Chrome tabs from a session file
+# Parameters:
+#   session_file (required)
+# Returns:
+#   0 - Success
+#   1 - Failed to restore
+# Output:
+#   Mapping of old->new tab IDs (one per line: "old_id -> new_id")
+#   Skips invalid URLs gracefully
+restore_chrome_session() {
+    local session_file="$1"
+
+    if [ -z "${session_file}" ]; then
+        log_error "Session file parameter is required"
+        return 1
+    fi
+
+    if [ ! -f "${session_file}" ]; then
+        log_error "Session file not found: ${session_file}"
+        return 1
+    fi
+
+    log_debug "Restoring Chrome session from: ${session_file}"
+
+    # Read and validate session file
+    local session_json
+    session_json=$(cat "${session_file}" 2>/dev/null)
+    if [ -z "${session_json}" ]; then
+        log_error "Failed to read session file: ${session_file}"
+        return 1
+    fi
+
+    # Validate JSON format
+    if command -v jq >/dev/null 2>&1; then
+        if ! echo "${session_json}" | jq -e '.tabs' >/dev/null 2>&1; then
+            log_error "Invalid session JSON format: missing 'tabs' field"
+            return 1
+        fi
+    fi
+
+    # Extract and restore each tab
+    local tab_count=0
+    local success_count=0
+    local mapping_output=""
+
+    if command -v jq >/dev/null 2>&1; then
+        # Use jq for robust parsing
+        # Store tab data in temp file to avoid subshell variable issues
+        local temp_tabs="/tmp/chrome-restore-tabs-$$.txt"
+        echo "${session_json}" | jq -r '.tabs[] | "\(.id)|\(.url)|\(.title)"' 2>/dev/null > "${temp_tabs}"
+
+        while IFS='|' read -r old_id url title; do
+            [ -z "${url}" ] && continue
+            tab_count=$((tab_count + 1))
+
+            log_debug "Restoring tab: ${title} (${url})"
+
+            # Skip chrome:// and chrome-untrusted:// URLs (can't be created via API)
+            if echo "${url}" | grep -qE '^(chrome://|chrome-untrusted://|about:)'; then
+                log_debug "Skipping internal URL: ${url}"
+                continue
+            fi
+
+            # Create new tab
+            local new_id
+            new_id=$(create_chrome_tab "${url}" 2>/dev/null)
+            if [ $? -eq 0 ] && [ -n "${new_id}" ]; then
+                # create_chrome_tab returns just the ID, not JSON
+                mapping_output="${mapping_output}${old_id} -> ${new_id}\n"
+                success_count=$((success_count + 1))
+                log_debug "Tab restored: ${old_id} -> ${new_id}"
+            else
+                log_error "Failed to create tab for URL: ${url}"
+            fi
+        done < "${temp_tabs}"
+        rm -f "${temp_tabs}"
+    else
+        # Fallback: grep/sed parsing
+        echo "${session_json}" | grep -o '"id":"[^"]*","url":"[^"]*","title":"[^"]*"' | while IFS= read -r tab_line; do
+            tab_count=$((tab_count + 1))
+
+            local old_id=$(echo "${tab_line}" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+            local url=$(echo "${tab_line}" | sed -n 's/.*"url":"\([^"]*\)".*/\1/p')
+            local title=$(echo "${tab_line}" | sed -n 's/.*"title":"\([^"]*\)".*/\1/p')
+
+            [ -z "${url}" ] && continue
+
+            log_debug "Restoring tab: ${title} (${url})"
+
+            # Skip internal URLs
+            if echo "${url}" | grep -qE '^(chrome://|chrome-untrusted://|about:)'; then
+                log_debug "Skipping internal URL: ${url}"
+                continue
+            fi
+
+            local new_id
+            new_id=$(create_chrome_tab "${url}" 2>/dev/null)
+            if [ $? -eq 0 ] && [ -n "${new_id}" ]; then
+                echo "${old_id} -> ${new_id}"
+                success_count=$((success_count + 1))
+                log_debug "Tab restored: ${old_id} -> ${new_id}"
+            fi
+        done
+    fi
+
+    # Output mapping
+    if [ -n "${mapping_output}" ]; then
+        [ "${QUIET_MODE}" != "true" ] && echo -e "${mapping_output}"
+    fi
+
+    log_info "Chrome session restored: ${success_count}/${tab_count} tabs"
+
+    # Return success if at least one tab was restored
+    [ ${success_count} -gt 0 ] && return 0 || return 1
+}
+
+# monitor_chrome_tabs() - Monitor Chrome tabs for changes
+# Parameters:
+#   interval (optional, default: 2 seconds)
+# Returns:
+#   Never returns (continuous monitoring)
+#   Exits with 1 on error
+# Output:
+#   "NEW: {id} - {title}" for new tabs
+#   "CLOSED: {id} - {title}" for closed tabs
+# Usage:
+#   Press Ctrl+C to stop monitoring
+monitor_chrome_tabs() {
+    local interval="${1:-2}"
+
+    log_info "Starting Chrome tab monitoring (interval: ${interval}s)"
+    log_debug "Press Ctrl+C to stop monitoring"
+
+    # Set up trap for graceful exit
+    trap 'log_info "Tab monitoring stopped"; exit 0' INT TERM
+
+    # Store previous tab list
+    local previous_tabs=""
+    local first_run=true
+
+    while true; do
+        # Get current tabs
+        local current_tabs
+        current_tabs=$(list_chrome_tabs "${PORT}" "simple" 2>/dev/null)
+
+        if [ $? -ne 0 ]; then
+            log_error "Failed to retrieve Chrome tabs"
+            return 1
+        fi
+
+        if [ "${first_run}" = true ]; then
+            # First run - just store current state
+            previous_tabs="${current_tabs}"
+            first_run=false
+            log_debug "Initial tab state captured ($(echo "${current_tabs}" | wc -l | tr -d ' ') tabs)"
+        else
+            # Compare with previous state
+
+            # Detect new tabs (in current but not in previous)
+            if [ -n "${current_tabs}" ]; then
+                echo "${current_tabs}" | while IFS='|' read -r id title url type; do
+                    [ -z "${id}" ] && continue
+
+                    if ! echo "${previous_tabs}" | grep -q "^${id}|"; then
+                        # New tab detected
+                        [ "${QUIET_MODE}" != "true" ] && echo "NEW: ${id} - ${title}"
+                        log_debug "New tab: ${id} - ${title}"
+                    fi
+                done
+            fi
+
+            # Detect closed tabs (in previous but not in current)
+            if [ -n "${previous_tabs}" ]; then
+                echo "${previous_tabs}" | while IFS='|' read -r id title url type; do
+                    [ -z "${id}" ] && continue
+
+                    if ! echo "${current_tabs}" | grep -q "^${id}|"; then
+                        # Closed tab detected
+                        [ "${QUIET_MODE}" != "true" ] && echo "CLOSED: ${id} - ${title}"
+                        log_debug "Closed tab: ${id} - ${title}"
+                    fi
+                done
+            fi
+
+            # Update previous state
+            previous_tabs="${current_tabs}"
+        fi
+
+        # Wait for next interval
+        sleep "${interval}"
+    done
+}
+
+# execute_in_tab() - Execute JavaScript in a specific Chrome tab
+# Parameters:
+#   tab_id (required) - Target tab ID
+#   javascript (required) - JavaScript code to execute
+# Returns:
+#   0 - Success (result to stdout)
+#   1 - Tab not found
+#   2 - Execution failed
+# Output:
+#   Execution result if available
+# Limitations:
+#   - Chrome DevTools HTTP API has limited JS execution support
+#   - Uses activate + window.eval approach (basic functionality only)
+#   - For complex scenarios, consider using CDP (Chrome DevTools Protocol) directly
+execute_in_tab() {
+    local tab_id="$1"
+    local javascript="$2"
+
+    if [ -z "${tab_id}" ]; then
+        log_error "Tab ID parameter is required"
+        return 1
+    fi
+
+    if [ -z "${javascript}" ]; then
+        log_error "JavaScript parameter is required"
+        return 1
+    fi
+
+    log_debug "Executing JavaScript in tab: ${tab_id}"
+
+    # Validate tab exists
+    local tab_info
+    tab_info=$(get_chrome_tab_info "${tab_id}" "" 2>/dev/null)
+    if [ $? -ne 0 ] || [ -z "${tab_info}" ]; then
+        log_error "Tab not found: ${tab_id}"
+        return 1
+    fi
+
+    # Note: Chrome DevTools HTTP API (/json) doesn't support direct JS execution
+    # We need to use the WebSocket endpoint for full CDP support
+    # For now, we'll use a simplified approach: activate tab and log the limitation
+
+    # Activate the tab first
+    if ! activate_chrome_tab "${tab_id}" >/dev/null 2>&1; then
+        log_error "Failed to activate tab: ${tab_id}"
+        return 2
+    fi
+
+    # Log limitation and provide guidance
+    log_error "JavaScript execution via HTTP API is limited"
+    log_debug "To execute JS, consider using Chrome DevTools Protocol (CDP) via WebSocket"
+    log_debug "WebSocket URL available in tab info: webSocketDebuggerUrl field"
+
+    # Extract WebSocket URL for reference
+    local ws_url
+    if command -v jq >/dev/null 2>&1; then
+        ws_url=$(echo "${tab_info}" | jq -r '.webSocketDebuggerUrl // empty' 2>/dev/null)
+    else
+        ws_url=$(echo "${tab_info}" | grep -o '"webSocketDebuggerUrl":"[^"]*"' | sed 's/"webSocketDebuggerUrl":"\([^"]*\)"/\1/')
+    fi
+
+    if [ -n "${ws_url}" ]; then
+        log_debug "WebSocket URL: ${ws_url}"
+        [ "${QUIET_MODE}" != "true" ] && echo "WebSocket URL: ${ws_url}"
+        [ "${QUIET_MODE}" != "true" ] && echo "Use CDP tools (e.g., puppeteer, playwright) for JS execution"
+    fi
+
+    return 2
+}
+
 # select_recovery_strategy() - Map failure code to recovery level
 # Input: failure_code (0-5)
 # Output: recovery_level (1-4)
