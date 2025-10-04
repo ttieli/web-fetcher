@@ -1,0 +1,24 @@
+name: "Generic Web Template"
+version: "1.0.0"
+domains:
+  - "*"  # Matches all domains as fallback
+
+selectors:
+  # Title extraction (try multiple selectors in order)
+  title: "title, h1, meta[property='og:title']"
+
+  # Content extraction (try main content areas)
+  content: "article, main, [role='main'], #content, .content, .post-content, .entry-content"
+
+  # Optional metadata
+  metadata:
+    description: "meta[name='description'], meta[property='og:description']"
+    author: "meta[name='author'], [rel='author']"
+    date: "time[datetime], meta[property='article:published_time']"
+    image: "meta[property='og:image'], meta[name='twitter:image']"
+
+# Post-processing hints (for future use)
+post_process:
+  - "remove_scripts"
+  - "remove_styles"
+  - "trim_whitespace"
