@@ -35,6 +35,21 @@ log_error() {
     echo "[ERROR] $(date '+%Y-%m-%d %H:%M:%S') $*" >&2
 }
 
+# cleanup_tail_process() - Clean up orphaned tail processes from previous runs
+# Phase 2: Fix for orphaned tail processes
+cleanup_tail_process() {
+    local tail_pid_file="${HOME}/.chrome-wf/tail.pid"
+    if [[ -f "${tail_pid_file}" ]]; then
+        local old_tail_pid
+        old_tail_pid=$(cat "${tail_pid_file}")
+        if [[ -n "${old_tail_pid}" ]] && kill -0 "${old_tail_pid}" 2>/dev/null; then
+            log_info "Cleaning up old tail process: ${old_tail_pid}"
+            kill "${old_tail_pid}" 2>/dev/null || true
+        fi
+        rm -f "${tail_pid_file}"
+    fi
+}
+
 # Ensure working directory exists
 ensure_working_directory() {
     if ! mkdir -p "${PROFILE_DIR}" 2>/dev/null; then
@@ -157,7 +172,9 @@ launch_chrome_background() {
 
     # Launch Chrome in background using nohup
     local log_file="${PROFILE_DIR}/chrome-debug.log"
+    local log_file_raw="${PROFILE_DIR}/chrome-debug-raw.log"
 
+    # Launch Chrome with output to raw log
     nohup "${CHROME_APP}" \
         --remote-debugging-port="${PORT}" \
         --user-data-dir="${PROFILE_DIR}" \
@@ -170,9 +187,29 @@ launch_chrome_background() {
         --disable-renderer-backgrounding \
         --disable-device-discovery-notifications \
         --headless=new \
-        > "${log_file}" 2>&1 &
+        --log-level=1 \
+        --disable-dev-shm-usage \
+        --disable-gpu-sandbox \
+        --disable-features=OptimizationGuideModelDownloading,OptimizationHintsFetching \
+        --disable-sync \
+        --disable-background-networking \
+        --disable-component-update \
+        --disable-backgrounding-occluded-windows \
+        --disable-features=TranslateUI \
+        --disable-features=MediaRouter \
+        > "${log_file_raw}" 2>&1 &
 
     local chrome_pid=$!
+
+    # Phase 2: Cleanup old tail process before starting new one
+    cleanup_tail_process
+
+    # Filter logs in background
+    tail -f "${log_file_raw}" 2>/dev/null | grep -v -E "(allocator multiple times|DEPRECATED_ENDPOINT|TensorFlow)" > "${log_file}" &
+    local tail_pid=$!
+
+    # Phase 2: Store tail PID for cleanup
+    echo "${tail_pid}" > "${HOME}/.chrome-wf/tail.pid"
 
     # Verify PID is valid
     if ! kill -0 "${chrome_pid}" 2>/dev/null; then
