@@ -1,0 +1,42 @@
+# Minimal Template Schema v1.0
+version: "1.0"
+
+required_fields:
+  - name
+  - version
+  - domains
+  - selectors
+
+field_types:
+  name:
+    type: string
+    description: "Template name"
+
+  version:
+    type: string
+    description: "Template version (e.g., 1.0)"
+
+  domains:
+    type: array
+    description: "List of domain patterns this template applies to"
+    example: ["example.com", "*.example.com"]
+
+  extends:
+    type: string
+    optional: true
+    description: "Parent template to inherit from"
+
+  selectors:
+    type: object
+    description: "CSS selectors for content extraction"
+    properties:
+      title:
+        type: string
+        description: "Selector for page title"
+      content:
+        type: string
+        description: "Selector for main content"
+      metadata:
+        type: object
+        optional: true
+        description: "Additional metadata selectors"
