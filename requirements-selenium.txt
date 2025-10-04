@@ -14,6 +14,9 @@ pyyaml>=6.0.0,<7.0.0
 # lxml provides faster and more reliable HTML parsing
 lxml>=4.9.0,<5.0.0
 
+# JSON Schema validation for template system
+jsonschema>=4.0.0,<5.0.0
+
 # REMOVED: webdriver-manager - conflicts with CDP-only approach
 # webdriver-manager is NOT needed because we connect to existing Chrome debug port
 # This avoids ChromeDriver version management complexity
