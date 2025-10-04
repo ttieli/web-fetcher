@@ -427,7 +427,6 @@ diagnose_chrome_failure() {
     set +e
     check_process_health
     local process_status=$?
-    set -e
 
     if [[ ${process_status} -eq 2 ]]; then
         # PID file is corrupted
@@ -448,16 +447,12 @@ diagnose_chrome_failure() {
     fi
 
     # Check 5: Port/DevTools responsiveness
-    set +e
     check_port_health
     local port_status=$?
-    set -e
 
     if [[ ${port_status} -ne 0 ]]; then
-        set +e
         check_devtools_health
         local devtools_status=$?
-        set -e
 
         if [[ ${devtools_status} -ne 0 ]]; then
             log_info "Diagnosis: Chrome process dead or unresponsive (code 2)"
@@ -468,6 +463,9 @@ diagnose_chrome_failure() {
             return 2
         fi
     fi
+
+    # Re-enable errexit before final return
+    set -e
 
     # Unable to diagnose specific failure
     log_info "Diagnosis: Unable to identify specific failure type (code 0)"
@@ -498,7 +496,6 @@ check_chrome_health() {
     set +e
     check_process_health
     local process_status=$?
-    set -e
 
     if [[ ${process_status} -eq 2 ]]; then
         log_debug "Health check failed: PID file corrupted"
@@ -523,10 +520,8 @@ check_chrome_health() {
     fi
 
     # Check 3: Debug port connectivity
-    set +e
     check_port_health
     local port_status=$?
-    set -e
 
     if [[ ${port_status} -ne 0 ]]; then
         log_debug "Health check failed: Port not reachable"
@@ -534,15 +529,16 @@ check_chrome_health() {
     fi
 
     # Check 4: DevTools protocol response validation
-    set +e
     check_devtools_health
     local devtools_status=$?
-    set -e
 
     if [[ ${devtools_status} -ne 0 ]]; then
         log_debug "Health check failed: DevTools protocol error"
         return 4
     fi
+
+    # Re-enable errexit for subsequent operations
+    set -e
 
     # Verify response contains webSocketDebuggerUrl
     local endpoint="http://localhost:${port}/json"
@@ -579,7 +575,7 @@ diagnose_failure() {
     set +e
     diagnose_chrome_failure
     local failure_code=$?
-    set -e
+    # Note: Do not re-enable set -e before return, as it will cause script exit on non-zero return
 
     return ${failure_code}
 }
@@ -663,8 +659,36 @@ attempt_recovery() {
                 fi
             fi
 
-            log_info "Recovery successful: Chrome processes terminated (restart required)"
-            return 0
+            log_info "Chrome processes terminated, restarting..."
+
+            # Start Chrome using the launcher script
+            local script_dir
+            script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+            local launcher_script="${script_dir}/chrome-debug-launcher.sh"
+
+            if [[ ! -f "${launcher_script}" ]]; then
+                log_error "Chrome launcher script not found: ${launcher_script}"
+                return 1
+            fi
+
+            if [[ ! -x "${launcher_script}" ]]; then
+                log_error "Chrome launcher script not executable: ${launcher_script}"
+                return 1
+            fi
+
+            # Launch Chrome
+            log_info "Starting Chrome debug session..."
+            local new_pid
+            new_pid=$("${launcher_script}" 2>/dev/null)
+            local launch_status=$?
+
+            if [[ ${launch_status} -eq 0 ]] && [[ -n "${new_pid}" ]]; then
+                log_info "Chrome restarted successfully with PID: ${new_pid}"
+                return 0
+            else
+                log_error "Failed to restart Chrome (exit code: ${launch_status})"
+                return 1
+            fi
             ;;
 
         3)
