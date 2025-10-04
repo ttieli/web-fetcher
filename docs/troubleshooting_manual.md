@@ -6,13 +6,14 @@ Web_Fetcher错误处理框架故障排除完整指南
 
 1. [网络连接错误](#1-网络连接错误--network-connection-errors)
 2. [浏览器初始化错误](#2-浏览器初始化错误--browser-initialization-errors)
-3. [页面加载错误](#3-页面加载错误--page-loading-errors)
-4. [权限错误](#4-权限错误--permission-errors)
-5. [依赖缺失错误](#5-依赖缺失错误--missing-dependency-errors)
-6. [超时错误](#6-超时错误--timeout-errors)
-7. [未知错误](#7-未知错误--unknown-errors)
-8. [调试技巧](#8-调试技巧--debugging-tips)
-9. [紧急响应流程](#9-紧急响应流程--emergency-response-procedures)
+3. [Chrome集成错误](#3-chrome集成错误--chrome-integration-errors) **[新增/NEW]**
+4. [页面加载错误](#4-页面加载错误--page-loading-errors)
+5. [权限错误](#5-权限错误--permission-errors)
+6. [依赖缺失错误](#6-依赖缺失错误--missing-dependency-errors)
+7. [超时错误](#7-超时错误--timeout-errors)
+8. [未知错误](#8-未知错误--unknown-errors)
+9. [调试技巧](#9-调试技巧--debugging-tips)
+10. [紧急响应流程](#10-紧急响应流程--emergency-response-procedures)
 
 ---
 
@@ -311,7 +312,263 @@ RUN echo '--no-sandbox\n--disable-dev-shm-usage\n--headless' > /etc/chrome_optio
 
 ---
 
-## 3. 页面加载错误 / Page Loading Errors
+## 3. Chrome集成错误 / Chrome Integration Errors
+
+### 错误标识 / Error Identification
+
+**错误类别：** `CHROME_INTEGRATION`
+
+**典型错误消息：**
+```
+ChromeNotFoundError: Chrome浏览器未找到 / Chrome browser not found
+ChromePortOccupiedError: 端口9222被占用 / Port 9222 occupied
+ChromePermissionError: Chrome权限被拒绝 / Chrome permission denied
+ChromeTimeoutError: Chrome启动超时 / Chrome startup timeout
+ChromeConnectionError: 无法连接到Chrome端口9222 / Cannot connect to Chrome port 9222
+```
+
+### 详细排查步骤 / Detailed Troubleshooting Steps
+
+#### 步骤 1: 验证Chrome安装 / Verify Chrome Installation
+
+```bash
+# macOS
+ls -la "/Applications/Google Chrome.app"
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version
+
+# Linux
+which google-chrome || which chromium
+google-chrome --version || chromium --version
+
+# Windows
+where chrome
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --version
+```
+
+**如果Chrome未安装：**
+- macOS: 从 https://www.google.com/chrome/ 下载安装
+- Linux: `sudo apt-get install google-chrome-stable`
+- Windows: 从官网下载安装
+
+#### 步骤 2: 检查并解决端口占用 / Check and Resolve Port Conflicts
+
+```bash
+# 检查9222端口占用情况
+lsof -i:9222  # macOS/Linux
+netstat -ano | findstr :9222  # Windows
+
+# 查看占用进程详情
+ps -p <PID>  # macOS/Linux
+
+# 终止占用进程
+kill -9 <PID>  # macOS/Linux
+taskkill /F /PID <PID>  # Windows
+
+# 或使用不同端口
+export CHROME_DEBUG_PORT=9333
+./wf.py https://example.com --debug-port 9333
+```
+
+#### 步骤 3: 解决权限问题 (macOS) / Resolve Permission Issues (macOS)
+
+**症状：** Chrome启动失败，提示权限被拒绝
+
+**解决方案：**
+
+1. **系统设置方法：**
+   ```
+   1. 打开 系统设置
+   2. 进入 隐私与安全 → 开发者工具
+   3. 启用 Terminal.app 或 iTerm.app
+   4. 进入 隐私与安全 → 自动化
+   5. 允许终端控制 Google Chrome
+   ```
+
+2. **命令行重置方法：**
+   ```bash
+   # 重置Terminal权限
+   tccutil reset All com.apple.Terminal
+
+   # 重置iTerm权限
+   tccutil reset All com.googlecode.iterm2
+
+   # 重新运行命令，系统会提示授权
+   ./wf.py https://example.com
+   ```
+
+3. **完全磁盘访问：**
+   ```
+   系统设置 → 隐私与安全 → 完全磁盘访问
+   添加 Terminal 或 iTerm
+   ```
+
+#### 步骤 4: 解决Chrome启动超时 / Resolve Chrome Startup Timeout
+
+**可能原因：**
+- 系统资源不足
+- Chrome正在更新
+- 防火墙阻止
+- Chrome配置文件损坏
+
+**解决方案：**
+
+```bash
+# 1. 增加超时时间
+export CHROME_STARTUP_TIMEOUT=30
+./wf.py https://example.com --timeout 30
+
+# 2. 清理Chrome缓存和配置
+rm -rf ~/.chrome-wf/*
+rm -rf /tmp/chrome_debug
+
+# 3. 手动测试Chrome启动
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --headless \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.chrome-wf" \
+  --no-first-run \
+  --no-default-browser-check
+
+# 4. 检查系统资源
+top  # 查看CPU和内存使用
+df -h  # 查看磁盘空间
+
+# 5. 禁用不必要的Chrome功能
+export CHROME_FLAGS="--disable-gpu --disable-dev-shm-usage --no-sandbox"
+```
+
+#### 步骤 5: 解决连接失败 / Resolve Connection Failures
+
+```bash
+# 1. 验证Chrome调试端口可访问
+curl -s http://localhost:9222/json/version
+
+# 2. 检查防火墙设置
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate  # macOS
+sudo iptables -L  # Linux
+
+# 3. 测试Chrome健康状态
+./config/ensure-chrome-debug.sh --check-only --verbose
+
+# 4. 查看Chrome进程状态
+ps aux | grep -E "remote-debugging-port"
+
+# 5. 检查日志文件
+tail -f ~/.chrome-wf/chrome-debug.log
+```
+
+### Chrome集成常见问题快速修复 / Quick Fixes for Chrome Integration
+
+#### 问题 1: Chrome自动启动失败
+
+**快速修复：**
+```bash
+# 禁用自动启动，使用手动模式
+export WF_DISABLE_AUTO_CHROME=1
+
+# 手动启动Chrome
+./config/chrome-debug-launcher.sh
+
+# 然后运行wf
+./wf.py https://example.com
+```
+
+#### 问题 2: Chrome版本不兼容
+
+**快速修复：**
+```bash
+# 检查Chrome版本
+google-chrome --version
+
+# 更新Chrome到最新版本
+# macOS: 打开Chrome → 帮助 → 关于Google Chrome
+# Linux: sudo apt-get update && sudo apt-get upgrade google-chrome-stable
+
+# 使用兼容的Selenium版本
+pip install selenium==4.15.0
+```
+
+#### 问题 3: 多个Chrome实例冲突
+
+**快速修复：**
+```bash
+# 终止所有Chrome调试实例
+pkill -f "remote-debugging-port"
+
+# 清理锁文件
+rm -f ~/.chrome-wf/.chrome-debug.lock
+rm -f ~/.chrome-wf/.chrome-debug.pid
+
+# 重新启动
+./wf.py https://example.com --force-restart
+```
+
+#### 问题 4: Chrome内存占用过高
+
+**快速修复：**
+```bash
+# 限制Chrome内存使用
+export CHROME_FLAGS="--max_old_space_size=512 --js-flags=--max-old-space-size=512"
+
+# 定期重启Chrome
+./wf.py https://example.com --force-restart
+
+# 或使用urllib模式避免Chrome
+./wf.py https://example.com --force-urllib
+```
+
+### Chrome调试命令集 / Chrome Debug Commands
+
+```bash
+# 基础状态检查
+curl -s http://localhost:9222/json/version | jq .
+
+# 列出所有打开的标签
+curl -s http://localhost:9222/json | jq '.[] | {id, url, title}'
+
+# 关闭特定标签
+curl -X GET "http://localhost:9222/json/close/<TAB_ID>"
+
+# 激活特定标签
+curl -X GET "http://localhost:9222/json/activate/<TAB_ID>"
+
+# 创建新标签
+curl -X PUT "http://localhost:9222/json/new?url=https://example.com"
+
+# 获取Chrome性能指标
+curl -s http://localhost:9222/json/version | jq '.["User-Agent"]'
+
+# 监控Chrome资源使用
+while true; do
+  ps aux | grep -E "remote-debugging-port" | grep -v grep
+  sleep 5
+done
+```
+
+### Chrome环境变量参考 / Chrome Environment Variables
+
+```bash
+# 核心配置
+export CHROME_DEBUG_PORT=9222           # 调试端口
+export CHROME_STARTUP_TIMEOUT=15        # 启动超时(秒)
+export WF_DISABLE_AUTO_CHROME=1         # 禁用自动启动
+export CHROME_EXECUTABLE="/path/to/chrome"  # Chrome路径
+
+# Chrome启动标志
+export CHROME_FLAGS="--headless --disable-gpu --no-sandbox"
+export CHROME_USER_DATA_DIR="$HOME/.chrome-wf"  # 用户数据目录
+export CHROME_HEADLESS=true             # 无头模式
+export CHROME_WINDOW_SIZE="1920,1080"   # 窗口大小
+
+# 调试选项
+export CHROME_VERBOSE=true              # 详细日志
+export CHROME_LOG_FILE="$HOME/.chrome-wf/chrome.log"  # 日志文件
+export CHROME_ENABLE_LOGGING=true       # 启用日志
+```
+
+---
+
+## 4. 页面加载错误 / Page Loading Errors
 
 ### 错误标识 / Error Identification
 
@@ -452,7 +709,7 @@ driver.execute_script("return jQuery.active == 0")  # 如果使用jQuery
 
 ---
 
-## 4. 权限错误 / Permission Errors
+## 5. 权限错误 / Permission Errors
 
 ### 错误标识 / Error Identification
 
@@ -587,7 +844,7 @@ spctl --add /path/to/application
 
 ---
 
-## 5. 依赖缺失错误 / Missing Dependency Errors
+## 6. 依赖缺失错误 / Missing Dependency Errors
 
 ### 错误标识 / Error Identification
 
@@ -760,7 +1017,7 @@ poetry lock
 
 ---
 
-## 6. 超时错误 / Timeout Errors
+## 7. 超时错误 / Timeout Errors
 
 ### 错误标识 / Error Identification
 
@@ -938,7 +1195,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
 
 ---
 
-## 7. 未知错误 / Unknown Errors
+## 8. 未知错误 / Unknown Errors
 
 ### 错误标识 / Error Identification
 
@@ -1136,7 +1393,7 @@ def my_function():
 
 ---
 
-## 8. 调试技巧 / Debugging Tips
+## 9. 调试技巧 / Debugging Tips
 
 ### 8.1 使用浏览器DevTools
 
@@ -1230,7 +1487,7 @@ def slow_operation():
 
 ---
 
-## 9. 紧急响应流程 / Emergency Response Procedures
+## 10. 紧急响应流程 / Emergency Response Procedures
 
 ### 9.1 生产环境故障响应 / Production Failure Response
 

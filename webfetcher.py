@@ -52,6 +52,13 @@ except ImportError as e:
     class SeleniumTimeoutError(Exception): pass
     class SeleniumNotAvailableError(Exception): pass
 
+# Chrome error handling (Phase 2.3) - enhanced error messages
+from error_handler import (
+    ChromeDebugError, ChromePortConflictError,
+    ChromePermissionError, ChromeTimeoutError,
+    ChromeLaunchError, ChromeErrorMessages
+)
+
 # Parser modules
 import parsers
 
@@ -174,6 +181,10 @@ class FetchMetrics:
     selenium_wait_time: float = 0.0
     chrome_connected: bool = False
     js_detection_used: bool = False
+
+    # Phase 1: Chrome auto-launch tracking
+    chrome_auto_launched: bool = False
+    chrome_launch_message: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert metrics to dictionary for JSON serialization."""
@@ -188,7 +199,9 @@ class FetchMetrics:
             'error_message': self.error_message,
             'selenium_wait_time': round(self.selenium_wait_time, 3),
             'chrome_connected': self.chrome_connected,
-            'js_detection_used': self.js_detection_used
+            'js_detection_used': self.js_detection_used,
+            'chrome_auto_launched': self.chrome_auto_launched,
+            'chrome_launch_message': self.chrome_launch_message
         }
     
     def get_summary(self) -> str:
@@ -808,6 +821,167 @@ def calculate_backoff_delay(attempt: int, base_delay: float = BASE_DELAY) -> flo
     return delay + jitter
 
 
+def ensure_chrome_debug(config: Optional[Dict[str, Any]] = None) -> tuple[bool, str]:
+    """
+    Ensure Chrome debug session is running by calling ensure-chrome-debug.sh.
+
+    Phase 1: Core Integration - Chrome auto-launch before Selenium initialization.
+    Phase 2: Enhanced error handling with specific exceptions and user-friendly messages.
+
+    This function integrates the existing Chrome debug health check and launch scripts
+    with enhanced error reporting.
+
+    Args:
+        config: Optional configuration dictionary (not used currently, reserved for future)
+
+    Returns:
+        tuple[bool, str]: (success, message)
+            - success: True if Chrome is running and healthy, False otherwise
+            - message: Status message or error description
+
+    Raises:
+        ChromePortConflictError: When Chrome debug port is already in use (returncode 1)
+        ChromePermissionError: When permission denied for Chrome operations (returncode 3)
+        ChromeTimeoutError: When Chrome health check times out (subprocess.TimeoutExpired)
+        ChromeLaunchError: For other Chrome startup failures (returncode 2 or other)
+
+    Return code mapping from ensure-chrome-debug.sh:
+        0 = Chrome instance healthy or recovery successful
+        1 = Port conflict / Recovery failed
+        2 = Parameter error
+        3 = Permission error
+        4 = Timeout error
+    """
+    import subprocess
+    import os
+
+    # Get script directory (where webfetcher.py is located)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    ensure_script = os.path.join(script_dir, 'config', 'ensure-chrome-debug.sh')
+
+    # Check if script exists
+    if not os.path.exists(ensure_script):
+        error_msg = f"Chrome debug script not found: {ensure_script}"
+        logging.error(error_msg)
+        raise ChromeLaunchError(
+            error_msg,
+            error_code=127,
+            guidance=ChromeErrorMessages.get_message('launch_failed', error_details=error_msg)
+        )
+
+    try:
+        # Run the ensure-chrome-debug.sh script
+        logging.debug(f"Calling Chrome debug health check: {ensure_script}")
+        result = subprocess.run(
+            [ensure_script],
+            capture_output=True,
+            text=True,
+            timeout=15  # 15 second timeout for health check + potential recovery
+        )
+
+        # Parse return code and raise specific exceptions
+        if result.returncode == 0:
+            # Success - Chrome is running and healthy
+            success_msg = "Chrome debug session is healthy"
+            logging.info(success_msg)
+            return True, success_msg
+
+        elif result.returncode == 1:
+            # Port conflict or recovery failed
+            # Check stderr to determine if it's a port conflict
+            stderr_lower = result.stderr.lower() if result.stderr else ""
+            if "port" in stderr_lower or "9222" in stderr_lower or "address already in use" in stderr_lower:
+                # Port conflict detected
+                port = 9222  # Default port
+                diagnostic_info = result.stderr.strip() if result.stderr else "Port already in use"
+                guidance = ChromeErrorMessages.get_message(
+                    'port_conflict',
+                    port=port,
+                    diagnostic_info=diagnostic_info
+                )
+                raise ChromePortConflictError(
+                    f"Chrome debug port {port} conflict",
+                    error_code=1,
+                    guidance=guidance
+                )
+            else:
+                # General recovery failure
+                error_details = result.stderr.strip() if result.stderr else "Chrome recovery failed"
+                guidance = ChromeErrorMessages.get_message('launch_failed', error_details=error_details)
+                raise ChromeLaunchError(
+                    "Chrome debug session recovery failed",
+                    error_code=1,
+                    guidance=guidance
+                )
+
+        elif result.returncode == 3:
+            # Permission error - macOS specific
+            error_details = result.stderr.strip() if result.stderr else "Permission denied"
+            guidance = ChromeErrorMessages.get_message('permission')
+            raise ChromePermissionError(
+                "Permission error accessing Chrome debug session",
+                error_code=3,
+                guidance=guidance
+            )
+
+        elif result.returncode == 4:
+            # Timeout error from script
+            timeout_value = 15
+            guidance = ChromeErrorMessages.get_message('timeout', timeout=timeout_value)
+            raise ChromeTimeoutError(
+                f"Chrome failed to start within {timeout_value} seconds",
+                error_code=4,
+                guidance=guidance
+            )
+
+        elif result.returncode == 2:
+            # Parameter error
+            error_details = result.stderr.strip() if result.stderr else "Parameter error"
+            guidance = ChromeErrorMessages.get_message('launch_failed', error_details=error_details)
+            raise ChromeLaunchError(
+                "Chrome debug script parameter error",
+                error_code=2,
+                guidance=guidance
+            )
+
+        else:
+            # Unknown error code
+            error_details = f"Unexpected return code {result.returncode}"
+            if result.stderr:
+                error_details += f": {result.stderr.strip()}"
+            guidance = ChromeErrorMessages.get_message('launch_failed', error_details=error_details)
+            raise ChromeLaunchError(
+                f"Chrome debug health check failed with code {result.returncode}",
+                error_code=result.returncode,
+                guidance=guidance
+            )
+
+    except subprocess.TimeoutExpired:
+        # Timeout during subprocess execution
+        timeout_value = 15
+        guidance = ChromeErrorMessages.get_message('timeout', timeout=timeout_value)
+        raise ChromeTimeoutError(
+            f"Chrome debug health check timed out after {timeout_value} seconds",
+            error_code=124,  # Standard timeout exit code
+            guidance=guidance
+        )
+
+    except ChromeDebugError:
+        # Re-raise Chrome-specific errors
+        raise
+
+    except Exception as e:
+        # Catch-all for unexpected errors
+        error_msg = f"Failed to run Chrome debug health check: {e}"
+        logging.error(error_msg)
+        guidance = ChromeErrorMessages.get_message('launch_failed', error_details=str(e))
+        raise ChromeLaunchError(
+            error_msg,
+            error_code=1,
+            guidance=guidance
+        )
+
+
 def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30, 
                          fetch_mode: str = 'auto') -> tuple[str, FetchMetrics]:
     """
@@ -963,6 +1137,49 @@ def _try_selenium_fetch(url: str, ua: Optional[str], timeout: int, metrics: Fetc
             metrics.error_message = error_msg
             raise SeleniumNotAvailableError(error_msg)
 
+        # Phase 1 & 2: Ensure Chrome debug session is running with enhanced error handling
+        logging.info("Checking Chrome debug session health...")
+        try:
+            chrome_ok, chrome_message = ensure_chrome_debug(config._config)
+            metrics.chrome_auto_launched = chrome_ok
+            metrics.chrome_launch_message = chrome_message
+        except ChromePortConflictError as e:
+            # Port conflict - display user-friendly guidance
+            logging.error(f"Chrome port conflict: {e.message}")
+            if e.guidance:
+                print(f"\n{e.guidance}\n", file=sys.stderr)
+            metrics.fetch_duration = time.time() - start_time
+            metrics.final_status = "failed"
+            metrics.error_message = e.message
+            raise
+        except ChromePermissionError as e:
+            # Permission denied - display macOS-specific guidance
+            logging.error(f"Chrome permission error: {e.message}")
+            if e.guidance:
+                print(f"\n{e.guidance}\n", file=sys.stderr)
+            metrics.fetch_duration = time.time() - start_time
+            metrics.final_status = "failed"
+            metrics.error_message = e.message
+            raise
+        except ChromeTimeoutError as e:
+            # Chrome timeout - display troubleshooting steps
+            logging.error(f"Chrome timeout: {e.message}")
+            if e.guidance:
+                print(f"\n{e.guidance}\n", file=sys.stderr)
+            metrics.fetch_duration = time.time() - start_time
+            metrics.final_status = "failed"
+            metrics.error_message = e.message
+            raise
+        except ChromeLaunchError as e:
+            # General launch failure - display diagnostic guidance
+            logging.error(f"Chrome launch failed: {e.message}")
+            if e.guidance:
+                print(f"\n{e.guidance}\n", file=sys.stderr)
+            metrics.fetch_duration = time.time() - start_time
+            metrics.final_status = "failed"
+            metrics.error_message = e.message
+            raise ChromeConnectionError(e.message)
+
         # Create and use Selenium fetcher
         with SeleniumFetcher(config._config) as fetcher:
             # Connect to Chrome - enhanced with version mismatch detection and better error messages
@@ -1043,7 +1260,7 @@ def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], tim
     try:
         # Load Selenium configuration
         config = SeleniumConfig()
-        
+
         # Check if actual Selenium package is available
         from selenium_fetcher import SELENIUM_AVAILABLE
         if not SELENIUM_AVAILABLE:
@@ -1052,22 +1269,27 @@ def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], tim
             metrics.final_status = "failed"
             metrics.error_message = f"urllib failed: {urllib_error}. Selenium package not installed. Run: pip install selenium PyYAML lxml"
             return "", metrics
-        
-        # Create Selenium fetcher - graceful degradation approach
-        fetcher = SeleniumFetcher(config._config)
-        
-        # CRITICAL: Check Chrome debug session availability BEFORE attempting connection
-        if not fetcher.is_chrome_debug_available():
-            logging.info("Chrome debug session not available for fallback, accepting empty result")
+
+        # Phase 1 & 2: Ensure Chrome debug session is running with enhanced error handling
+        logging.info("Checking Chrome debug session health for fallback...")
+        try:
+            chrome_ok, chrome_message = ensure_chrome_debug(config._config)
+            metrics.chrome_auto_launched = chrome_ok
+            metrics.chrome_launch_message = chrome_message
+        except (ChromePortConflictError, ChromePermissionError, ChromeTimeoutError, ChromeLaunchError) as e:
+            # Chrome error during fallback - log but don't display full guidance (fallback context)
+            # User gets basic error message since this is a fallback scenario
+            logging.warning(f"Chrome unavailable for fallback: {e.message}")
+            print(f"\nChrome debug session unavailable for fallback: {e.message}", file=sys.stderr)
+            print("Suggestion: Try running './config/ensure-chrome-debug.sh' manually to diagnose.", file=sys.stderr)
             metrics.fetch_duration = time.time() - start_time
             metrics.final_status = "failed"
-            metrics.error_message = (
-                f"urllib failed: {urllib_error}. "
-                f"Chrome debug session not available on port {fetcher.debug_port}. "
-                f"Start Chrome debug session with: ./config/chrome-debug.sh"
-            )
+            metrics.error_message = f"urllib failed: {urllib_error}. Chrome unavailable: {e.message}"
             return "", metrics
-        
+
+        # Create Selenium fetcher after Chrome health check passed
+        fetcher = SeleniumFetcher(config._config)
+
         # Chrome debug session available - attempt connection and fetch
         with fetcher:
             success, message = fetcher.connect_to_chrome()

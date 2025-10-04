@@ -20,9 +20,14 @@ Phase 3 Enhancements (Quick-Fail Mechanism):
 - Clear error messages when Chrome debug session unavailable
 - Prevents long hangs when Chrome not running
 
+Phase 2.4 Enhancements (Enhanced Error Reporting):
+- Integration with ChromeErrorMessages for detailed diagnostic guidance
+- User-friendly error messages for connection failures
+- Specific troubleshooting steps for common Chrome issues
+
 Author: Cody (Claude Code)
-Date: 2025-09-30
-Version: 3.0 (Phase 3 - Quick-Fail Connection Mechanism)
+Date: 2025-10-04
+Version: 3.1 (Phase 2.4 - Enhanced Error Reporting)
 """
 
 import logging
@@ -30,8 +35,12 @@ import time
 import json
 import urllib.request
 import urllib.error
+import sys
 from typing import Optional, Tuple, Dict, Any, List
 from dataclasses import dataclass
+
+# Import Chrome error handling utilities
+from error_handler import ChromeErrorMessages
 
 # Conditional import for requests with urllib fallback
 try:
@@ -457,9 +466,16 @@ class SeleniumFetcher:
         # Phase 3 Enhancement: Pre-flight check with fast failure
         # This prevents the 2-minute hang when Chrome is not running
         if not self.is_chrome_debug_available():
-            return False, ErrorMessages.DEBUG_SESSION_UNAVAILABLE.format(
+            error_msg = ErrorMessages.DEBUG_SESSION_UNAVAILABLE.format(
                 debug_port=self.debug_port
             ).strip()
+
+            # Phase 2.4: Add detailed troubleshooting guidance
+            diagnostic_info = f"Chrome debug port {self.debug_port} not responding"
+            guidance = ChromeErrorMessages.get_message('launch_failed', error_details=diagnostic_info)
+            print(f"\n{guidance}\n", file=sys.stderr)
+
+            return False, error_msg
 
         connection_start = time.time()
 
@@ -528,6 +544,13 @@ class SeleniumFetcher:
                         error_details=error_msg,
                         debug_port=self.debug_port
                     )
+
+                    # Phase 2.4: Add diagnostic guidance for connection failures
+                    logging.error("All Chrome connection attempts failed - providing diagnostic guidance")
+                    diagnostic_info = f"Connection failed after {self.max_connection_attempts} attempts: {error_msg}"
+                    guidance = ChromeErrorMessages.get_message('launch_failed', error_details=diagnostic_info)
+                    print(f"\n{guidance}\n", file=sys.stderr)
+
                     return False, connection_error.strip()
                 
                 # Brief pause before retry (but only for non-version-mismatch errors)

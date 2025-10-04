@@ -5,6 +5,7 @@
 ## 项目特色 / Key Features
 
 - **🔄 基于 urllib 的稳定 HTTP 抓取** - 使用 Python 标准库，无需复杂依赖
+- **🌐 Chrome 自动集成** - 自动管理 Chrome 调试实例，支持复杂页面抓取
 - **📱 微信公众号文章提取** - 专门优化的微信公众号内容解析器
 - **📍 小红书内容解析** - 支持小红书笔记和用户内容提取
 - **📄 双格式输出** - 支持 Markdown 和 HTML 两种输出格式
@@ -35,12 +36,39 @@ Web_Fetcher/
 ### 基本使用
 
 ```bash
-# 使用便捷工具 wf.py
+# 使用便捷工具 wf.py (自动选择最佳抓取模式)
 ./wf.py <URL>
 
 # 或直接使用主程序
 python3 webfetcher.py <URL>
+
+# 强制使用 Chrome/Selenium 模式（适用于动态页面）
+./wf.py <URL> --fetch-mode selenium
+
+# 强制使用 urllib 模式（快速、轻量）
+./wf.py <URL> --force-urllib
 ```
+
+### Chrome 集成功能
+
+Web_Fetcher 现已支持自动 Chrome 管理：
+
+```bash
+# 首次使用时，系统会自动启动 Chrome 调试实例
+./wf.py https://example.com
+
+# 检查 Chrome 状态
+./config/ensure-chrome-debug.sh --check-only
+
+# 使用自定义端口
+./wf.py https://example.com --debug-port 9333
+
+# 强制重启 Chrome
+./wf.py https://example.com --force-restart
+```
+
+**macOS 权限设置：**
+如果遇到权限问题，请参阅 [Chrome 集成指南](docs/chrome_integration.md#prerequisites--前置条件)
 
 ### 输出格式选项
 
@@ -60,6 +88,11 @@ python3 webfetcher.py <URL>
 ```bash
 # 设置默认输出目录
 export WF_OUTPUT_DIR="./my_default_output/"
+
+# Chrome 相关配置
+export CHROME_DEBUG_PORT=9222  # Chrome 调试端口
+export CHROME_STARTUP_TIMEOUT=15  # 启动超时（秒）
+export WF_DISABLE_AUTO_CHROME=1  # 禁用自动 Chrome（如需要）
 ```
 
 ## 输出文件命名 / Output File Naming
@@ -118,6 +151,13 @@ pip install beautifulsoup4 lxml
 
 ## 版本历史 / Version History
 
+### v1.1.0 - Chrome 集成版 (2025-10-04)
+- ✅ 新增 Chrome 自动启动和管理功能
+- ✅ 实现 Chrome 健康检查和自动恢复
+- ✅ 添加 5 个 Chrome 专用异常类和双语错误消息
+- ✅ 完成 18 个集成测试场景和性能基准测试
+- ✅ 支持 Selenium 和 urllib 智能切换
+
 ### v1.0.0 - urllib 稳定版
 - ✅ 完成项目重构，移除不稳定的 Safari 集成
 - ✅ 移除复杂的插件系统
@@ -126,6 +166,7 @@ pip install beautifulsoup4 lxml
 - ✅ 添加 HTML 输出格式支持
 
 ### 近期更新
+- **2025-10-04**: Chrome 调试守护进程集成完成
 - **Phase 4.1**: 清理非核心解析器，专注主要功能
 - **Phase 3.x**: 移除 extractors 目录和未使用的解析器
 - **Phase 2.x**: 完全移除插件系统和 Safari 集成
