@@ -70,3 +70,6 @@ chromedriver-mac-x64/
 chromedriver-linux64/
 chromedriver-win64/
 chromedriver
+
+# Home directory artifact
+~
