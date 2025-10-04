@@ -769,6 +769,195 @@ attempt_recovery() {
     esac
 }
 
+# ============================================================
+# Phase 2: DevTools Protocol Integration
+# ============================================================
+
+# get_chrome_version() - Get Chrome version via DevTools Protocol
+# Purpose: Retrieve Chrome browser version information using DevTools API
+# Parameters: None (uses global PORT)
+# Returns:
+#   0 - Success, outputs version string to stdout
+#   1 - Connection failed or response invalid
+# Output: Version string in format "Chrome/120.0.6099.129"
+get_chrome_version() {
+    log_debug "Retrieving Chrome version via DevTools (port: ${PORT})"
+
+    local endpoint="http://localhost:${PORT}/json/version"
+    local response
+    local http_code
+
+    # Check if curl is available
+    if ! command -v curl >/dev/null 2>&1; then
+        log_error "curl command not found"
+        return 1
+    fi
+
+    # Make request to DevTools version endpoint with timeout
+    response=$(curl -s --max-time 5 --connect-timeout 5 -w "\n%{http_code}" "${endpoint}" 2>/dev/null || echo "")
+
+    if [[ -z "${response}" ]]; then
+        log_debug "DevTools version endpoint returned empty response"
+        return 1
+    fi
+
+    # Extract HTTP code (last line) and body (everything else)
+    http_code=$(echo "${response}" | tail -n 1)
+    local body
+    body=$(echo "${response}" | sed '$d')
+
+    # Check HTTP status code
+    if [[ "${http_code}" != "200" ]]; then
+        log_debug "DevTools version endpoint returned HTTP ${http_code}"
+        return 1
+    fi
+
+    # Parse Browser field from JSON response
+    # Try jq first if available (more robust)
+    local browser_version=""
+    if command -v jq >/dev/null 2>&1; then
+        browser_version=$(echo "${body}" | jq -r '.Browser // empty' 2>/dev/null || echo "")
+    fi
+
+    # Fallback to grep+sed if jq not available or failed
+    if [[ -z "${browser_version}" ]]; then
+        browser_version=$(echo "${body}" | grep -o '"Browser"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"Browser"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || echo "")
+    fi
+
+    if [[ -z "${browser_version}" ]]; then
+        log_debug "Cannot parse Browser field from DevTools response"
+        log_debug "Response body: ${body}"
+        return 1
+    fi
+
+    # Output version string to stdout
+    echo "${browser_version}"
+    log_debug "Chrome version: ${browser_version}"
+    return 0
+}
+
+# list_chrome_tabs() - List Chrome tabs via DevTools Protocol
+# Purpose: Retrieve and display list of open Chrome tabs
+# Parameters:
+#   port (optional, default: from global PORT) - Debug port to query
+#   format (optional, default: "simple") - Output format: "simple", "json", "detailed"
+# Returns:
+#   0 - Success, outputs tab list to stdout
+#   1 - Connection failed or response invalid
+# Output formats:
+#   simple: One line per tab: {id}: {title} ({url})
+#   json: Raw JSON response from DevTools
+#   detailed: Formatted table with columns: ID, TITLE, URL, TYPE
+list_chrome_tabs() {
+    local port="${1:-${PORT}}"
+    local format="${2:-simple}"
+
+    log_debug "Listing Chrome tabs (port: ${port}, format: ${format})"
+
+    local endpoint="http://localhost:${port}/json"
+    local response
+    local http_code
+
+    # Check if curl is available
+    if ! command -v curl >/dev/null 2>&1; then
+        log_error "curl command not found"
+        return 1
+    fi
+
+    # Make request to DevTools tabs endpoint with timeout
+    response=$(curl -s --max-time 5 --connect-timeout 5 -w "\n%{http_code}" "${endpoint}" 2>/dev/null || echo "")
+
+    if [[ -z "${response}" ]]; then
+        log_debug "DevTools tabs endpoint returned empty response"
+        return 1
+    fi
+
+    # Extract HTTP code (last line) and body (everything else)
+    http_code=$(echo "${response}" | tail -n 1)
+    local body
+    body=$(echo "${response}" | sed '$d')
+
+    # Check HTTP status code
+    if [[ "${http_code}" != "200" ]]; then
+        log_debug "DevTools tabs endpoint returned HTTP ${http_code}"
+        return 1
+    fi
+
+    # Validate response is JSON array
+    if ! echo "${body}" | grep -q '^\['; then
+        log_debug "DevTools response is not a JSON array"
+        return 1
+    fi
+
+    # Output based on format
+    case "${format}" in
+        json)
+            # Raw JSON output
+            echo "${body}"
+            ;;
+
+        detailed)
+            # Formatted table output
+            echo "ID                                   | TITLE                          | URL                                  | TYPE"
+            echo "-------------------------------------+--------------------------------+--------------------------------------+------"
+
+            if command -v jq >/dev/null 2>&1; then
+                # Use jq for robust parsing
+                echo "${body}" | jq -r '.[] | "\(.id) | \(.title) | \(.url) | \(.type)"' 2>/dev/null | while IFS='|' read -r id title url type; do
+                    # Trim whitespace and format columns
+                    id=$(echo "${id}" | xargs)
+                    title=$(echo "${title}" | xargs)
+                    url=$(echo "${url}" | xargs)
+                    type=$(echo "${type}" | xargs)
+
+                    # Truncate long fields
+                    if [[ ${#id} -gt 36 ]]; then id="${id:0:33}..."; fi
+                    if [[ ${#title} -gt 30 ]]; then title="${title:0:27}..."; fi
+                    if [[ ${#url} -gt 36 ]]; then url="${url:0:33}..."; fi
+
+                    printf "%-36s | %-30s | %-36s | %-5s\n" "${id}" "${title}" "${url}" "${type}"
+                done
+            else
+                # Fallback: basic grep+sed parsing (limited support)
+                echo "${body}" | sed 's/},{/\n/g' | sed 's/^\[{//' | sed 's/}\]$//' | while IFS= read -r tab; do
+                    local id title url type
+                    id=$(echo "${tab}" | grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)".*/\1/' || echo "N/A")
+                    title=$(echo "${tab}" | grep -o '"title"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)".*/\1/' || echo "N/A")
+                    url=$(echo "${tab}" | grep -o '"url"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)".*/\1/' || echo "N/A")
+                    type=$(echo "${tab}" | grep -o '"type"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)".*/\1/' || echo "page")
+
+                    # Truncate long fields
+                    if [[ ${#id} -gt 36 ]]; then id="${id:0:33}..."; fi
+                    if [[ ${#title} -gt 30 ]]; then title="${title:0:27}..."; fi
+                    if [[ ${#url} -gt 36 ]]; then url="${url:0:33}..."; fi
+
+                    printf "%-36s | %-30s | %-36s | %-5s\n" "${id}" "${title}" "${url}" "${type}"
+                done
+            fi
+            ;;
+
+        simple|*)
+            # Simple one-line-per-tab output
+            if command -v jq >/dev/null 2>&1; then
+                # Use jq for robust parsing
+                echo "${body}" | jq -r '.[] | "\(.id): \(.title) (\(.url))"' 2>/dev/null
+            else
+                # Fallback: basic grep+sed parsing
+                echo "${body}" | sed 's/},{/\n/g' | sed 's/^\[{//' | sed 's/}\]$//' | while IFS= read -r tab; do
+                    local id title url
+                    id=$(echo "${tab}" | grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)".*/\1/' || echo "N/A")
+                    title=$(echo "${tab}" | grep -o '"title"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)".*/\1/' || echo "N/A")
+                    url=$(echo "${tab}" | grep -o '"url"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)".*/\1/' || echo "N/A")
+                    echo "${id}: ${title} (${url})"
+                done
+            fi
+            ;;
+    esac
+
+    log_debug "Tab listing completed successfully"
+    return 0
+}
+
 # select_recovery_strategy() - Map failure code to recovery level
 # Input: failure_code (0-5)
 # Output: recovery_level (1-4)
