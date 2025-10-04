@@ -1,18 +1,18 @@
 # 2_新增Chrome调试守护脚本
+
 # Introduce Chrome Debug Guard Script
 
 ## 任务目标 / Objective
+
 - 保持现有 `config/chrome-debug.sh` 的手动复用行为不变。
 - 新增后台启动脚本，缺省情况下自动确保 `--remote-debugging-port=9222` 的 Chrome 调试实例存在。
 
 ## 完成标准 / Acceptance Criteria
-1. 新增 `config/chrome-debug-launcher.sh`，若未检测到调试实例，可在后台启动 Chrome，并输出 PID 记录；若失败需返回非零状态。  
-   `config/chrome-debug-launcher.sh` launches Chrome in background when debug instance is absent, records PID, and returns non-zero on failure.
-2. 新增 `config/ensure-chrome-debug.sh`，先检测 9222 端口，若未运行则调用 launcher，并在可配置的等待时间内轮询 `http://localhost:9222/json/version` 直至成功或超时。  
-   `config/ensure-chrome-debug.sh` checks port 9222, invokes the launcher if needed, and polls `/json/version` until ready or timeout.
-3. 若检测或启动因 macOS 权限被拦截，脚本需输出提示（例如授权开发者工具、AppleScript），并返回错误码。  
-   When macOS permissions block startup, the script prints guidance (Developer Tools, AppleScript) and exits with error.
-4. 自动流程（如 `wf -s`）可调用 `ensure-chrome-debug.sh` 并在调试实例就绪后继续执行。  
+
+1. 新增 `config/chrome-debug-launcher.sh`，若未检测到调试实例，可在后台启动 Chrome，并输出 PID 记录；若失败需返回非零状态。`config/chrome-debug-launcher.sh` launches Chrome in background when debug instance is absent, records PID, and returns non-zero on failure.
+2. 新增 `config/ensure-chrome-debug.sh`，先检测 9222 端口，若未运行则调用 launcher，并在可配置的等待时间内轮询 `http://localhost:9222/json/version` 直至成功或超时。`config/ensure-chrome-debug.sh` checks port 9222, invokes the launcher if needed, and polls `/json/version` until ready or timeout.
+3. 若检测或启动因 macOS 权限被拦截，脚本需输出提示（例如授权开发者工具、AppleScript），并返回错误码。When macOS permissions block startup, the script prints guidance (Developer Tools, AppleScript) and exits with error.
+4. 自动流程（如 `wf -s`）可调用 `ensure-chrome-debug.sh` 并在调试实例就绪后继续执行。
    Automated flows (e.g., `wf -s`) rely on `ensure-chrome-debug.sh` to guarantee the debug instance before proceeding.
 
 ## 架构评审结果 / Architecture Review Result
@@ -20,6 +20,7 @@
 ✅ **方案合理，需补充细节** - 整体方案可行，需要增加并发控制和异常处理机制
 
 **需要补充的内容 / Additional Requirements:**
+
 1. PID文件的清理机制
 2. Chrome异常退出的处理
 3. 并发启动的锁机制
@@ -29,6 +30,7 @@
 ### Phase 1: 创建启动器脚本 [1.5小时]
 
 **文件变更清单 / File Changes:**
+
 ```
 新增文件 / New Files:
 ├── config/chrome-debug-launcher.sh    # Chrome后台启动脚本
@@ -43,6 +45,7 @@
 ```
 
 **1. chrome-debug-launcher.sh实现规范:**
+
 ```bash
 #!/bin/bash
 # 位置：config/chrome-debug-launcher.sh
@@ -72,6 +75,7 @@
 ### Phase 2: 创建保障脚本 [2小时]
 
 **2. ensure-chrome-debug.sh实现规范:**
+
 ```bash
 #!/bin/bash
 # 位置：config/ensure-chrome-debug.sh
@@ -106,6 +110,7 @@
 ```
 
 **3. 权限错误处理模板:**
+
 ```bash
 # 检测到权限错误时输出：
 echo "❌ Chrome启动失败：权限被拒绝"
@@ -124,6 +129,7 @@ exit 1
 ### Phase 3: 集成与测试 [1.5小时]
 
 **修改wf.py集成点:**
+
 ```python
 # 位置：wf.py中的Selenium分支
 # 伪代码示例：
@@ -146,6 +152,7 @@ if args.selenium:
 ```
 
 **测试验证方案:**
+
 ```bash
 # 测试场景1：Chrome未运行时自动启动
 pkill -f "remote-debugging-port=9222"
@@ -171,9 +178,8 @@ wait
 ```
 
 ## 注意事项 / Notes
-- 现有 `config/chrome-debug.sh` 不做任何修改；手动启动习惯保持不变。  
-  Keep `config/chrome-debug.sh` untouched for manual workflows.
-- 新脚本需考虑路径中包含空格的情况（建议使用绝对路径或引用）。  
-  Handle spaces in paths (prefer absolute paths or quoting).
-- 若未来引入 Playwright 等新引擎，可复用 `ensure-chrome-debug.sh` 的检测逻辑。  
+
+- 现有 `config/chrome-debug.sh` 不做任何修改；手动启动习惯保持不变。Keep `config/chrome-debug.sh` untouched for manual workflows.
+- 新脚本需考虑路径中包含空格的情况（建议使用绝对路径或引用）。Handle spaces in paths (prefer absolute paths or quoting).
+- 若未来引入 Playwright 等新引擎，可复用 `ensure-chrome-debug.sh` 的检测逻辑。
   Future engines (e.g., Playwright) can reuse the detection logic.
