@@ -490,7 +490,13 @@ class SeleniumFetcher:
                 debugger_address = f"{self.debug_host}:{self.debug_port}"
                 options.add_experimental_option("debuggerAddress", debugger_address)
 
-                # Additional stability options
+                # Phase 2: Error suppression options (Selenium layer)
+                # Note: --log-level and --disable-logging help reduce Chrome console noise
+                options.add_argument('--log-level=3')  # Level 3 = FATAL only
+                options.add_argument('--disable-logging')
+                options.add_argument('--silent')
+
+                # Additional stability options (user-provided chrome_options can override defaults)
                 chrome_options = self.config.get('chrome_options', [])
                 for option in chrome_options:
                     options.add_argument(option)
