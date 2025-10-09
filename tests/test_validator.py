@@ -1,6 +1,6 @@
 """Tests for template validator."""
 import pytest
-from parsers.utils.validators import TemplateValidator
+from parser_engine.utils.validators import TemplateValidator
 
 
 def test_valid_template():

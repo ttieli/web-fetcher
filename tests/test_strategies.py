@@ -12,7 +12,7 @@ Tests the extraction strategy framework to ensure:
 
 import pytest
 import re
-from parsers.strategies import (
+from parser_engine.strategies import (
     ExtractionStrategy,
     CSSStrategy,
     XPathStrategy,

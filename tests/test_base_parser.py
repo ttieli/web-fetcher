@@ -8,7 +8,7 @@ Tests the BaseParser abstract class to ensure:
 """
 
 import pytest
-from parsers.base_parser import (
+from parser_engine.base_parser import (
     BaseParser,
     ParseResult,
     ParserError,

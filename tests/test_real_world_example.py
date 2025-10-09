@@ -4,7 +4,7 @@ This test shows the complete workflow of parsing a real-world HTML page
 using the TemplateParser with the generic template.
 """
 
-from parsers.template_parser import TemplateParser
+from parser_engine.template_parser import TemplateParser
 
 
 def test_parse_real_world_html():

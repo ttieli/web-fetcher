@@ -3,7 +3,7 @@ import yaml
 from pathlib import Path
 from typing import Dict, Optional, List
 from urllib.parse import urlparse
-from parsers.utils.validators import TemplateValidator
+from parser_engine.utils.validators import TemplateValidator
 
 
 class TemplateLoader:
@@ -12,7 +12,7 @@ class TemplateLoader:
     def __init__(self, template_dir: str = None):
         """Initialize template loader."""
         if template_dir is None:
-            # Default to parsers/templates directory
+            # Default to parser_engine/templates directory
             base_dir = Path(__file__).parent.parent
             template_dir = base_dir / "templates"
 
