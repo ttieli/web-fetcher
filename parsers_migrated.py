@@ -88,10 +88,9 @@ def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
 
 def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     """
-    WeChat (微信公众号) parser - Migration adapter
+    WeChat (微信公众号) parser - Template-based implementation
 
-    Phase 3.1: Framework with TODO markers
-    Phase 3.2: Implement template-based parsing
+    Phase 3.3: Migrated to template-based parsing engine
 
     Args:
         html: HTML content of the page
@@ -100,17 +99,65 @@ def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     Returns:
         tuple: (date_only, markdown_content, metadata)
     """
-    # TODO Phase 3.2: Implement template-based WeChat parsing
-    # 1. Load WeChat template from parser_engine/templates/sites/wechat/
-    # 2. Initialize TemplateParser with template
-    # 3. Parse HTML using template selectors
-    # 4. Transform parsed data to markdown
-    # 5. Return formatted result
+    try:
+        # Import template-based parsing engine
+        from parser_engine.template_parser import TemplateParser
+        from parser_engine.engine.template_loader import TemplateLoader
+        import os
 
-    # For now, delegate to legacy implementation
-    logger.info("Phase 3.1: Using legacy WeChat parser (template-based migration pending)")
-    from parsers_legacy import wechat_to_markdown as legacy_wechat_parser
-    return legacy_wechat_parser(html, url)
+        # Initialize template parser with WeChat template directory
+        template_dir = os.path.join(
+            os.path.dirname(__file__),
+            'parser_engine', 'templates'
+        )
+        parser = TemplateParser(template_dir=template_dir)
+
+        # Parse using template engine
+        result = parser.parse(html, url)
+
+        if not result.success:
+            logger.warning(f"Template parsing failed: {result.errors}, falling back to legacy parser")
+            raise Exception("Template parsing failed")
+
+        # Extract parsed data
+        title = result.title or "未命名"
+        author = result.metadata.get('author', '')
+        publish_time = result.metadata.get('date', '')
+        images = result.metadata.get('images', [])
+
+        # Parse date
+        date_only, date_time = parse_date_like(publish_time)
+
+        # Format markdown output
+        lines = [f"# {title}"]
+        meta = [f"- 标题: {title}"]
+        if author:
+            meta.append(f"- 作者: {author}")
+        meta += [
+            f"- 发布时间: {date_time}",
+            f"- 来源: [{url}]({url})",
+            f"- 抓取时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        ]
+
+        # Combine header and content
+        lines += meta + ["", result.content]
+        markdown_content = "\n\n".join(lines).strip() + "\n"
+
+        # Build metadata dictionary
+        metadata = {
+            'author': author,
+            'images': images,
+            'publish_time': publish_time
+        }
+
+        logger.info(f"Phase 3.3: Successfully parsed WeChat article using template engine")
+        return date_only, markdown_content, metadata
+
+    except Exception as e:
+        # Fallback to legacy implementation if template parsing fails
+        logger.warning(f"Template-based WeChat parser failed: {e}, using legacy parser")
+        from parsers_legacy import wechat_to_markdown as legacy_wechat_parser
+        return legacy_wechat_parser(html, url)
 
 
 def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_crawling: bool = False) -> tuple[str, str, dict]:
