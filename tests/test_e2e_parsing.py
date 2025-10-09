@@ -19,7 +19,15 @@ Acceptance Criteria:
 
 import pytest
 import time
+import sys
+from pathlib import Path
 from typing import List
+
+# Add project root to sys.path for imports
+PROJECT_ROOT = Path(__file__).parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from parser_engine.template_parser import TemplateParser
 from parser_engine.base_parser import ParseResult
 

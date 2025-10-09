@@ -1,0 +1,59 @@
+name: "Generic Web Template"
+version: "1.1.0"
+domains:
+  - "*"  # Matches all domains as fallback
+
+selectors:
+  # Title extraction (try multiple selectors in order - most specific first)
+  # Priority: OG title (social sharing) -> Page title -> H1 heading
+  title: "meta[property='og:title'], title, h1, meta[name='twitter:title'], .headline, .post-title, .article-title"
+
+  # Content extraction (try main content areas - semantic HTML first)
+  # Priority order optimized for common website patterns:
+  # 1. Semantic HTML5: article, main, [role='main']
+  # 2. Common class names: .post-content, .entry-content, .article-body
+  # 3. Common IDs: #content, #main-content
+  # 4. Fallback: .content class
+  content: "article, main, [role='main'], .post-content, .entry-content, .article-body, .news-article, .docs-content, #content, #main-content, .content"
+
+  # Comprehensive metadata extraction
+  metadata:
+    # Description - try OG first, then standard meta tag
+    description: "meta[property='og:description'], meta[name='description'], meta[name='twitter:description']"
+
+    # Author information - multiple potential sources
+    author: "meta[name='author'], meta[property='article:author'], [rel='author'], .author, .byline, .post-author"
+
+    # Publication date - try article schema, OG, then time elements
+    date: "meta[property='article:published_time'], meta[property='article:modified_time'], time[datetime], meta[name='date'], .published-date, .post-date"
+
+    # Featured image - social sharing tags
+    image: "meta[property='og:image'], meta[name='twitter:image'], meta[name='twitter:image:src']"
+
+    # Site name - useful for attribution
+    site_name: "meta[property='og:site_name'], meta[name='application-name']"
+
+    # Keywords/tags - for categorization
+    keywords: "meta[name='keywords'], meta[property='article:tag']"
+
+    # Language - for i18n support
+    language: "meta[property='og:locale'], html[lang]"
+
+    # Content type - article, blog, news, etc.
+    type: "meta[property='og:type'], meta[name='article:section']"
+
+# Post-processing hints (for future use in Phase 2.3+)
+post_process:
+  - "remove_scripts"       # Strip <script> tags
+  - "remove_styles"        # Strip <style> tags
+  - "remove_comments"      # Strip HTML comments
+  - "trim_whitespace"      # Clean up excessive whitespace
+  - "normalize_links"      # Convert relative to absolute URLs
+  - "remove_empty_paragraphs"  # Remove <p></p> tags
+
+# Quality thresholds (for validation in Phase 2.3+)
+quality:
+  min_content_length: 100      # Minimum characters for valid content
+  max_title_length: 200        # Maximum title length
+  require_title: true          # Title is mandatory
+  require_content: true        # Content is mandatory
