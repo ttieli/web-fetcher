@@ -1,8 +1,8 @@
 {
   "test_name": "wechat",
   "date_only": "2024-10-04",
-  "markdown": "# 微信测试文章\n\n- 标题: 微信测试文章\n\n- 作者: 张三\n\n- 发布时间: 2024-10-04 00:00:00\n\n- 来源: [https://mp.weixin.qq.com/s/test_article_123](https://mp.weixin.qq.com/s/test_article_123)\n\n- 抓取时间: 2025-10-04 16:57:29\n\n\n\n## 第一节标题\n\n这是第一段内容，包含了一些测试文字。\n\n这是第二段内容，用于测试段落分割。\n\n![](https://mmbiz.qpic.cn/mmbiz_jpg/test123.jpg)\n\n### 第二节标题\n\n第三段内容，测试图片提取功能。\n- 列表项一\n- 列表项二\n",
-  "markdown_hash": "ed9c2df9776c0d2e5939481e42571831535aa84c256371b04fd9ed71d84d8f1a",
+  "markdown": "# 微信测试文章\n\n- 标题: 微信测试文章\n\n- 作者: 张三\n\n- 发布时间: 2024-10-04 00:00:00\n\n- 来源: [https://mp.weixin.qq.com/s/test_article_123](https://mp.weixin.qq.com/s/test_article_123)\n\n- 抓取时间: 2025-10-09 13:26:22\n\n\n\n## 第一节标题\n\n这是第一段内容，包含了一些测试文字。\n\n这是第二段内容，用于测试段落分割。\n\n![](https://mmbiz.qpic.cn/mmbiz_jpg/test123.jpg)\n\n### 第二节标题\n\n第三段内容，测试图片提取功能。\n- 列表项一\n- 列表项二\n",
+  "markdown_hash": "52d2b6bba0f5056fe777cb1f10010c9d9913f7f2ecbb87601453ab7f2397a895",
   "metadata": {
     "author": "张三",
     "images": [

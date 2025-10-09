@@ -3,10 +3,10 @@
 Web content parsers for different site types.
 Extracted from webfetcher.py for better modularity.
 
-Phase 1: Pure extraction - no logic changes
+Phase 3.5: Integration with template-based parsers
 """
 
-__version__ = "1.0.0"
+__version__ = "3.5.0"
 __author__ = "WebFetcher Team"
 
 # Standard library imports
@@ -33,6 +33,13 @@ except ImportError:
 
 # Configure module logger
 logger = logging.getLogger(__name__)
+
+# Import template-based parsers from parsers_migrated
+from parsers_migrated import (
+    xhs_to_markdown as xhs_to_markdown_migrated,
+    wechat_to_markdown as wechat_to_markdown_migrated,
+    generic_to_markdown as generic_to_markdown_migrated
+)
 
 def get_beautifulsoup_parser():
     """
@@ -718,272 +725,39 @@ class XHSImageExtractor:
 
 
 def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
-    def clean_title(t: str) -> str:
-        t = t.strip()
-        t = re.sub(r"\s*-\s*小红书\s*$", "", t)
-        return t
-    # title
-    title = clean_title(extract_meta(html, 'og:title') or extract_meta(html, 'twitter:title') or '')
-    if not title:
-        m = re.search(r'<title[^>]*>(.*?)</title>', html, re.I|re.S)
-        if m:
-            title = clean_title(ihtml.unescape(re.sub(r'<[^>]+>', '', m.group(1)))).strip()
-    title = title or '未命名'
-    # author/date from JSON-LD
-    author = ''
-    date_raw = ''
-    for m in re.finditer(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', html, re.I|re.S):
-        txt = m.group(1).strip()
-        try:
-            obj = json.loads(txt)
-        except Exception:
-            continue
-        def visit(o):
-            nonlocal author, date_raw
-            if not isinstance(o, dict):
-                return
-            if not author:
-                a = o.get('author') or {}
-                if isinstance(a, dict):
-                    nm = (a.get('name') or '').strip()
-                    if nm and nm.lower() != 'undefined':
-                        author = nm
-            if not date_raw:
-                for k in ('datePublished','uploadDate'):
-                    v = o.get(k)
-                    if v and re.search(r"\d{6,}|20\d{2}", str(v)):
-                        date_raw = str(v)
-                        break
-        if isinstance(obj, list):
-            for it in obj: visit(it)
-        elif isinstance(obj, dict):
-            visit(obj)
-            if isinstance(obj.get('@graph'), list):
-                for it in obj['@graph']: visit(it)
-    # fallback date scan
-    if not date_raw:
-        m = re.search(r'"(datePublished|uploadDate)"\s*:\s*"([^"]+)"', html)
-        if m: date_raw = m.group(2)
-    date_only, date_time = parse_date_like(date_raw)
+    """
+    XiaoHongShu (小红书) parser - Routes to template-based implementation
 
-    desc = extract_meta(html, 'description').replace('\t','\n\n').strip()
-    cover = extract_meta(html, 'og:image')
-    
-    # ENHANCED IMAGE EXTRACTION - Using XHSImageExtractor for comprehensive extraction
-    try:
-        extractor = XHSImageExtractor(html, url, debug=False)
-        imgs = extractor.extract_all()
-        
-        # Apply legacy validation for backward compatibility
-        def _validate_image_url_legacy(url: str) -> bool:
-            """Legacy validation function to maintain backward compatibility."""
-            if not url:
-                return False
-            
-            url_clean = url.strip().strip('"\'')
-            
-            # Current domain validation logic
-            ok_domain = any(x in url_clean for x in (
-                'ci.xiaohongshu.com',
-                'sns-img',
-                'xhscdn.com',
-            ))
-            if not ok_domain:
-                return False
-            
-            if any(bad in url_clean for bad in ('avatar', 'favicon')):
-                return False
-            
-            # Current format validation logic - enhanced for XiaoHongShu
-            if not (re.search(r'\.(?:jpg|jpeg|png|webp|gif)(?:\?|$)', url_clean, re.I) or 
-                    ('imageMogr2' in url_clean) or ('imageView2' in url_clean) or
-                    ('nd_dft' in url_clean) or ('nd_prv' in url_clean)):  # XiaoHongShu patterns
-                return False
-            
-            return True
-        
-        # Filter through legacy validation
-        validated_imgs = []
-        for img_url in imgs:
-            if _validate_image_url_legacy(img_url):
-                validated_imgs.append(img_url)
-        
-        imgs = validated_imgs
-        
-        # Ensure cover is handled properly
-        if cover:
-            if _validate_image_url_legacy(cover):
-                if cover not in imgs:
-                    imgs.insert(0, cover)
-                elif imgs and imgs[0] != cover and cover in imgs:
-                    imgs.remove(cover)
-                    imgs.insert(0, cover)
-        
-        # Enhanced extraction completed
-        
-    except Exception as e:
-        # Fall back to legacy extraction method
-        
-        # FALLBACK TO LEGACY EXTRACTION
-        imgs: list[str] = []
-        seen = set()
-        def consider(u: str):
-            if not u:
-                return
-            # strip quotes and spaces
-            u2 = u.strip().strip('"\'')
-            # heuristic filters for XHS media images (exclude avatars/icons)
-            ok_domain = any(x in u2 for x in (
-                'ci.xiaohongshu.com',
-                'sns-img',
-                'xhscdn.com',
-            ))
-            if not ok_domain:
-                return
-            if any(bad in u2 for bad in ('avatar','favicon')):
-                return
-            # must look like an image URL (extension or image processing params)
-            if not (re.search(r'\.(?:jpg|jpeg|png|webp|gif)(?:\?|$)', u2, re.I) or ('imageMogr2' in u2) or ('imageView2' in u2)):
-                return
-            if u2 not in seen:
-                seen.add(u2)
-                imgs.append(u2)
+    Phase 3.5: Routing layer for xiaohongshu.com and xhslink.com domains
+    Delegates to parsers_migrated for template-based parsing
 
-        # 1) common attributes: src, data-src, srcset
-        for m in re.finditer(r'(?:src|data-src)=["\']([^"\']+)["\']', html, re.I):
-            consider(m.group(1))
-        # srcset can contain multiple URLs
-        for m in re.finditer(r'srcset=["\']([^"\']+)["\']', html, re.I):
-            chunk = m.group(1)
-            for part in chunk.split(','):
-                consider(part.strip().split(' ')[0])
-        # 2) generic URLs inside scripts/JSON
-        for m in re.finditer(r'"(https?://[^"\s]+\.(?:jpg|jpeg|png|webp)(?:\?[^"\s]*)?)"', html, re.I):
-            consider(m.group(1))
-        # Ensure cover first
-        if cover:
-            consider(cover)
-            # move cover to front if present later
-            if imgs and imgs[0] != cover and cover in imgs:
-                imgs.remove(cover)
-                imgs.insert(0, cover)
+    Args:
+        html: HTML content of the page
+        url: Source URL
 
-    lines = [f"# {title}"]
-    meta = [f"- 标题: {title}"]
-    if author: meta.append(f"- 作者: {author}")
-    meta += [f"- 发布时间: {date_time}", f"- 来源: {url}", f"- 抓取时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"]
-    lines += meta
-    if cover:
-        lines += ["", f"![]({normalize_media_url(cover)})"]
-    body = desc or '(未能从页面提取正文摘要)'
-    lines += ["", body]
-    if imgs:
-        lines += ["", "## 图片", ""] + [f"![]({normalize_media_url(u)})" for u in imgs]
-    
-    metadata = {
-        'author': author,
-        'images': [normalize_media_url(u) for u in imgs],
-        'cover': normalize_media_url(cover) if cover else '',
-        'description': desc,
-        'publish_time': date_raw
-    }
-    return date_only, "\n\n".join(lines).strip() + "\n", metadata
+    Returns:
+        tuple: (date_only, markdown_content, metadata)
+    """
+    logger.info("Phase 3.5: Routing XiaoHongShu to template-based parser")
+    return xhs_to_markdown_migrated(html, url)
 
 
 def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
-    title = extract_meta(html, 'og:title')
-    if not title:
-        m = re.search(r'<h1[^>]*class=["\'][^"\']*rich_media_title[^"\']*["\'][^>]*>(.*?)</h1>', html, re.I|re.S)
-        if m:
-            t = re.sub(r'<[^>]+>', '', m.group(1))
-            title = ihtml.unescape(t).strip()
-    if not title:
-        title = '未命名'
+    """
+    WeChat (微信公众号) parser - Routes to template-based implementation
 
-    author = extract_meta(html, 'og:article:author')
-    if not author:
-        m = re.search(r'<span[^>]*class=["\'][^"\']*rich_media_meta\s+rich_media_meta_text[^"\']*["\'][^>]*>(.*?)</span>', html, re.I|re.S)
-        if m:
-            author = ihtml.unescape(re.sub(r'<[^>]+>', '', m.group(1))).strip()
+    Phase 3.5: Routing layer for mp.weixin.qq.com domain
+    Delegates to parsers_migrated for template-based parsing
 
-    pub = ''
-    for pat in [r'id=["\']publish_time["\'][^>]*>([^<]+)<', r'property=["\']article:published_time["\'][^>]+content=["\']([^"\']+)["\']']:
-        m = re.search(pat, html, re.I)
-        if m:
-            pub = ihtml.unescape(m.group(1).strip())
-            break
-    date_only, date_time = parse_date_like(pub)
+    Args:
+        html: HTML content of the page
+        url: Source URL
 
-    class WxParser(HTMLParser):
-        def __init__(self):
-            super().__init__()
-            self.capture = False
-            self.depth = 0
-            self.parts: list[str] = []
-            self.link = None
-            self.images: list[str] = []
-            self.in_script = False
-            self.in_style = False
-        def handle_starttag(self, tag, attrs):
-            a = dict(attrs)
-            if not self.capture and a.get('id') == 'js_content':
-                self.capture = True
-                self.depth = 1
-                return
-            if self.capture:
-                self.depth += 1
-                if tag in ('p','div','section'): self.parts.append('\n\n')
-                elif tag in ('br','hr'): self.parts.append('\n')
-                elif tag == 'li': self.parts.append('\n- ')
-                elif tag == 'h1': self.parts.append('\n\n# ')
-                elif tag == 'h2': self.parts.append('\n\n## ')
-                elif tag == 'h3': self.parts.append('\n\n### ')
-                elif tag == 'img':
-                    src = a.get('data-src') or a.get('src')
-                    if src:
-                        src = normalize_media_url(src)
-                        self.images.append(src)
-                        self.parts.append(f"\n\n![]({src})\n\n")
-                elif tag == 'script':
-                    self.in_script = True
-                elif tag == 'style':
-                    self.in_style = True
-                elif tag == 'a':
-                    self.link = a.get('href')
-        def handle_endtag(self, tag):
-            if self.capture:
-                if tag == 'a' and self.link:
-                    self.parts.append(f" ({self.link})")
-                    self.link = None
-                elif tag == 'script':
-                    self.in_script = False
-                elif tag == 'style':
-                    self.in_style = False
-                self.depth -= 1
-                if self.depth == 0:
-                    self.capture = False
-        def handle_data(self, data):
-            if self.capture and not self.in_script and not self.in_style:
-                t = data.strip('\n')
-                if t.strip(): self.parts.append(ihtml.unescape(t))
-
-    p = WxParser()
-    p.feed(html)
-    body = ''.join(p.parts)
-    body = re.sub(r'\n{3,}', '\n\n', body).strip() or '(未能提取正文)'
-
-    lines = [f"# {title}"]
-    meta = [f"- 标题: {title}"]
-    if author: meta.append(f"- 作者: {author}")
-    meta += [f"- 发布时间: {date_time}", f"- 来源: [{url}]({url})", f"- 抓取时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"]
-    lines += meta + ["", body]
-    
-    metadata = {
-        'author': author,
-        'images': p.images,
-        'publish_time': pub
-    }
-    return date_only, "\n\n".join(lines).strip() + "\n", metadata
+    Returns:
+        tuple: (date_only, markdown_content, metadata)
+    """
+    logger.info("Phase 3.5: Routing WeChat to template-based parser")
+    return wechat_to_markdown_migrated(html, url)
 
 
 def detect_page_type(html: str, url: Optional[str] = None, is_crawling: bool = False) -> PageType:
@@ -1184,46 +958,19 @@ def format_list_page_markdown(page_title: str, list_items: List[ListItem], url: 
 
 def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_crawling: bool = False) -> tuple[str, str, dict]:
     """
-    Generic parser with page type detection - Phase 1 implementation
+    Generic parser - Routes to template-based implementation
+
+    Phase 3.5: Routing layer for generic/fallback parsing
+    Delegates to parsers_migrated for template-based parsing
+
+    Args:
+        html: HTML content of the page
+        url: Source URL
+        filter_level: Content filtering level
+        is_crawling: Whether in crawling mode
+
+    Returns:
+        tuple: (date_only, markdown_content, metadata)
     """
-    # 1. Page type detection
-    page_type = detect_page_type(html, url, is_crawling)
-    
-    if page_type == PageType.LIST_INDEX:
-        # Handle list pages
-        page_title, list_items = extract_list_content(html, url)
-        return format_list_page_markdown(page_title, list_items, url)
-    else:
-        # Handle article pages
-        title = extract_meta(html, 'og:title') or extract_meta(html, 'twitter:title')
-        if not title:
-            m = re.search(r'<title[^>]*>(.*?)</title>', html, re.I|re.S)
-            if m:
-                title = ihtml.unescape(re.sub(r'<[^>]+>', '', m.group(1))).strip()
-        title = title or 'Generic Article'
-        
-        # Basic content extraction using modern selectors
-        content = extract_from_modern_selectors(html)
-        if not content:
-            content = "(Phase 1: Basic content extraction - Full implementation in Phase 2)"
-        
-        date_only, date_time = parse_date_like(extract_meta(html, 'article:published_time'))
-        desc = extract_meta(html, 'description')
-        
-        lines = [f"# {title}"]
-        lines.append(f"- 标题: {title}")
-        lines.append(f"- 发布时间: {date_time}")
-        lines.append(f"- 来源: [{url}]({url})")
-        lines.append(f"- 抓取时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        lines.append("")
-        lines.append(content)
-        
-        metadata = {
-            'description': desc,
-            'page_type': page_type.value,
-            'filter_level': filter_level,
-            'is_crawling': is_crawling,
-            'phase': 'phase1_implementation'
-        }
-        
-        return date_only, "\n\n".join(lines).strip() + "\n", metadata
+    logger.info("Phase 3.5: Routing Generic parser to template-based implementation")
+    return generic_to_markdown_migrated(html, url, filter_level, is_crawling)
