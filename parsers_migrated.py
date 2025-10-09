@@ -48,8 +48,8 @@ from parsers_legacy import (
 )
 
 # TODO Phase 3.2: Import template-based parsing engine
-# from parsers.template_parser import TemplateParser
-# from parsers.engine.template_loader import TemplateLoader
+# from parser_engine.template_parser import TemplateParser
+# from parser_engine.engine.template_loader import TemplateLoader
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
         tuple: (date_only, markdown_content, metadata)
     """
     # TODO Phase 3.2: Implement template-based XHS parsing
-    # 1. Load XHS template from parsers/templates/sites/xiaohongshu/
+    # 1. Load XHS template from parser_engine/templates/sites/xiaohongshu/
     # 2. Initialize TemplateParser with template
     # 3. Parse HTML using template selectors
     # 4. Transform parsed data to markdown
@@ -101,7 +101,7 @@ def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
         tuple: (date_only, markdown_content, metadata)
     """
     # TODO Phase 3.2: Implement template-based WeChat parsing
-    # 1. Load WeChat template from parsers/templates/sites/wechat/
+    # 1. Load WeChat template from parser_engine/templates/sites/wechat/
     # 2. Initialize TemplateParser with template
     # 3. Parse HTML using template selectors
     # 4. Transform parsed data to markdown

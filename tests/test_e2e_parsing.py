@@ -20,8 +20,8 @@ Acceptance Criteria:
 import pytest
 import time
 from typing import List
-from parsers.template_parser import TemplateParser
-from parsers.base_parser import ParseResult
+from parser_engine.template_parser import TemplateParser
+from parser_engine.base_parser import ParseResult
 
 
 # ============================================================================
@@ -628,7 +628,7 @@ class TestE2EParsing:
     def test_result_validation_failure(self, parser):
         """Test validation of failed parse result"""
         # Create a failed result
-        from parsers.base_parser import ParseResult
+        from parser_engine.base_parser import ParseResult
         failed_result = ParseResult(
             success=False,
             errors=["Test error"],
