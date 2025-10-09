@@ -10,8 +10,8 @@ Tests the TemplateParser class to ensure:
 
 import pytest
 from pathlib import Path
-from parsers.template_parser import TemplateParser
-from parsers.base_parser import (
+from parser_engine.template_parser import TemplateParser
+from parser_engine.base_parser import (
     ParseResult,
     ParserError,
     TemplateNotFoundError
@@ -33,7 +33,7 @@ class TestTemplateParserInitialization:
     def test_custom_template_directory(self):
         """TemplateParser should accept custom template directory."""
         # Get the default templates path
-        base_dir = Path(__file__).parent.parent / "parsers" / "templates"
+        base_dir = Path(__file__).parent.parent / "parser_engine" / "templates"
 
         parser = TemplateParser(template_dir=str(base_dir))
 
@@ -154,7 +154,7 @@ class TestParserIntegration:
 
     def test_inherits_from_base_parser(self):
         """TemplateParser should inherit from BaseParser."""
-        from parsers.base_parser import BaseParser
+        from parser_engine.base_parser import BaseParser
 
         parser = TemplateParser()
         assert isinstance(parser, BaseParser)

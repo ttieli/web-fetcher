@@ -9,8 +9,8 @@ Tests the complete workflow of template-based content extraction including:
 """
 
 import pytest
-from parsers.template_parser import TemplateParser
-from parsers.base_parser import ParseResult
+from parser_engine.template_parser import TemplateParser
+from parser_engine.base_parser import ParseResult
 
 
 # Sample HTML for testing

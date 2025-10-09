@@ -1,7 +1,7 @@
 """Phase 1 integration tests."""
 import pytest
-from parsers.engine.template_loader import TemplateLoader
-from parsers.utils.validators import TemplateValidator
+from parser_engine.engine.template_loader import TemplateLoader
+from parser_engine.utils.validators import TemplateValidator
 
 
 def test_full_template_system_flow():

@@ -1,6 +1,6 @@
 """Tests for template loader."""
 import pytest
-from parsers.engine.template_loader import TemplateLoader
+from parser_engine.engine.template_loader import TemplateLoader
 
 
 def test_loader_initialization():
