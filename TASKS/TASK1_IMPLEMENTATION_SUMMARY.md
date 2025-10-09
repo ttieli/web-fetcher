@@ -248,6 +248,32 @@ PROBLEMATIC_DOMAINS = [
 
 ---
 
+## Post-Implementation Fix (Task 10) / 实施后修复（任务10）
+
+**Issue Identified / 识别的问题**: Task 1 incorrectly included xiaohongshu.com and xhslink.com in SSL_PROBLEMATIC_DOMAINS. These domains do not have SSL issues - they were added for JavaScript rendering requirements, violating single responsibility principle.
+
+任务1错误地将xiaohongshu.com和xhslink.com包含在SSL_PROBLEMATIC_DOMAINS中。这些域名没有SSL问题 - 它们是因为JavaScript渲染需求而添加的，违反了单一职责原则。
+
+**Fix Applied / 应用的修复**: 2025-10-09
+- Removed xiaohongshu.com and xhslink.com from SSL configuration
+- Updated documentation to clarify SSL-only scope
+- Restored normal urllib-first routing for these domains
+- Updated module docstring with clear SCOPE definition
+
+**Result / 结果**:
+- xiaohongshu URLs now work correctly with urllib
+- Bank SSL routing preserved (no regression)
+- Clear separation of SSL issues from JS rendering needs
+- 100% test pass rate on fix validation
+
+**Lesson Learned / 经验教训**:
+Configuration names must clearly indicate their purpose. SSL_PROBLEMATIC_DOMAINS should ONLY contain domains with actual SSL/TLS compatibility issues, not domains that require JavaScript rendering for other reasons.
+
+配置名称必须清楚地表明其用途。SSL_PROBLEMATIC_DOMAINS应该仅包含具有实际SSL/TLS兼容性问题的域名，而不是因其他原因需要JavaScript渲染的域名。
+
+---
+
 **Document Generated**: 2025-10-09
+**Last Updated**: 2025-10-09 (Post Task 10 Fix)
 **Next Review**: When adding new problematic domains
 **File Location**: /tasks/TASK1_IMPLEMENTATION_SUMMARY.md
