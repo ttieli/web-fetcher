@@ -82,6 +82,15 @@ except ImportError as e:
     class ErrorReporter: pass
     class ErrorCategory: pass
 
+# Error classification system (Task 7 Phase 1)
+try:
+    from error_classifier import UnifiedErrorClassifier
+    from error_types import ErrorType, ErrorClassification
+    ERROR_CLASSIFIER_AVAILABLE = True
+except ImportError as e:
+    logging.debug(f"Error classifier not available: {e}")
+    ERROR_CLASSIFIER_AVAILABLE = False
+
 # Safari integration removed - using urllib only
 
 
@@ -90,6 +99,9 @@ except ImportError as e:
 ssl_context_unverified = ssl.create_default_context()
 ssl_context_unverified.check_hostname = False
 ssl_context_unverified.verify_mode = ssl.CERT_NONE
+
+# Initialize error classifier (Task 7 Phase 1)
+error_classifier = UnifiedErrorClassifier() if ERROR_CLASSIFIER_AVAILABLE else None
 
 
 def sanitize_filename(name: str) -> str:
@@ -1061,15 +1073,53 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
             
         except Exception as e:
             last_exception = e
-            
+
             # Log the error with context
             if attempt == 0:
                 logging.warning(f"Initial fetch failed for {url}: {type(e).__name__}: {e}")
             else:
                 logging.warning(f"Retry {attempt}/{MAX_RETRIES} failed for {url}: {type(e).__name__}: {e}")
-            
+
+            # Phase 1: Classify error using unified classifier
+            should_retry = True
+            wait_time = calculate_backoff_delay(attempt) if attempt < MAX_RETRIES else 0
+
+            if ERROR_CLASSIFIER_AVAILABLE and error_classifier:
+                classification = error_classifier.classify_error(e, url)
+                logging.info(f"Error classified as {classification.error_type.value}: {classification.reason}")
+
+                # Handle permanent errors
+                if classification.error_type == ErrorType.PERMANENT:
+                    logging.error(f"Permanent error: {classification.reason}")
+                    if classification.fallback_method == "selenium" and fetch_mode == 'auto':
+                        return _try_selenium_fallback_after_urllib_failure(url, ua, timeout, metrics, start_time, str(e))
+
+                    # Store the exception for error reporting
+                    metrics.fetch_duration = time.time() - start_time
+                    metrics.final_status = "failed"
+                    metrics.error_message = str(e)
+                    raise e
+
+                # Handle SSL configuration errors - immediate Selenium fallback
+                elif classification.error_type == ErrorType.SSL_CONFIG:
+                    logging.warning(f"SSL configuration error: {classification.reason}")
+                    if fetch_mode == 'auto':
+                        return _try_selenium_fallback_after_urllib_failure(url, ua, timeout, metrics, start_time, str(e))
+
+                    metrics.fetch_duration = time.time() - start_time
+                    metrics.final_status = "failed"
+                    metrics.error_message = str(e)
+                    raise e
+
+                # Use classifier's retry recommendation
+                should_retry = classification.should_retry
+                wait_time = classification.recommended_wait if classification.should_retry else 0
+            else:
+                # Fallback to legacy should_retry_exception logic
+                should_retry = should_retry_exception(e)
+
             # Check if we should retry this exception
-            if not should_retry_exception(e):
+            if not should_retry:
                 # Special handling for HTTP 307 redirect loops
                 if isinstance(e, urllib.error.HTTPError) and e.status == 307:
                     logging.error(f"HTTP 307 redirect loop detected for {url}. "
@@ -1077,20 +1127,25 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
                                  f"Try using a specific page URL instead of the root domain.")
                 else:
                     logging.info(f"Non-retryable error for {url}, failing immediately: {type(e).__name__}")
-                
+
                 # Phase 2: Immediate Selenium fallback for non-retryable errors (if enabled)
                 if fetch_mode == 'auto':
                     return _try_selenium_fallback_after_urllib_failure(url, ua, timeout, metrics, start_time, str(e))
-                
+
                 # Store the exception for error reporting
                 metrics.fetch_duration = time.time() - start_time
                 metrics.final_status = "failed"
                 metrics.error_message = str(e)
                 raise e
-            
+
             # If this was the last attempt, don't sleep
             if attempt == MAX_RETRIES:
                 break
+
+            # Use classifier's recommended wait time if available
+            if wait_time > 0 and attempt < MAX_RETRIES:
+                logging.info(f"Waiting {wait_time:.1f}s before retry {attempt + 1}/{MAX_RETRIES}")
+                time.sleep(wait_time)
     
     # Phase 2: All urllib retry attempts exhausted - try Selenium fallback if enabled
     if fetch_mode == 'auto':
