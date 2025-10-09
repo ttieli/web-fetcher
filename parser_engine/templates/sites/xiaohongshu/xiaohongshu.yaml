@@ -1,0 +1,473 @@
+# XiaoHongShu (小红书) Template v1.0
+# Template for parsing XiaoHongShu posts and content
+# Domains: xiaohongshu.com, xhslink.com
+# Migrated from legacy xhs_to_markdown implementation
+
+name: "XiaoHongShu Posts"
+version: "1.0.0"
+domains:
+  - "xiaohongshu.com"
+  - "xhslink.com"
+  - "www.xiaohongshu.com"
+priority: 100  # High priority for exact domain match
+
+# ============================================================================
+# SELECTOR PATTERNS - XiaoHongShu-specific extraction rules
+# ============================================================================
+
+selectors:
+  # ---------------------------------------------------------------------------
+  # TITLE EXTRACTION
+  # Priority: OG meta tag -> Twitter meta tag -> <title> tag -> fallback
+  # XiaoHongShu-specific: Clean " - 小红书" suffix from titles
+  # ---------------------------------------------------------------------------
+  title:
+    # Open Graph meta tag (highest priority)
+    - selector: "meta[property='og:title']"
+      strategy: "css"
+      attribute: "content"
+      post_process:
+        - type: "regex_replace"
+          pattern: '\s*-\s*小红书\s*$'
+          replacement: ''
+          flags: "i"
+
+    # Twitter meta tag
+    - selector: "meta[name='twitter:title']"
+      strategy: "css"
+      attribute: "content"
+      post_process:
+        - type: "regex_replace"
+          pattern: '\s*-\s*小红书\s*$'
+          replacement: ''
+          flags: "i"
+
+    # Standard title tag
+    - selector: "title"
+      strategy: "css"
+      post_process:
+        - type: "regex_replace"
+          pattern: '\s*-\s*小红书\s*$'
+          replacement: ''
+          flags: "i"
+
+    # XiaoHongShu-specific title class
+    - selector: ".note-title"
+      strategy: "css"
+
+    # Alternative title selector
+    - selector: "h1.title"
+      strategy: "css"
+
+    # Generic h1 fallback
+    - selector: "h1"
+      strategy: "css"
+
+  # ---------------------------------------------------------------------------
+  # AUTHOR EXTRACTION
+  # Priority: JSON-LD author -> meta tag -> CSS selector
+  # XiaoHongShu uses JSON-LD structured data extensively
+  # ---------------------------------------------------------------------------
+  author:
+    # JSON-LD author extraction (highest priority)
+    - selector: "script[type='application/ld+json']"
+      strategy: "text_pattern"
+      pattern: '"author"\s*:\s*\{\s*"name"\s*:\s*"([^"]+)"'
+      extract_group: 1
+
+    # Alternative JSON-LD pattern
+    - selector: "script[type='application/ld+json']"
+      strategy: "text_pattern"
+      pattern: '"author"\s*:\s*"([^"]+)"'
+      extract_group: 1
+
+    # Meta tag author
+    - selector: "meta[name='author']"
+      strategy: "css"
+      attribute: "content"
+
+    # XiaoHongShu-specific author container
+    - selector: ".author-name"
+      strategy: "css"
+
+    # User nickname
+    - selector: ".user-nickname"
+      strategy: "css"
+
+    # Profile name
+    - selector: ".profile-name"
+      strategy: "css"
+
+  # ---------------------------------------------------------------------------
+  # PUBLISH DATE EXTRACTION
+  # Priority: JSON-LD datePublished/uploadDate -> meta tag -> text pattern
+  # ---------------------------------------------------------------------------
+  date:
+    # JSON-LD datePublished (highest priority)
+    - selector: "script[type='application/ld+json']"
+      strategy: "text_pattern"
+      pattern: '"datePublished"\s*:\s*"([^"]+)"'
+      extract_group: 1
+
+    # JSON-LD uploadDate
+    - selector: "script[type='application/ld+json']"
+      strategy: "text_pattern"
+      pattern: '"uploadDate"\s*:\s*"([^"]+)"'
+      extract_group: 1
+
+    # Open Graph published time meta tag
+    - selector: "meta[property='article:published_time']"
+      strategy: "css"
+      attribute: "content"
+
+    # XiaoHongShu-specific date container
+    - selector: ".publish-time"
+      strategy: "css"
+
+    # Time element
+    - selector: "time"
+      strategy: "css"
+      attribute: "datetime"
+
+    # Alternative time element (text content)
+    - selector: "time"
+      strategy: "css"
+
+  # ---------------------------------------------------------------------------
+  # DESCRIPTION/CONTENT EXTRACTION
+  # Priority: meta description -> article content -> main content
+  # XiaoHongShu uses description meta tag for post content
+  # ---------------------------------------------------------------------------
+  content:
+    # Meta description (XiaoHongShu post content is often here)
+    - selector: "meta[name='description']"
+      strategy: "css"
+      attribute: "content"
+      post_process:
+        - type: "replace"
+          old: '\t'
+          new: '\n\n'
+
+    # Open Graph description
+    - selector: "meta[property='og:description']"
+      strategy: "css"
+      attribute: "content"
+      post_process:
+        - type: "replace"
+          old: '\t'
+          new: '\n\n'
+
+    # XiaoHongShu note content
+    - selector: ".note-content"
+      strategy: "css"
+
+    # Article content
+    - selector: "article"
+      strategy: "css"
+
+    # Main content area
+    - selector: "main"
+      strategy: "css"
+
+    # Post content
+    - selector: ".post-content"
+      strategy: "css"
+
+    # Content wrapper
+    - selector: ".content-wrapper"
+      strategy: "css"
+
+  # ---------------------------------------------------------------------------
+  # COVER IMAGE EXTRACTION
+  # XiaoHongShu uses og:image for cover/primary image
+  # ---------------------------------------------------------------------------
+  cover:
+    # Open Graph image (cover/primary)
+    - selector: "meta[property='og:image']"
+      strategy: "css"
+      attribute: "content"
+
+    # Twitter card image
+    - selector: "meta[name='twitter:image']"
+      strategy: "css"
+      attribute: "content"
+
+  # ---------------------------------------------------------------------------
+  # IMAGE EXTRACTION
+  # XiaoHongShu-specific: Images from various sources including JSON data
+  # Domain patterns: ci.xiaohongshu.com, sns-img, xhscdn.com
+  # Processing params: imageMogr2, imageView2, nd_dft, nd_prv
+  # ---------------------------------------------------------------------------
+  images:
+    # Standard img tags with src
+    - selector: "img"
+      strategy: "css"
+      attribute: "src"
+      validation:
+        domain_contains:
+          - "ci.xiaohongshu.com"
+          - "sns-img"
+          - "xhscdn.com"
+        exclude_patterns:
+          - "avatar"
+          - "favicon"
+        url_patterns:
+          - '\\.(?:jpg|jpeg|png|webp|gif)(?:\\?|$)'
+          - 'imageMogr2'
+          - 'imageView2'
+          - 'nd_dft'
+          - 'nd_prv'
+
+    # Lazy-loaded images (data-src)
+    - selector: "img"
+      strategy: "css"
+      attribute: "data-src"
+      validation:
+        domain_contains:
+          - "ci.xiaohongshu.com"
+          - "sns-img"
+          - "xhscdn.com"
+        exclude_patterns:
+          - "avatar"
+          - "favicon"
+
+    # Images from srcset
+    - selector: "img"
+      strategy: "css"
+      attribute: "srcset"
+      validation:
+        domain_contains:
+          - "ci.xiaohongshu.com"
+          - "sns-img"
+          - "xhscdn.com"
+
+    # Images from inline JSON/JavaScript
+    - selector: "script"
+      strategy: "text_pattern"
+      pattern: '"(https?://[^"\\s]+\\.(?:jpg|jpeg|png|webp)(?:\\?[^"\\s]*)?)"'
+      extract_group: 1
+      validation:
+        domain_contains:
+          - "ci.xiaohongshu.com"
+          - "sns-img"
+          - "xhscdn.com"
+
+# ============================================================================
+# METADATA CONFIGURATION
+# ============================================================================
+
+metadata:
+  # Fields to extract for metadata
+  fields:
+    - author
+    - publish_time
+    - images
+    - cover
+    - description
+    - title
+    - url
+    - fetch_time
+
+  # Default values if extraction fails
+  defaults:
+    author: ""
+    title: "未命名"
+    publish_time: ""
+    description: "(未能从页面提取正文摘要)"
+    cover: ""
+
+# ============================================================================
+# OUTPUT CONFIGURATION
+# ============================================================================
+
+output:
+  format: "markdown"
+
+  # Markdown header template
+  header_template: |
+    # {title}
+
+    - 标题: {title}
+    - 作者: {author}
+    - 发布时间: {publish_time}
+    - 来源: {url}
+    - 抓取时间: {fetch_time}
+
+  # Content processing rules
+  content_processing:
+    # Remove script and style tags
+    remove_tags:
+      - "script"
+      - "style"
+      - "noscript"
+
+    # Normalize whitespace
+    normalize_whitespace: true
+
+    # Maximum consecutive newlines
+    max_newlines: 2
+
+    # Image format in markdown
+    image_format: "![]({})"
+
+    # Link format in markdown
+    link_format: "[{}]({})"
+
+  # Section templates
+  sections:
+    # Cover image section (if exists)
+    cover_section: |
+
+      ![]({cover})
+
+    # Description/content section
+    content_section: |
+
+      {content}
+
+    # Images section (if images exist beyond cover)
+    images_section: |
+
+      ## 图片
+
+      {images}
+
+# ============================================================================
+# SPECIAL HANDLING - XiaoHongShu-specific
+# ============================================================================
+
+special_handling:
+  # XiaoHongShu-specific title cleaning
+  title_cleaning:
+    - pattern: '\s*-\s*小红书\s*$'
+      replacement: ''
+
+  # URL normalization for media
+  normalize_media_urls: true
+
+  # Image domain validation
+  image_domains:
+    - "ci.xiaohongshu.com"
+    - "sns-img"
+    - "xhscdn.com"
+
+  # Image exclusion patterns
+  image_exclude:
+    - "avatar"
+    - "favicon"
+
+  # Image processing parameters (XiaoHongShu CDN)
+  image_processing_params:
+    - "imageMogr2"
+    - "imageView2"
+    - "nd_dft"
+    - "nd_prv"
+
+  # Extract images from JSON-LD and inline scripts
+  extract_json_images: true
+
+  # Cover image handling
+  cover_image:
+    # Move cover to front of image list if found later
+    prioritize: true
+    # Ensure cover is first in images array
+    ensure_first: true
+
+# ============================================================================
+# VALIDATION RULES
+# ============================================================================
+
+validation:
+  # Minimum content length (characters)
+  min_content_length: 1
+
+  # Required fields
+  required_fields:
+    - title
+
+  # Content quality checks
+  quality_checks:
+    # XiaoHongShu posts may have minimal text with images
+    min_text_to_html_ratio: 0.0
+
+  # Image validation
+  image_validation:
+    # Validate image URLs match XiaoHongShu domains
+    validate_domains: true
+    # Exclude avatar and favicon images
+    exclude_non_content: true
+    # Ensure valid image extensions or processing params
+    validate_extensions: true
+
+# ============================================================================
+# EXTRACTION STRATEGIES - Advanced
+# ============================================================================
+
+extraction_strategies:
+  # JSON-LD structured data extraction
+  json_ld:
+    enabled: true
+    fields:
+      - author
+      - datePublished
+      - uploadDate
+      - image
+      - description
+
+  # Inline JavaScript data extraction
+  javascript_extraction:
+    enabled: true
+    patterns:
+      # Image URLs in JavaScript
+      - pattern: '"(https?://[^"]+\\.(?:jpg|jpeg|png|webp)(?:\\?[^"]*)?)"'
+        field: "images"
+      # Date patterns
+      - pattern: '"(?:datePublished|uploadDate)"\s*:\s*"([^"]+)"'
+        field: "date"
+      # Author patterns
+      - pattern: '"author"\s*:\s*(?:\{[^}]*"name"\s*:\s*"([^"]+)"|\s*"([^"]+)")'
+        field: "author"
+
+  # Meta tag extraction (fallback)
+  meta_tags:
+    enabled: true
+    priority: "medium"
+
+  # CSS selector extraction (lowest priority)
+  css_selectors:
+    enabled: true
+    priority: "low"
+
+# ============================================================================
+# PERFORMANCE OPTIMIZATION
+# ============================================================================
+
+performance:
+  # Target parsing time (milliseconds)
+  target_parse_time: 100
+
+  # Cache template selectors
+  cache_selectors: true
+
+  # Maximum extraction attempts per field
+  max_attempts: 10
+
+  # Timeout for complex regex patterns (milliseconds)
+  regex_timeout: 50
+
+# ============================================================================
+# DEBUGGING AND LOGGING
+# ============================================================================
+
+debug:
+  # Enable debug logging
+  enabled: false
+
+  # Log extraction attempts
+  log_attempts: false
+
+  # Log validation failures
+  log_validation: false
+
+  # Log performance metrics
+  log_performance: true
