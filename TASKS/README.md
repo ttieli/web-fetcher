@@ -2,17 +2,16 @@
 # TASKS Directory - Task Management Center
 
 ## 当前任务状态 / Current Task Status
-*更新时间 / Last Updated: 2025-10-09 (Architectural Review Completed)*
+*更新时间 / Last Updated: 2025-10-09 (Comprehensive Analysis Completed)*
 
 ## 📊 任务总览 / Task Overview
 
 | Priority | Pending | In Progress | Completed | Total |
 |----------|---------|-------------|-----------|--------|
-| CRITICAL | 0 | 0 | 2 | 2 |
-| HIGH | 0 | 0 | 1 | 1 |
+| HIGH | 2 | 0 | 3 | 5 |
 | MEDIUM | 2 | 0 | 2 | 4 |
-| LOW | 0 | 0 | 1 | 1 |
-| **Total** | **2** | **0** | **10** | **12** |
+| DEFERRED | 1 | 0 | 0 | 1 |
+| **Total** | **5** | **0** | **5** | **10** |
 
 ## 🎉 最近完成任务 / Recently Completed Tasks
 
@@ -47,9 +46,9 @@
 
 ## ⚪ 待开始任务 / Pending Tasks
 
-### 中优先级 / Medium Priority
+### 高优先级 / High Priority (Next Sprint)
 
-#### **Task 8: 性能监控与指标仪表板** (估时6小时) 🆕
+#### **Task 001: 性能监控与指标仪表板** (估时6小时) 🔥
 - **核心功能**:
   - 实时性能指标收集（响应时间、成功率、错误分布）
   - SQLite持久化存储
@@ -57,7 +56,7 @@
   - 实时监控CLI界面
 - **价值**: 主动发现性能问题，数据驱动优化决策
 
-#### **Task 9: 配置驱动的获取器路由系统** (估时5小时) 🆕
+#### **Task 002: 配置驱动的获取器路由系统** (估时5小时) 🔥
 - **核心功能**:
   - YAML配置驱动的路由规则
   - 热重载支持（无需重启）
@@ -65,12 +64,14 @@
   - 覆盖规则和特性开关
 - **价值**: 灵活路由策略，无代码部署更新
 
-#### **Task 5: ChromeDriver版本管理** (估时7小时)
+### 中优先级 / Medium Priority
+
+#### **Task 003: ChromeDriver版本管理** (估时7小时) 📊
 - 解决版本不匹配问题（140 vs 141）
 - 实现自动版本检测和更新
 - 影响：潜在兼容性问题
 
-#### **Task 3: 解析器架构优化 - Phase 4** (估时8小时)
+#### **Task 004: 解析器架构优化 - Phase 4** (估时8小时) 📊
 - **当前进度**: 90%完成（Phase 1-3.5已完成）
 - **剩余工作**: Phase 4 - 模板创建工具
 - **已完成成果**:
@@ -176,28 +177,44 @@ Task 3 Phase 4 (独立，低优先级)
 
 ## 📋 任务文件清单 / Task File Inventory
 
+### Active Tasks / 活动任务
 | 文件名 / File Name | 状态 / Status | 优先级 / Priority |
 |-------------------|---------------|-------------------|
-| 1_Immediate_SSL_Domain_Routing.md | ✅ Complete | CRITICAL |
-| 2_修复Chrome错误消息.md | ✅ Complete | - |
-| 3_解析器架构优化.md | 🔄 90% Complete | Medium |
-| 4_SSL_TLS_Legacy_Renegotiation_Fix.md | 📦 Archived (→Task 7) | - |
-| 5_ChromeDriver_Version_Management.md | ⚪ Pending | Medium |
-| 6_Retry_Mechanism_Optimization.md | 📦 Archived (→Task 7) | - |
-| 7_Unified_Error_Classification_System.md | ✅ Complete (Ph 1&2) | High |
-| 8_Performance_Monitoring_Dashboard.md | ⚪ Pending | Medium |
-| 9_Configuration_Driven_Routing.md | ⚪ Pending | Medium |
-| 10_Fix_Xiaohongshu_Routing_Issue.md | ✅ Complete | CRITICAL |
+| task-001-performance_monitoring.md | ⏳ Pending | HIGH |
+| task-002-config_driven_routing.md | ⏳ Pending | HIGH |
+| task-003-chromedriver_management.md | ⏳ Pending | MEDIUM |
+| task-004-parser_template_tools.md | ⏳ Pending | MEDIUM |
+| task-005-error_system_phase3_4.md | ⏸️ Deferred | DEFERRED |
+
+### Archived Tasks / 归档任务
+| 文件名 / File Name | 完成日期 / Completion Date |
+|-------------------|--------------------------|
+| 1_Immediate_SSL_Domain_Routing.md | 2025-10-09 |
+| 2_修复Chrome错误消息.md | 2025-10-04 |
+| 7_Unified_Error_Classification_System.md | 2025-10-09 |
+| 10_Fix_Xiaohongshu_Routing_Issue.md | 2025-10-09 |
+| 4_SSL_TLS_Legacy_Renegotiation_Fix.md | Merged into Task 7 |
+| 6_Retry_Mechanism_Optimization.md | Merged into Task 7 |
 
 ## 🔄 下一步行动 / Next Actions
 
-1. **✅ 已完成**: Task 1, 7和10已成功实施 (2025-10-09)
-   - Task 1: SSL智能路由实现，性能提升80-90%
-   - Task 7: 错误分类系统完成（Phases 1&2），2.6x性能提升
-   - Task 10: 修复xiaohongshu误分类问题，恢复正常获取
-2. **准备Sprint 3**: 开始Task 8实施 (性能监控仪表板)
-3. **数据收集**: 为Task 7 Phase 3收集生产错误数据
-4. **团队沟通**: 分享Task 7完成成果和性能指标
+1. **✅ 任务重组完成**: 所有任务已重新编号和整理 (2025-10-09)
+   - 已完成任务归档至 `/TASKS/archive/`
+   - 待完成任务按优先级重新编号
+   - 文档已更新为双语格式
+
+2. **🚀 立即开始**: Task 001 实施 (性能监控仪表板)
+   - 预计时间: 6小时
+   - 价值: 实时性能可见性
+   - 无依赖，可立即开始
+
+3. **📅 Sprint 3规划**: Tasks 001 & 002 (11小时)
+   - Day 1-2: Performance Monitoring
+   - Day 3: Configuration System
+
+4. **📊 Sprint 4规划**: Tasks 003 & 004 (15小时)
+   - ChromeDriver管理
+   - Parser模板工具完成
 
 ## 📝 维护指南 / Maintenance Guide
 
