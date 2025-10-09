@@ -59,6 +59,9 @@ from error_handler import (
     ChromeLaunchError, ChromeErrorMessages
 )
 
+# Smart routing for SSL problematic domains (Phase 3.5)
+from config.ssl_problematic_domains import should_use_selenium_directly
+
 # Parser modules
 import parsers
 from parsers import (
@@ -1010,7 +1013,25 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
     metrics = FetchMetrics(primary_method="urllib")
     start_time = time.time()
     last_exception = None
-    
+
+    # === IMMEDIATE ROUTING: Check for SSL problematic domains ===
+    # === 即刻路由：检查SSL问题域名 ===
+    if fetch_mode == 'auto' and should_use_selenium_directly(url):
+        print(f"🚀 Direct routing to Selenium for known problematic domain: {url}", file=sys.stderr)
+        logging.info(f"🚀 Direct routing to Selenium for known problematic domain: {url}")
+        metrics.primary_method = "selenium_direct"
+
+        # Use existing Selenium fetch helper function
+        # 使用现有的Selenium获取辅助函数
+        try:
+            return _try_selenium_fetch(url, ua, timeout, metrics, start_time)
+        except Exception as e:
+            # Log but don't fail completely - let urllib try as last resort
+            # 记录但不完全失败 - 让urllib作为最后手段尝试
+            logging.warning(f"Direct Selenium fetch failed for {url}, falling back to urllib: {e}")
+            metrics.primary_method = "urllib"  # Reset for urllib attempt
+            # Continue to urllib logic below
+
     # Phase 2: Handle selenium-only mode first
     if fetch_mode == 'selenium':
         metrics.primary_method = "selenium"
@@ -1632,12 +1653,21 @@ def resolve_final_url_with_fallback(url: str, ua: Optional[str] = None, timeout:
     """
     if not url or not url.strip():
         raise ValueError("URL cannot be empty")
-    
+
     ua = ua or "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0 Safari/537.36"
+
+    # === IMMEDIATE ROUTING: Skip redirect resolution for SSL problematic domains ===
+    # === 即刻路由：跳过SSL问题域名的重定向解析 ===
+    from config.ssl_problematic_domains import should_use_selenium_directly
+    if should_use_selenium_directly(url):
+        print(f"🚀 Skipping redirect resolution for known problematic domain: {url}", file=sys.stderr)
+        logging.info(f"🚀 Skipping redirect resolution for known problematic domain: {url}")
+        return url, False  # Return original URL, no redirect
+
     current_url = url.strip()
     redirect_count = 0
     was_redirected = False
-    
+
     # Check if this is a known problematic redirect service
     parsed_original = urllib.parse.urlparse(current_url)
     is_known_redirect_service = parsed_original.hostname and 'xhslink.com' in parsed_original.hostname
@@ -1747,14 +1777,22 @@ def get_effective_host(url: str, ua: Optional[str] = None) -> str:
     """
     Gets the effective hostname after resolving redirects.
     Implements caching for performance.
-    
+
     Args:
         url: Original URL
         ua: User agent string (optional)
-        
+
     Returns:
         str: Effective hostname for parser selection
     """
+    # === IMMEDIATE ROUTING: Skip resolution for SSL problematic domains ===
+    # === 即刻路由：跳过SSL问题域名的解析 ===
+    from config.ssl_problematic_domains import should_use_selenium_directly
+    if should_use_selenium_directly(url):
+        print(f"🚀 Using original hostname for known problematic domain: {url}", file=sys.stderr)
+        logging.info(f"🚀 Using original hostname for known problematic domain: {url}")
+        return urllib.parse.urlparse(url).hostname or ''
+
     try:
         final_url, was_redirected = resolve_final_url_with_fallback(url, ua=ua, timeout=10)
         if was_redirected:
