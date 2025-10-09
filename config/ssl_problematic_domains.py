@@ -2,15 +2,22 @@
 SSL Problematic Domains Configuration
 SSL问题域名配置
 
-This module maintains a list of domains known to have SSL configuration issues
-that cause urllib to fail repeatedly. These domains should be routed directly
-to Selenium to avoid wasting ~20 seconds on failed urllib attempts.
+This module maintains a list of domains with SSL/TLS configuration issues
+(specifically UNSAFE_LEGACY_RENEGOTIATION_DISABLED errors) that cause urllib
+to fail. These domains are routed directly to Selenium to avoid SSL errors.
 
-维护已知SSL配置问题域名列表，这些域名会导致urllib重复失败。
-这些域名应直接路由到Selenium，避免浪费约20秒在失败的urllib尝试上。
+本模块维护具有SSL/TLS配置问题的域名列表（特别是UNSAFE_LEGACY_RENEGOTIATION_DISABLED错误），
+这些问题导致urllib失败。这些域名直接路由到Selenium以避免SSL错误。
+
+SCOPE: SSL/TLS compatibility issues ONLY. Do not add domains for other reasons
+(e.g., JavaScript rendering requirements - those should use normal render flow).
+
+适用范围：仅限SSL/TLS兼容性问题。不要因其他原因添加域名
+（例如JavaScript渲染需求 - 应使用正常渲染流程）。
 
 Author: Archy
 Created: 2025-10-09
+Updated: 2025-10-09 - Task 10: Removed xiaohongshu.com (not an SSL issue)
 """
 
 from typing import Set, Optional
@@ -26,11 +33,6 @@ SSL_PROBLEMATIC_DOMAINS: Set[str] = {
     'icbc.com.cn',     # 中国工商银行 - Potential SSL issues
     'ccb.com',         # 中国建设银行 - Potential SSL issues
     'boc.cn',          # 中国银行 - Potential SSL issues
-
-    # JavaScript-heavy sites that always need Selenium anyway
-    # JavaScript密集型网站，总是需要Selenium
-    'xiaohongshu.com',  # 小红书 - Heavy JS rendering
-    'xhslink.com',      # 小红书链接 - Redirect service with JS
 }
 
 
