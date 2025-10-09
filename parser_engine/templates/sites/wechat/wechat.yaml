@@ -1,0 +1,212 @@
+# WeChat Articles Template v1.0
+# Template for parsing WeChat official account articles (mp.weixin.qq.com)
+# Migrated from legacy WxParser implementation
+
+name: "WeChat Articles"
+version: "1.0.0"
+domains:
+  - "mp.weixin.qq.com"
+priority: 100  # High priority for exact domain match
+
+# ============================================================================
+# SELECTOR PATTERNS - WeChat-specific extraction rules
+# ============================================================================
+
+selectors:
+  # ---------------------------------------------------------------------------
+  # TITLE EXTRACTION
+  # Priority: OG meta tag -> h1.rich_media_title -> fallback
+  # ---------------------------------------------------------------------------
+  title:
+    # Open Graph meta tag (highest priority)
+    - selector: "meta[property='og:title']"
+      strategy: "css"
+      attribute: "content"
+
+    # WeChat-specific rich media title
+    - selector: "h1.rich_media_title"
+      strategy: "css"
+
+    # ID-based selector (fallback)
+    - selector: "#activity-name"
+      strategy: "css"
+
+    # Generic h1 fallback
+    - selector: "h1"
+      strategy: "css"
+
+  # ---------------------------------------------------------------------------
+  # AUTHOR EXTRACTION
+  # Priority: OG meta tag -> WeChat meta text span -> fallback
+  # ---------------------------------------------------------------------------
+  author:
+    # Open Graph article author meta tag
+    - selector: "meta[property='og:article:author']"
+      strategy: "css"
+      attribute: "content"
+
+    # WeChat-specific author field
+    - selector: "span.rich_media_meta.rich_media_meta_text"
+      strategy: "css"
+
+    # Alternative author field
+    - selector: "#js_name"
+      strategy: "css"
+
+    # Profile nickname (alternative)
+    - selector: "a.profile_nickname"
+      strategy: "css"
+
+  # ---------------------------------------------------------------------------
+  # PUBLISH DATE EXTRACTION
+  # Priority: article:published_time meta -> publish_time element -> text pattern
+  # ---------------------------------------------------------------------------
+  date:
+    # Open Graph published time meta tag
+    - selector: "meta[property='article:published_time']"
+      strategy: "css"
+      attribute: "content"
+
+    # WeChat publish time element
+    - selector: "#publish_time"
+      strategy: "css"
+
+    # Publish time in em tag
+    - selector: "em#publish_time"
+      strategy: "css"
+
+    # Alternative date container
+    - selector: ".rich_media_meta_list em"
+      strategy: "css"
+
+  # ---------------------------------------------------------------------------
+  # CONTENT EXTRACTION
+  # Priority: js_content div (WeChat standard) -> article fallback
+  # ---------------------------------------------------------------------------
+  content:
+    # WeChat standard content container (highest priority)
+    - selector: "#js_content"
+      strategy: "css"
+
+    # Alternative content container
+    - selector: ".rich_media_content"
+      strategy: "css"
+
+    # Generic article fallback
+    - selector: "article"
+      strategy: "css"
+
+    # Body fallback
+    - selector: ".rich_media_wrp"
+      strategy: "css"
+
+  # ---------------------------------------------------------------------------
+  # IMAGE EXTRACTION
+  # WeChat uses lazy loading with data-src attribute
+  # ---------------------------------------------------------------------------
+  images:
+    # WeChat lazy-loaded images (data-src attribute)
+    - selector: "#js_content img"
+      strategy: "css"
+      attribute: "data-src"
+
+    # Fallback to regular src
+    - selector: "#js_content img"
+      strategy: "css"
+      attribute: "src"
+
+    # All images in content area
+    - selector: ".rich_media_content img"
+      strategy: "css"
+      attribute: "data-src"
+
+# ============================================================================
+# METADATA CONFIGURATION
+# ============================================================================
+
+metadata:
+  # Fields to extract for metadata
+  fields:
+    - author
+    - publish_time
+    - images
+    - title
+    - url
+    - fetch_time
+
+  # Default values if extraction fails
+  defaults:
+    author: ""
+    title: "未命名"
+    publish_time: ""
+
+# ============================================================================
+# OUTPUT CONFIGURATION
+# ============================================================================
+
+output:
+  format: "markdown"
+
+  # Markdown header template
+  header_template: |
+    # {title}
+
+    - 标题: {title}
+    - 作者: {author}
+    - 发布时间: {publish_time}
+    - 来源: [{url}]({url})
+    - 抓取时间: {fetch_time}
+
+  # Content processing rules
+  content_processing:
+    # Remove script and style tags
+    remove_tags:
+      - "script"
+      - "style"
+      - "noscript"
+
+    # Normalize whitespace
+    normalize_whitespace: true
+
+    # Maximum consecutive newlines
+    max_newlines: 2
+
+    # Image format in markdown
+    image_format: "![]({})"
+
+    # Link format in markdown
+    link_format: "[{}]({})"
+
+# ============================================================================
+# SPECIAL HANDLING
+# ============================================================================
+
+special_handling:
+  # WeChat-specific image attribute
+  image_data_attribute: "data-src"
+
+  # URL normalization for media
+  normalize_media_urls: true
+
+  # Extract links from content
+  extract_links: true
+
+  # Preserve image order
+  preserve_image_order: true
+
+# ============================================================================
+# VALIDATION RULES
+# ============================================================================
+
+validation:
+  # Minimum content length (characters)
+  min_content_length: 10
+
+  # Required fields
+  required_fields:
+    - title
+
+  # Content quality checks
+  quality_checks:
+    # Ensure content is not just navigation or ads
+    min_text_to_html_ratio: 0.1
