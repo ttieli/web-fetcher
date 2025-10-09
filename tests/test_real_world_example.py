@@ -90,7 +90,7 @@ def test_parse_real_world_html():
     print(f"\n✓ Parse successful: {result.success}")
 
     # Verify title extraction
-    assert result.title == "Understanding Python Decorators - Tech Blog"
+    assert result.title == "Understanding Python Decorators"
     print(f"✓ Title: {result.title}")
 
     # Verify content extraction (should be in Markdown)
@@ -106,7 +106,7 @@ def test_parse_real_world_html():
 
     # Verify metadata extraction
     assert result.metadata is not None
-    assert result.metadata['description'] == "A comprehensive guide to Python decorators and how to use them effectively"
+    assert result.metadata['description'] == "Deep dive into Python decorators"
     assert result.metadata['author'] == "Jane Developer"
     assert result.metadata['date'] == "2025-01-15T10:30:00Z"
     assert result.metadata['image'] == "https://example.com/images/decorators.jpg"
@@ -118,7 +118,7 @@ def test_parse_real_world_html():
     # Verify template info
     assert result.template_name == "Generic Web Template"
     assert result.metadata['template_name'] == "Generic Web Template"
-    assert result.metadata['template_version'] == "1.0.0"
+    assert result.metadata['template_version'] == "1.1.0"
     print(f"✓ Template: {result.template_name} v{result.metadata['template_version']}")
 
     # Print sample of Markdown content

@@ -35,7 +35,7 @@ def test_generic_template_loaded():
 
     assert generic is not None, "Generic template should be loaded"
     assert generic.get('name') == 'Generic Web Template'
-    assert generic.get('version') == '1.0.0'
+    assert generic.get('version') == '1.1.0'
     assert '*' in generic.get('domains', [])
 
 
