@@ -61,10 +61,9 @@ logger = logging.getLogger(__name__)
 
 def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     """
-    XiaoHongShu (小红书) parser - Migration adapter
+    XiaoHongShu (小红书) parser - Template-based implementation
 
-    Phase 3.1: Framework with TODO markers
-    Phase 3.2: Implement template-based parsing
+    Phase 3.4: Migrated to template-based parsing engine
 
     Args:
         html: HTML content of the page
@@ -73,17 +72,83 @@ def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     Returns:
         tuple: (date_only, markdown_content, metadata)
     """
-    # TODO Phase 3.2: Implement template-based XHS parsing
-    # 1. Load XHS template from parser_engine/templates/sites/xiaohongshu/
-    # 2. Initialize TemplateParser with template
-    # 3. Parse HTML using template selectors
-    # 4. Transform parsed data to markdown
-    # 5. Return formatted result
+    try:
+        # Import template-based parsing engine
+        from parser_engine.template_parser import TemplateParser
+        from parser_engine.engine.template_loader import TemplateLoader
+        import os
 
-    # For now, delegate to legacy implementation
-    logger.info("Phase 3.1: Using legacy XHS parser (template-based migration pending)")
-    from parsers_legacy import xhs_to_markdown as legacy_xhs_parser
-    return legacy_xhs_parser(html, url)
+        # Initialize template parser with XiaoHongShu template directory
+        template_dir = os.path.join(
+            os.path.dirname(__file__),
+            'parser_engine', 'templates'
+        )
+        parser = TemplateParser(template_dir=template_dir)
+
+        # Parse using template engine
+        result = parser.parse(html, url)
+
+        if not result.success:
+            logger.warning(f"Template parsing failed: {result.errors}, falling back to legacy parser")
+            raise Exception("Template parsing failed")
+
+        # Extract parsed data
+        title = result.title or "未命名"
+        author = result.metadata.get('author', '')
+        publish_time = result.metadata.get('date', '')
+        description = result.metadata.get('description', '(未能从页面提取正文摘要)')
+        cover = result.metadata.get('cover', '')
+        images = result.metadata.get('images', [])
+
+        # Parse date
+        date_only, date_time = parse_date_like(publish_time)
+
+        # Format markdown output
+        lines = [f"# {title}"]
+        meta = [f"- 标题: {title}"]
+        if author:
+            meta.append(f"- 作者: {author}")
+        meta += [
+            f"- 发布时间: {date_time}",
+            f"- 来源: {url}",
+            f"- 抓取时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        ]
+
+        # Add metadata section
+        lines += meta
+
+        # Add cover image if exists
+        if cover:
+            lines += ["", f"![]({normalize_media_url(cover)})"]
+
+        # Add description/content
+        body = description or result.content or '(未能从页面提取正文摘要)'
+        lines += ["", body]
+
+        # Add images section if images exist
+        if images:
+            lines += ["", "## 图片", ""] + [f"![]({normalize_media_url(u)})" for u in images]
+
+        # Combine into markdown
+        markdown_content = "\n\n".join(lines).strip() + "\n"
+
+        # Build metadata dictionary
+        metadata = {
+            'author': author,
+            'images': [normalize_media_url(u) for u in images],
+            'cover': normalize_media_url(cover) if cover else '',
+            'description': description,
+            'publish_time': publish_time
+        }
+
+        logger.info(f"Phase 3.4: Successfully parsed XHS article using template engine")
+        return date_only, markdown_content, metadata
+
+    except Exception as e:
+        # Fallback to legacy implementation if template parsing fails
+        logger.warning(f"Template-based XHS parser failed: {e}, using legacy parser")
+        from parsers_legacy import xhs_to_markdown as legacy_xhs_parser
+        return legacy_xhs_parser(html, url)
 
 
 def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
