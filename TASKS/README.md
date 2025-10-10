@@ -2,12 +2,12 @@
 # TASKS目录 - 任务管理中心
 
 ## Current Status / 当前状态
-*Last Updated / 最后更新: 2025-10-10 18:15*
+*Last Updated / 最后更新: 2025-10-10 22:00*
 
 | Priority / 优先级 | Pending / 待办 | Completed / 已完成 | Deferred / 延期 |
 |-------------------|----------------|--------------------|------------------|
 | P1 (Critical) | 0 | 10 | 0 |
-| P2 (Important) | 0 | 7 | 0 |
+| P2 (Important) | 0 | 8 | 0 |
 | P3 (Stability) | 0 | 1 | 0 |
 | Deferred | 0 | 0 | 1 |
 
@@ -20,7 +20,30 @@ No active tasks. Ready for next phase planning. / 无活跃任务。准备下一
 
 ## ✅ Recently Completed / 最近完成
 
-### Task-006: CRI News Empty Content Fix ✅ *(NEW)*
+### Task-007: Dual-Method Regression Testing ✅ *(NEW)*
+- **Status:** Completed 2025-10-10
+- **Grade:** A (95/100)
+- **File:** `task-007-dual-method-regression-testing.md`
+- **Commits:** 1b3acdf (Phase 1), 3d81201 (Phase 3), 2ba3c13 (Phase 4)
+- **Key Results:**
+  - Dual-method testing infrastructure (urllib + selenium comparison)
+  - Enhanced URLTest dataclass with backward compatibility
+  - DualMethodRunner with content comparison engine (753 lines)
+  - CLI integration with `--dual-method` flag
+  - Migrated 4 high-value URLs to dual-method format (16% coverage)
+  - Classification system: difference levels + URL types
+  - 100% backward compatibility maintained
+- **Performance:**
+  - Actual effort: ~6 hours (vs 13-18h estimated)
+  - Opt-in design (safe incremental rollout)
+  - Comprehensive bilingual documentation
+- **Files Modified:**
+  - Added: `tests/regression/dual_method_runner.py` (753 lines)
+  - Modified: `tests/regression/url_suite_parser.py` (+67 lines)
+  - Modified: `scripts/run_regression_suite.py` (+69 lines)
+  - Modified: `tests/url_suite.txt` (4 URLs migrated)
+
+### Task-006: CRI News Empty Content Fix ✅
 - **Status:** Completed 2025-10-10
 - **Grade:** A (95/100)
 - **File:** `task-6-cri-news-empty-content-fix.md`, `task-6-phase2-templateparser-cache-bug.md`
