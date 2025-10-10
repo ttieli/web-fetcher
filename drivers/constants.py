@@ -21,7 +21,24 @@ CHROMEDRIVER_LOCATIONS = [
 # Cache base path
 CACHE_BASE_PATH = Path.home() / ".webfetcher" / "drivers"
 
-# Download URLs (to be used in Phase 2)
+# Download configuration
+DOWNLOAD_TIMEOUT = 300  # 5 minutes
+MAX_RETRIES = 3
+RETRY_DELAY = 2  # seconds (exponential backoff)
+
+# Chrome for Testing download URLs
+# Format: {base_url}/{version}/mac-x64/chromedriver-mac-x64.zip
+CHROME_FOR_TESTING_URL_TEMPLATE = (
+    "https://storage.googleapis.com/chrome-for-testing-public/"
+    "{version}/mac-x64/chromedriver-mac-x64.zip"
+)
+
+# Known versions endpoint for version mapping
+CHROME_FOR_TESTING_VERSIONS = (
+    "https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json"
+)
+
+# Deprecated: kept for reference
 CHROME_FOR_TESTING_BASE = "https://storage.googleapis.com/chrome-for-testing-public"
 
 class CompatibilityStatus(Enum):

@@ -4,14 +4,24 @@ ChromeDriver版本检测和管理
 """
 import subprocess
 import re
+import zipfile
+import time
+import tempfile
+import shutil
+import requests
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Callable
 from dataclasses import dataclass
 from .constants import (
     CHROME_EXECUTABLE,
     CHROME_PLIST,
     CHROMEDRIVER_LOCATIONS,
-    CompatibilityStatus
+    CACHE_BASE_PATH,
+    CompatibilityStatus,
+    CHROME_FOR_TESTING_URL_TEMPLATE,
+    DOWNLOAD_TIMEOUT,
+    MAX_RETRIES,
+    RETRY_DELAY
 )
 
 @dataclass
@@ -162,3 +172,277 @@ def check_chrome_driver_compatibility() -> CompatibilityResult:
     chrome_ver = detector.get_chrome_version()
     driver_ver = detector.get_chromedriver_version()
     return detector.check_compatibility(chrome_ver, driver_ver)
+
+
+class VersionCache:
+    """Manage cached ChromeDriver versions"""
+
+    def __init__(self, cache_base: Path = CACHE_BASE_PATH):
+        self.cache_base = cache_base
+        self.cache_base.mkdir(parents=True, exist_ok=True)
+
+    def get_cache_path(self, version: str) -> Path:
+        """
+        Get cache directory path for a specific version
+        获取特定版本的缓存目录路径
+
+        Args:
+            version: ChromeDriver version (e.g., "141.0.6496.0")
+
+        Returns:
+            Path to version cache directory
+        """
+        return self.cache_base / version
+
+    def get_driver_path(self, version: str) -> Path:
+        """Get full path to chromedriver executable"""
+        return self.get_cache_path(version) / "chromedriver"
+
+    def is_cached(self, version: str) -> bool:
+        """
+        Check if version is already cached
+        检查版本是否已缓存
+        """
+        driver_path = self.get_driver_path(version)
+        return driver_path.exists() and driver_path.is_file()
+
+    def list_cached_versions(self) -> List[str]:
+        """
+        List all cached versions
+        列出所有已缓存的版本
+
+        Returns:
+            List of version strings
+        """
+        if not self.cache_base.exists():
+            return []
+
+        versions = []
+        for item in self.cache_base.iterdir():
+            if item.is_dir() and (item / "chromedriver").exists():
+                versions.append(item.name)
+
+        return sorted(versions, reverse=True)  # Latest first
+
+    def set_active(self, version: str) -> None:
+        """
+        Set active ChromeDriver version via symlink
+        通过符号链接设置活动的ChromeDriver版本
+
+        Args:
+            version: Version to activate
+        """
+        current_link = self.cache_base / "current"
+        target = self.get_driver_path(version)
+
+        if not target.exists():
+            raise FileNotFoundError(f"Version {version} not cached")
+
+        # Remove old symlink if exists
+        if current_link.exists() or current_link.is_symlink():
+            current_link.unlink()
+
+        # Create new symlink
+        current_link.symlink_to(target)
+
+    def get_active_version(self) -> Optional[str]:
+        """Get currently active version"""
+        current_link = self.cache_base / "current"
+        if current_link.is_symlink():
+            target = current_link.resolve()
+            return target.parent.name
+        return None
+
+
+class DownloadError(Exception):
+    """Download operation failed"""
+    pass
+
+
+class VersionDownloader:
+    """Download ChromeDriver from official sources"""
+
+    def __init__(self, cache: VersionCache = None):
+        self.cache = cache or VersionCache()
+
+    def download_version(
+        self,
+        version: str,
+        progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> Path:
+        """
+        Download specific ChromeDriver version
+        下载特定版本的ChromeDriver
+
+        Args:
+            version: Version to download
+            progress_callback: Optional callback(downloaded, total)
+
+        Returns:
+            Path to downloaded driver
+
+        Raises:
+            DownloadError: If download fails
+        """
+        # Check if already cached
+        if self.cache.is_cached(version):
+            return self.cache.get_driver_path(version)
+
+        # Try official source first
+        try:
+            return self._download_from_chrome_for_testing(version, progress_callback)
+        except Exception as e:
+            # Try fallback methods
+            try:
+                return self._download_via_selenium_manager(version)
+            except Exception as fallback_error:
+                raise DownloadError(
+                    f"Failed to download ChromeDriver {version}. "
+                    f"Official source: {e}. Fallback: {fallback_error}"
+                )
+
+    def _download_from_chrome_for_testing(
+        self,
+        version: str,
+        progress_callback: Optional[Callable] = None
+    ) -> Path:
+        """Download from Chrome for Testing official source"""
+        url = CHROME_FOR_TESTING_URL_TEMPLATE.format(version=version)
+
+        # Retry logic
+        for attempt in range(MAX_RETRIES):
+            try:
+                # Download zip file
+                response = requests.get(url, stream=True, timeout=DOWNLOAD_TIMEOUT)
+                response.raise_for_status()
+
+                # Prepare temp file
+                temp_zip = Path(tempfile.mktemp(suffix='.zip'))
+
+                # Download with progress
+                total_size = int(response.headers.get('content-length', 0))
+                downloaded = 0
+
+                with open(temp_zip, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if progress_callback and total_size:
+                                progress_callback(downloaded, total_size)
+
+                # Extract
+                driver_path = self._extract_driver(temp_zip, version)
+
+                # Cleanup
+                temp_zip.unlink()
+
+                return driver_path
+
+            except requests.RequestException as e:
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(RETRY_DELAY * (2 ** attempt))  # Exponential backoff
+                    continue
+                raise DownloadError(f"Download failed after {MAX_RETRIES} attempts: {e}")
+
+    def _extract_driver(self, zip_path: Path, version: str) -> Path:
+        """Extract ChromeDriver from zip and place in cache"""
+        cache_dir = self.cache.get_cache_path(version)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            # Find chromedriver executable in zip
+            for name in zip_ref.namelist():
+                if name.endswith('chromedriver') and not name.endswith('/'):
+                    # Extract to cache directory
+                    zip_ref.extract(name, cache_dir)
+                    extracted_path = cache_dir / name
+
+                    # Move to standard location if nested
+                    driver_path = cache_dir / "chromedriver"
+                    if extracted_path != driver_path:
+                        extracted_path.rename(driver_path)
+                        # Clean up parent directory if empty
+                        try:
+                            extracted_path.parent.rmdir()
+                        except OSError:
+                            pass
+
+                    # Set executable permission
+                    driver_path.chmod(0o755)
+
+                    return driver_path
+
+        raise DownloadError("ChromeDriver executable not found in downloaded archive")
+
+    def _download_via_selenium_manager(self, version: str) -> Path:
+        """Fallback: Use selenium-manager to download driver"""
+        try:
+            # This requires selenium package
+            # Try to use selenium-manager command
+            result = subprocess.run(
+                ["selenium-manager", "--driver", "chrome", "--browser-version", version],
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+
+            if result.returncode == 0:
+                # Parse output to find driver path
+                # selenium-manager outputs path to driver
+                driver_path = result.stdout.strip().split()[-1]
+
+                # Copy to our cache
+                cache_dir = self.cache.get_cache_path(version)
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                cached_path = cache_dir / "chromedriver"
+
+                shutil.copy2(driver_path, cached_path)
+                cached_path.chmod(0o755)
+
+                return cached_path
+        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+            raise DownloadError(f"Selenium Manager fallback failed: {e}")
+
+    def verify_download(self, driver_path: Path) -> bool:
+        """
+        Verify downloaded driver is valid
+        验证下载的驱动是否有效
+        """
+        if not driver_path.exists():
+            return False
+
+        # Check if executable
+        if not driver_path.is_file():
+            return False
+
+        # Try to run --version
+        try:
+            result = subprocess.run(
+                [str(driver_path), "--version"],
+                capture_output=True,
+                timeout=5
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+
+def download_compatible_driver(
+    progress_callback: Optional[Callable] = None
+) -> Optional[Path]:
+    """
+    Download ChromeDriver matching installed Chrome version
+    下载与已安装Chrome版本匹配的ChromeDriver
+
+    Returns:
+        Path to downloaded driver, or None if Chrome not found
+    """
+    detector = VersionDetector()
+    chrome_version = detector.get_chrome_version()
+
+    if not chrome_version:
+        return None
+
+    downloader = VersionDownloader()
+    return downloader.download_version(chrome_version, progress_callback)
