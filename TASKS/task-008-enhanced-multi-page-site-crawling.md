@@ -4,7 +4,8 @@
 **Priority / 优先级:** P2 (Important / 重要)
 **Status / 状态:** PENDING / 待办
 **Created / 创建日期:** 2025-10-10
-**Estimated Effort / 预计工时:** 16-22 hours / 16-22小时
+**Revised / 修订日期:** 2025-10-10 (Removed robots.txt - personal use only)
+**Estimated Effort / 预计工时:** 14-19 hours / 14-19小时
 
 ---
 
@@ -57,12 +58,11 @@ Enhance the existing `wf --site` command with improved multi-page crawling capab
 
 **Limitations / 局限性:**
 1. 🔧 **Fixed Parameters / 固定参数:** Depth hardcoded to 5 in wf.py (should be configurable)
-2. 🚫 **No Robots.txt Support / 不支持robots.txt:** Doesn't respect site crawling policies
-3. 🚫 **No Sitemap Support / 不支持sitemap.xml:** Misses efficient site discovery
-4. 🔗 **Limited URL Filtering / 有限的URL过滤:** Only supports documentation URL filter
-5. 🌐 **No Domain Boundaries / 无域名边界:** Doesn't enforce same-domain crawling
-6. 💾 **No Resume Capability / 无恢复能力:** Can't resume interrupted crawls
-7. 📊 **Limited Output Formats / 有限的输出格式:** Only dumps files, no structured index
+2. 🚫 **No Sitemap Support / 不支持sitemap.xml:** Misses efficient site discovery
+3. 🔗 **Limited URL Filtering / 有限的URL过滤:** Only supports documentation URL filter
+4. 🌐 **No Domain Boundaries / 无域名边界:** Doesn't enforce same-domain crawling
+5. 💾 **No Resume Capability / 无恢复能力:** Can't resume interrupted crawls
+6. 📊 **Limited Output Formats / 有限的输出格式:** Only dumps files, no structured index
 
 ---
 
@@ -80,10 +80,10 @@ Enhance the existing `wf --site` command with improved multi-page crawling capab
    - Follow pagination links intelligently
 
 3. **Improve Whole-Site Crawling / 改进整站爬取**
-   - Add robots.txt compliance
    - Add sitemap.xml discovery and parsing
    - Enforce domain boundary controls
    - Improve link discovery algorithms
+   - **Note / 注意:** No robots.txt support (personal use tool, not for production crawling)
 
 4. **Enhance Configuration / 增强配置**
    - Expose all crawl parameters via CLI
@@ -136,46 +136,53 @@ Options:
 
 ---
 
-### Phase 2: Robots.txt and Sitemap Support (5-7 hours) / 阶段2：Robots.txt与Sitemap支持
+### Phase 2: Sitemap Support (3-4 hours) / 阶段2：Sitemap支持
 
-**2.1 Robots.txt Parser / Robots.txt解析器**
-- [ ] Implement robots.txt fetcher and parser
-- [ ] Respect User-agent directives
-- [ ] Handle Disallow/Allow rules
-- [ ] Respect Crawl-delay directive
-- [ ] Add `--ignore-robots` flag for override
+**Note / 说明:** Robots.txt support has been removed as this tool is for personal use only, not production web crawling. / 已移除robots.txt支持，因为此工具仅用于个人用途，非生产环境爬虫。
 
-**2.2 Sitemap.xml Parser / Sitemap.xml解析器**
-- [ ] Implement sitemap.xml discovery (check /sitemap.xml, robots.txt)
+**2.1 Sitemap.xml Parser / Sitemap.xml解析器**
+- [ ] Implement sitemap.xml discovery (check /sitemap.xml, /sitemap_index.xml)
 - [ ] Parse sitemap.xml and sitemap index files
 - [ ] Extract URLs with priorities and lastmod dates
+- [ ] Handle gzipped sitemaps (sitemap.xml.gz)
 - [ ] Add `--use-sitemap` flag to enable sitemap-first crawling
 
-**2.3 Integration / 集成**
+**2.2 Sitemap-First Crawling Strategy / Sitemap优先爬取策略**
 ```python
-def crawl_site_with_policies(start_url, **kwargs):
-    """Enhanced crawl with robots.txt and sitemap support."""
-    # 1. Check robots.txt
-    if not kwargs.get('ignore_robots'):
-        robots = fetch_robots_txt(start_url)
-        if not robots.can_fetch(ua, start_url):
-            raise PermissionError("Crawling disallowed by robots.txt")
+def crawl_from_sitemap(start_url, **kwargs):
+    """Crawl using sitemap.xml as the primary URL source."""
+    # 1. Discover sitemap
+    sitemap_urls = discover_sitemaps(start_url)
+    if not sitemap_urls:
+        logging.info("No sitemap found, falling back to BFS")
+        return crawl_site(start_url, **kwargs)
 
-    # 2. Try sitemap-first if enabled
-    if kwargs.get('use_sitemap'):
-        sitemap_urls = fetch_sitemap(start_url)
-        if sitemap_urls:
-            return crawl_from_sitemap(sitemap_urls, **kwargs)
+    # 2. Parse sitemap and extract URLs
+    all_urls = []
+    for sitemap_url in sitemap_urls:
+        urls = parse_sitemap(sitemap_url)
+        all_urls.extend(urls)
 
-    # 3. Fall back to BFS crawling
-    return crawl_site(start_url, **kwargs)
+    # 3. Filter and prioritize URLs
+    filtered_urls = filter_urls_by_pattern(all_urls, **kwargs)
+    sorted_urls = sort_by_priority_and_lastmod(filtered_urls)
+
+    # 4. Crawl URLs from sitemap
+    return crawl_url_list(sorted_urls[:kwargs.get('max_pages', 1000)])
 ```
 
+**2.3 Integration / 集成**
+- [ ] Add sitemap discovery to existing `crawl_site()` function
+- [ ] Create separate `crawl_from_sitemap()` function
+- [ ] Add CLI flag `--use-sitemap` to wf.py
+- [ ] Fall back to BFS if sitemap not found
+
 **Acceptance Criteria / 验收标准:**
-- ✅ Respects robots.txt Disallow rules
-- ✅ Discovers and parses sitemap.xml
+- ✅ Discovers and parses sitemap.xml successfully
 - ✅ Can crawl from sitemap when available
-- ✅ `--ignore-robots` flag works for testing
+- ✅ Handles sitemap index files (multiple sitemaps)
+- ✅ Falls back to BFS crawling if no sitemap found
+- ✅ `--use-sitemap` flag works correctly
 
 ---
 
@@ -338,9 +345,9 @@ wf site <URL> --resume-from crawl_state.json
 │  └────────┬────────────────────────────────────────┘   │
 │           │                                              │
 │  ┌────────▼──────────┐  ┌──────────────┐  ┌─────────┐ │
-│  │  PolicyManager    │  │  LinkScout   │  │  State  │ │
-│  │  - robots.txt     │  │  - Discover  │  │  - Save │ │
-│  │  - sitemap.xml    │  │  - Filter    │  │  - Load │ │
+│  │  SitemapManager   │  │  LinkScout   │  │  State  │ │
+│  │  - sitemap.xml    │  │  - Discover  │  │  - Save │ │
+│  │  - discovery      │  │  - Filter    │  │  - Load │ │
 │  └───────────────────┘  └──────────────┘  └─────────┘ │
 │                                                           │
 │  ┌────────────────────────────────────────────────┐    │
@@ -374,7 +381,7 @@ webfetcher/
 ├── crawler/                       # NEW: Crawler module
 │   ├── __init__.py
 │   ├── orchestrator.py            # CrawlOrchestrator
-│   ├── policy_manager.py          # Robots.txt, sitemap handling
+│   ├── sitemap_manager.py         # Sitemap discovery and parsing
 │   ├── link_scout.py              # Link discovery and filtering
 │   ├── state_manager.py           # State persistence
 │   ├── strategies/                # Crawl strategies
@@ -392,7 +399,7 @@ webfetcher/
 ├── tests/
 │   └── test_crawler/              # NEW: Crawler tests
 │       ├── test_orchestrator.py
-│       ├── test_policy_manager.py
+│       ├── test_sitemap_manager.py
 │       ├── test_link_scout.py
 │       ├── test_state_manager.py
 │       └── test_strategies.py
@@ -409,12 +416,12 @@ webfetcher/
 | Phase | Description | Effort | Dependencies |
 |-------|-------------|--------|--------------|
 | Phase 1 | Bug fixes + parameter exposure | 4-6h | None |
-| Phase 2 | Robots.txt + sitemap support | 5-7h | Phase 1 |
+| Phase 2 | Sitemap support | 3-4h | Phase 1 |
 | Phase 3 | Advanced crawling features | 4-6h | Phase 1 |
 | Phase 4 | Structured output | 3-4h | Phase 1 |
 | Phase 5 | Resume capability | 3-4h | Phase 1, 4 |
 
-**Total Estimated Effort:** 16-22 hours
+**Total Estimated Effort:** 14-19 hours (reduced from 16-22h due to robots.txt removal)
 **Recommended Order:** 1 → 2 → 3 → 4 → 5
 
 ### Risk Mitigation / 风险缓解
@@ -424,15 +431,15 @@ webfetcher/
 - Add new `crawl_site_enhanced()` with new features
 - Gradually migrate over multiple releases
 
-**Risk 2: Robots.txt compliance too strict / Robots.txt合规性过于严格**
-- Mitigation: Always provide `--ignore-robots` override
-- Log when robots.txt blocks crawling
-- Provide clear error messages
-
-**Risk 3: State file corruption / 状态文件损坏**
+**Risk 2: State file corruption / 状态文件损坏**
 - Mitigation: Use JSON schema validation
 - Write to temp file first, then atomic rename
 - Keep backup of previous state
+
+**Risk 3: Sitemap parsing failures / Sitemap解析失败**
+- Mitigation: Robust error handling for malformed sitemaps
+- Fall back to BFS crawling if sitemap parsing fails
+- Support multiple sitemap formats (XML, gzipped, sitemap index)
 
 ---
 
@@ -440,19 +447,19 @@ webfetcher/
 
 ### Unit Tests / 单元测试 (8-10 tests per module)
 
-**Test crawler/policy_manager.py:**
+**Test crawler/sitemap_manager.py:**
 ```python
-def test_robots_txt_parser():
-    """Test robots.txt parsing with various formats."""
-
-def test_robots_txt_respect_disallow():
-    """Test that Disallow rules are respected."""
-
 def test_sitemap_xml_discovery():
-    """Test sitemap.xml discovery from robots.txt and /sitemap.xml."""
+    """Test sitemap.xml discovery from /sitemap.xml and /sitemap_index.xml."""
 
 def test_sitemap_url_extraction():
     """Test URL extraction from sitemap.xml."""
+
+def test_sitemap_gzip_handling():
+    """Test parsing of gzipped sitemaps (sitemap.xml.gz)."""
+
+def test_sitemap_index_parsing():
+    """Test parsing sitemap index files with multiple sitemaps."""
 ```
 
 **Test crawler/link_scout.py:**
@@ -488,10 +495,11 @@ def test_wf_site_command_end_to_end():
     # Run: wf site https://httpbin.org/html --max-pages 5
     # Verify: output files created, JSON index valid
 
-def test_crawl_with_robots_txt():
-    """Test crawling with robots.txt restrictions."""
-    # Setup: mock server with robots.txt
-    # Verify: blocked paths are not crawled
+def test_crawl_with_sitemap():
+    """Test crawling using sitemap.xml."""
+    # Setup: mock server with sitemap.xml
+    # Run: wf site --use-sitemap
+    # Verify: URLs from sitemap are crawled
 
 def test_resume_interrupted_crawl():
     """Test resuming a partially completed crawl."""
@@ -524,10 +532,11 @@ wf site --help
 **2. Crawler Guide / 爬虫指南** (`docs/crawler_guide.md`)
 - Architecture overview
 - Crawl strategy selection guide
-- robots.txt and sitemap.xml handling
+- Sitemap.xml handling
 - Resume capability usage
 - Output format specifications
 - Troubleshooting common issues
+- Note: Personal use only, no robots.txt compliance
 
 **3. Examples / 示例**
 ```bash
@@ -572,7 +581,6 @@ wf site https://example.com --output-json index.json --output-csv report.csv
 
 - ✅ **Bug Fix**: `wf site` command works without `--follow-pagination` error
 - ✅ **Parameters**: All crawl parameters (depth, pages, delay) configurable via CLI
-- ✅ **Robots.txt**: Respects robots.txt Disallow rules (with override option)
 - ✅ **Sitemap**: Discovers and uses sitemap.xml when available
 - ✅ **Pagination**: Follows pagination links correctly
 - ✅ **URL Filtering**: Supports include/exclude patterns (glob and regex)
@@ -581,6 +589,7 @@ wf site https://example.com --output-json index.json --output-csv report.csv
 - ✅ **JSON Output**: Generates valid JSON index with complete metadata
 - ✅ **CSV Output**: Generates importable CSV report
 - ✅ **Resume**: Can resume interrupted crawls without duplicates
+- ⚠️ **Note**: No robots.txt compliance (personal use tool)
 
 ### Quality Criteria / 质量标准
 
@@ -605,8 +614,8 @@ wf site https://example.com --output-json index.json --output-csv report.csv
 
 ```python
 # Standard library (already available)
-import urllib.robotparser  # For robots.txt parsing
 import xml.etree.ElementTree  # For sitemap.xml parsing
+import gzip  # For gzipped sitemap parsing
 import json  # For state and JSON output
 import csv  # For CSV output
 import time  # For timestamps
@@ -615,6 +624,7 @@ from pathlib import Path  # For file operations
 ```
 
 **No new external dependencies required.** / 无需新的外部依赖。
+**Note:** urllib.robotparser removed as robots.txt support was eliminated. / 注意：已移除urllib.robotparser，因为不再支持robots.txt。
 
 ### Related Tasks / 相关任务
 
@@ -673,9 +683,8 @@ These features are explicitly **NOT** included in Task-008 but may be considered
 
 ### External Standards / 外部标准
 
-- [Robots.txt Specification](https://www.robotstxt.org/robotstxt.html)
 - [Sitemap Protocol](https://www.sitemaps.org/protocol.html)
-- [RFC 9309 - Robots Exclusion Protocol](https://datatracker.ietf.org/doc/rfc9309/)
+- [Sitemap XML Format](https://www.sitemaps.org/protocol.html#xmlTagDefinitions)
 
 ---
 
@@ -684,8 +693,10 @@ These features are explicitly **NOT** included in Task-008 but may be considered
 **Design Philosophy / 设计哲学:**
 - ✅ **Backward Compatible**: Existing commands must continue to work
 - ✅ **Progressive Enhancement**: New features are opt-in, not mandatory
-- ✅ **Fail-Safe Defaults**: Safe, polite defaults (respect robots.txt, rate limiting)
-- ✅ **User Control**: Always provide override flags for testing (--ignore-robots, etc.)
+- ✅ **Personal Use Tool**: Designed for personal/research use, not production crawling
+- ✅ **Fail-Safe Defaults**: Safe defaults (rate limiting, same-domain crawling)
+- ✅ **User Control**: Always provide override flags for customization
+- ⚠️ **No Robots.txt**: This tool does not respect robots.txt (personal use only)
 
 **Implementation Notes / 实施说明:**
 - Phase 1 (bug fixes) should be completed first as it unblocks users
