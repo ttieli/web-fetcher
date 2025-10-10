@@ -123,37 +123,84 @@ class TemplateParser(BaseParser):
         # Default to CSS
         return 'css'
 
+    def _normalize_selector_config(self, field_config: Any) -> list:
+        """
+        Normalize selector configuration to list of (selector, strategy) tuples.
+
+        Supports three formats:
+        1. String: "#id, .class" -> [("#id", "css"), (".class", "css")]
+        2. List of dicts: [{"selector": "#id", "strategy": "css"}] -> [("#id", "css")]
+        3. Single dict: {"selector": "#id", "strategy": "css"} -> [("#id", "css")]
+
+        Args:
+            field_config: Field configuration in any supported format
+
+        Returns:
+            list: List of (selector, strategy) tuples
+        """
+        selectors = []
+
+        # Format 1: String selector (comma-separated)
+        if isinstance(field_config, str):
+            for s in field_config.split(','):
+                selector = s.strip()
+                strategy = self._detect_strategy(selector)
+                selectors.append((selector, strategy))
+
+        # Format 2: List of dicts (generic.yaml format)
+        elif isinstance(field_config, list):
+            for item in field_config:
+                if isinstance(item, dict):
+                    selector = item.get('selector', '').strip()
+                    strategy = item.get('strategy', 'css')
+                    if selector:
+                        selectors.append((selector, strategy))
+                elif isinstance(item, str):
+                    # Handle list of strings (fallback)
+                    selector = item.strip()
+                    strategy = self._detect_strategy(selector)
+                    selectors.append((selector, strategy))
+
+        # Format 3: Single dict (edge case)
+        elif isinstance(field_config, dict):
+            selector = field_config.get('selector', '').strip()
+            strategy = field_config.get('strategy', 'css')
+            if selector:
+                selectors.append((selector, strategy))
+
+        return selectors
+
     def _extract_field(self, content: str, field_config: Any) -> Optional[str]:
         """
         Extract a field using configured selectors with fallback support.
 
+        Supports multiple selector formats:
+        - String: "#id, .class"
+        - List of dicts: [{"selector": "#id", "strategy": "css"}]
+        - Single dict: {"selector": "#id", "strategy": "css"}
+
         Args:
             content: HTML content to extract from
-            field_config: Field configuration (string selector or dict)
+            field_config: Field configuration in any supported format
 
         Returns:
             Optional[str]: Extracted value or None if not found
         """
-        # Handle string selector (simple case)
-        if isinstance(field_config, str):
-            selectors = [s.strip() for s in field_config.split(',')]
-        # Handle dict configuration (for metadata fields)
-        elif isinstance(field_config, dict):
-            # This shouldn't happen for simple fields, but handle gracefully
-            return None
-        else:
+        # Normalize configuration to list of (selector, strategy) tuples
+        selectors = self._normalize_selector_config(field_config)
+
+        if not selectors:
             return None
 
         # Try each selector in order until one succeeds
-        for selector in selectors:
+        for selector, strategy_type in selectors:
             try:
                 # Auto-append @content for meta tags if not specified
                 if selector.startswith('meta[') and '@' not in selector:
                     selector = selector + '@content'
 
-                # Detect strategy type
-                strategy_type = self._detect_strategy(selector)
-                strategy = self.strategies[strategy_type]
+                # Get strategy
+                strategy = self.strategies.get(strategy_type, self.strategies['css'])
 
                 # Extract using strategy
                 result = strategy.extract(content, selector)
@@ -164,7 +211,7 @@ class TemplateParser(BaseParser):
 
             except Exception as e:
                 # Log and continue to next selector
-                self.logger.debug(f"Selector '{selector}' failed: {e}")
+                self.logger.debug(f"Selector '{selector}' (strategy: {strategy_type}) failed: {e}")
                 continue
 
         return None
@@ -295,23 +342,38 @@ class TemplateParser(BaseParser):
             # Return raw HTML as fallback
             return html_content
 
-    def _extract_html(self, content: str, selector_config: str) -> Optional[str]:
+    def _extract_html(self, content: str, selector_config: Any) -> Optional[str]:
         """
         Extract HTML content (not text) from elements.
 
+        Supports multiple selector formats:
+        - String: "#id, .class"
+        - List of dicts: [{"selector": "#id", "strategy": "css"}]
+        - Single dict: {"selector": "#id", "strategy": "css"}
+
         Args:
             content: HTML content to extract from
-            selector_config: Selector configuration string
+            selector_config: Selector configuration in any supported format
 
         Returns:
             Optional[str]: Extracted HTML or None if not found
         """
         from bs4 import BeautifulSoup
 
-        selectors = [s.strip() for s in selector_config.split(',')]
+        # Normalize configuration to list of (selector, strategy) tuples
+        selectors = self._normalize_selector_config(selector_config)
 
-        for selector in selectors:
+        if not selectors:
+            return None
+
+        for selector, strategy_type in selectors:
             try:
+                # Currently only CSS strategy is supported for HTML extraction
+                # (BeautifulSoup's select_one uses CSS selectors)
+                if strategy_type != 'css':
+                    self.logger.debug(f"HTML extraction only supports CSS selectors, got: {strategy_type}")
+                    continue
+
                 # Parse HTML
                 soup = BeautifulSoup(content, 'html.parser')
 
@@ -323,7 +385,7 @@ class TemplateParser(BaseParser):
                     return str(element)
 
             except Exception as e:
-                self.logger.debug(f"HTML extraction with selector '{selector}' failed: {e}")
+                self.logger.debug(f"HTML extraction with selector '{selector}' (strategy: {strategy_type}) failed: {e}")
                 continue
 
         return None
