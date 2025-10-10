@@ -426,24 +426,94 @@ def main():
     elif cmd == 'site':
         if len(raw_args) < 2:
             print("错误: site模式需要提供URL")
-            print("用法: wf site <URL> [输出目录]")
+            print("用法: wf site <URL> [输出目录] [选项]")
+            print("\n可用选项 / Available options:")
+            print("  --max-pages N          最大爬取页面数 (默认: 100) / Max pages to crawl (default: 100)")
+            print("  --max-depth N          最大爬取深度 (默认: 5) / Max crawl depth (default: 5)")
+            print("  --delay SECONDS        请求间隔秒数 (默认: 0.5) / Request delay in seconds (default: 0.5)")
+            print("  --follow-pagination    跟随分页链接 / Follow pagination links")
+            print("  --same-domain-only     仅爬取同域名 (默认启用) / Only crawl same domain (default enabled)")
             return
-        
+
         # Extract URL from potentially mixed text
         url_input = raw_args[1]
         url, was_extracted = extract_url_from_text(url_input)
-        
+
         if was_extracted:
             logger.info(f"✓ Site模式：已从文本中提取URL: {url}")
-        
+
         if not url.startswith('http'):
             url = f'https://{url}'
-        
-        # Parse output directory
+
+        # Parse output directory and extract parameters
         output_dir, remaining_args = parse_output_dir(raw_args[2:])
         ensure_output_dir(output_dir)
-        run_webfetcher([url, '-o', output_dir, '--crawl-site', '--max-crawl-depth', '5', 
-                       '--follow-pagination'] + remaining_args)
+
+        # Build webfetcher command with configurable parameters
+        # 构建可配置参数的 webfetcher 命令
+        cmd_args = [url, '-o', output_dir, '--crawl-site']
+
+        # Task-008 Phase 1: Extract user-specified parameters or use defaults
+        # Task-008 Phase 1：提取用户指定的参数或使用默认值
+        max_pages_value = None
+        max_depth_value = None
+        delay_value = None
+
+        # Extract parameters manually (simple approach for Phase 1)
+        i = 0
+        while i < len(remaining_args):
+            arg = remaining_args[i]
+
+            if arg in ['--max-pages', '--max-crawl-depth', '--max-depth', '--delay', '--crawl-delay']:
+                if i + 1 < len(remaining_args):
+                    value = remaining_args[i + 1]
+
+                    if arg == '--max-pages':
+                        max_pages_value = value
+                    elif arg in ['--max-crawl-depth', '--max-depth']:
+                        max_depth_value = value
+                    elif arg in ['--delay', '--crawl-delay']:
+                        delay_value = value
+
+                    # Skip next item (the value)
+                    i += 2
+                    continue
+
+            i += 1
+
+        # Apply defaults
+        if max_pages_value is None:
+            max_pages_value = '100'
+        if max_depth_value is None:
+            max_depth_value = '5'
+        if delay_value is None:
+            delay_value = '0.5'
+
+        cmd_args.extend(['--max-pages', max_pages_value])
+        cmd_args.extend(['--max-crawl-depth', max_depth_value])
+        cmd_args.extend(['--crawl-delay', delay_value])
+
+        # Add boolean flags if present
+        # 如果存在布尔标志则添加
+        if '--follow-pagination' in remaining_args:
+            cmd_args.append('--follow-pagination')
+
+        # same-domain-only is default, explicitly add it
+        # same-domain-only 是默认值，显式添加
+        cmd_args.append('--same-domain-only')
+
+        # Add any other remaining args (like --fetch-mode, etc.)
+        # 添加任何其他剩余参数（如 --fetch-mode 等）
+        for arg in remaining_args:
+            if arg not in ['--max-pages', '--max-depth', '--max-crawl-depth',
+                          '--delay', '--crawl-delay', '--follow-pagination', '--same-domain-only']:
+                # Check if it's a value (next to a parameter we already processed)
+                # This is a simple heuristic - skip values that look like numbers or paths
+                if not (arg.replace('.', '').isdigit() or arg.startswith('/')):
+                    cmd_args.append(arg)
+
+        logger.info(f"Site crawling with: max-pages={max_pages_value}, max-depth={max_depth_value}, delay={delay_value}")
+        run_webfetcher(cmd_args)
     
     # Raw模式
     elif cmd == 'raw':

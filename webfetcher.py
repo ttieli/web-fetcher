@@ -3150,8 +3150,11 @@ def crawl_site_by_categories(start_url: str, ua: str, categories: list, **kwargs
     
     logging.info(f"Category-first crawl completed: {total_crawled} total pages from {len(sorted_categories)} categories")
 
-def crawl_site(start_url: str, ua: str, max_depth: int = 10, 
+def crawl_site(start_url: str, ua: str, max_depth: int = 10,
                max_pages: int = 1000, delay: float = 0.5,
+               # Task-008 Phase 1: NEW parameters
+               follow_pagination: bool = False,
+               same_domain_only: bool = True,
                # Stage 1 optimization parameters
                enable_optimizations: bool = True,
                crawl_strategy: str = 'default',
@@ -3160,18 +3163,23 @@ def crawl_site(start_url: str, ua: str, max_depth: int = 10,
                page_callback = None) -> list:
     """
     Crawl entire site using BFS algorithm.
+    使用 BFS 算法爬取整个站点。
+
     Returns list of (url, html, depth) tuples.
-    
+    返回 (url, html, depth) 元组列表。
+
     Args:
-        start_url: Starting URL for crawling
-        ua: User agent string for requests
-        max_depth: Maximum crawling depth
-        max_pages: Maximum number of pages to crawl
-        delay: Delay between requests in seconds
-        enable_optimizations: Enable Stage 1 optimizations (link pre-filtering, batch processing)
-        crawl_strategy: Crawling strategy ('default', 'category_first' for Stage 2)
-        memory_efficient: Enable memory optimization - pages processed in batches
-        page_callback: Optional callback function for streaming page processing
+        start_url: Starting URL for crawling / 爬取起始 URL
+        ua: User agent string for requests / 请求的 User Agent 字符串
+        max_depth: Maximum crawling depth / 最大爬取深度
+        max_pages: Maximum number of pages to crawl / 最大爬取页面数
+        delay: Delay between requests in seconds / 请求间隔秒数
+        follow_pagination: Follow pagination links (Task-008 Phase 1) / 跟随分页链接（Task-008 Phase 1）
+        same_domain_only: Only crawl same domain (Task-008 Phase 1) / 仅爬取同域名（Task-008 Phase 1）
+        enable_optimizations: Enable Stage 1 optimizations / 启用Stage 1优化
+        crawl_strategy: Crawling strategy / 爬取策略
+        memory_efficient: Enable memory optimization / 启用内存优化
+        page_callback: Optional callback for streaming / 流式处理的可选回调
     """
     # Initialize crawl statistics
     stats = {
@@ -4015,6 +4023,14 @@ def main():
                     help='Maximum pages to crawl (default: 1000, max: 1000)')
     ap.add_argument('--crawl-delay', type=float, default=0.5,
                     help='Delay between crawl requests in seconds (default: 0.5)')
+
+    # Task-008 Phase 1: Add pagination and domain control flags
+    # Task-008 Phase 1：添加分页和域名控制标志
+    ap.add_argument('--follow-pagination', action='store_true',
+                    help='Follow pagination links (next page, etc.) during crawling / 爬取时跟随分页链接（下一页等）')
+    ap.add_argument('--same-domain-only', action='store_true', default=True,
+                    help='Only crawl URLs from the same domain (default: True) / 仅爬取同域名的URL（默认：True）')
+
     ap.add_argument('--format', choices=['markdown', 'html', 'both'], default='markdown',
                     help='Output format: markdown (default), html, or both')
     
@@ -4077,19 +4093,27 @@ def main():
 
     # Site crawling mode (overrides single-page fetch)
     if args.crawl_site:
-        logging.info("Site crawling mode activated")
-        
+        logging.info("Site crawling mode activated / 站点爬取模式已激活")
+
+        # Task-008 Phase 1: Log pagination mode
+        if args.follow_pagination:
+            logging.info("Pagination following enabled / 已启用分页跟随")
+        if not args.same_domain_only:
+            logging.warning("Cross-domain crawling enabled - use with caution / 已启用跨域爬取 - 请谨慎使用")
+
         # Check if supported site type
         if 'mp.weixin.qq.com' in host or 'xiaohongshu.com' in host or 'xhslink.com' in original_host or 'dianping.com' in host:
             logging.error("Site crawling not supported for social media sites")
             sys.exit(1)
-        
+
         # Crawl the site
         crawled_pages = crawl_site(
-            url, ua, 
+            url, ua,
             max_depth=args.max_crawl_depth,
             max_pages=args.max_pages,
-            delay=args.crawl_delay
+            delay=args.crawl_delay,
+            follow_pagination=args.follow_pagination,      # NEW: pass pagination flag
+            same_domain_only=args.same_domain_only        # NEW: pass domain filter
         )
         
         if crawled_pages:
