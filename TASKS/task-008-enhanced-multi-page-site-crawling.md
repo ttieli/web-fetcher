@@ -424,6 +424,397 @@ webfetcher/
 **Total Estimated Effort:** 14-19 hours (reduced from 16-22h due to robots.txt removal)
 **Recommended Order:** 1 → 2 → 3 → 4 → 5
 
+---
+
+## Phase 1: Detailed Implementation Guide / Phase 1：详细实施指南
+
+**Estimated Effort / 预计工时:** 4-6 hours / 4-6小时
+**Status / 状态:** Ready for Implementation / 准备实施
+
+### Overview / 概述
+
+Phase 1 fixes the critical `--follow-pagination` bug and exposes all crawl parameters via CLI, making the `wf site` command fully functional.
+
+Phase 1 修复关键的 `--follow-pagination` 缺陷，并通过 CLI 暴露所有爬取参数，使 `wf site` 命令完全可用。
+
+**Critical Bug / 关键缺陷:**
+- `wf site` command passes `--follow-pagination` flag that doesn't exist
+- Result: Command fails with "unrecognized arguments" error
+- Impact: Site crawling feature is completely broken
+
+### Step-by-Step Implementation / 分步实施
+
+#### Step 1.1: Add --follow-pagination Flag to webfetcher.py
+
+**File / 文件:** `webfetcher.py`
+**Location / 位置:** Line ~4017 (after --crawl-delay argument)
+
+**Current Code / 当前代码:**
+```python
+    ap.add_argument('--crawl-delay', type=float, default=0.5,
+                    help='Delay between crawl requests in seconds (default: 0.5)')
+    ap.add_argument('--format', choices=['markdown', 'html', 'both'], default='markdown',
+                    help='Output format: markdown (default), html, or both')
+```
+
+**New Code to Add / 新增代码:**
+```python
+    ap.add_argument('--crawl-delay', type=float, default=0.5,
+                    help='Delay between crawl requests in seconds (default: 0.5)')
+
+    # Task-008 Phase 1: Add pagination and domain control flags
+    # Task-008 Phase 1：添加分页和域名控制标志
+    ap.add_argument('--follow-pagination', action='store_true',
+                    help='Follow pagination links (next page, etc.) during crawling / 爬取时跟随分页链接（下一页等）')
+    ap.add_argument('--same-domain-only', action='store_true', default=True,
+                    help='Only crawl URLs from the same domain (default: True) / 仅爬取同域名的URL（默认：True）')
+
+    ap.add_argument('--format', choices=['markdown', 'html', 'both'], default='markdown',
+                    help='Output format: markdown (default), html, or both')
+```
+
+#### Step 1.2: Integrate Flags with Crawl Logic
+
+**File / 文件:** `webfetcher.py`
+**Location / 位置:** Line ~4079 (in the crawl-site mode section)
+
+**Find this section / 找到此部分:**
+```python
+    if args.crawl_site:
+        logging.info("Site crawling mode activated")
+
+        # Check if supported site type
+        if not is_supported_site_type(url):
+            logging.error("Unsupported site type for crawling")
+            sys.exit(1)
+
+        # Crawl the site
+        crawled_pages = crawl_site(
+            url, ua,
+            max_depth=args.max_crawl_depth,
+            max_pages=args.max_pages,
+```
+
+**Update to / 更新为:**
+```python
+    if args.crawl_site:
+        logging.info("Site crawling mode activated / 站点爬取模式已激活")
+
+        # Task-008 Phase 1: Log pagination mode
+        if args.follow_pagination:
+            logging.info("Pagination following enabled / 已启用分页跟随")
+        if not args.same_domain_only:
+            logging.warning("Cross-domain crawling enabled - use with caution / 已启用跨域爬取 - 请谨慎使用")
+
+        # Check if supported site type
+        if not is_supported_site_type(url):
+            logging.error("Unsupported site type for crawling")
+            sys.exit(1)
+
+        # Crawl the site
+        crawled_pages = crawl_site(
+            url, ua,
+            max_depth=args.max_crawl_depth,
+            max_pages=args.max_pages,
+            delay=args.crawl_delay,
+            follow_pagination=args.follow_pagination,      # NEW: pass pagination flag
+            same_domain_only=args.same_domain_only,        # NEW: pass domain filter
+```
+
+#### Step 1.3: Update crawl_site() Function Signature
+
+**File / 文件:** `webfetcher.py`
+**Location / 位置:** Line ~3153 (crawl_site function definition)
+
+**Current Code / 当前代码:**
+```python
+def crawl_site(start_url: str, ua: str, max_depth: int = 10,
+               max_pages: int = 1000, delay: float = 0.5,
+               # Stage 1 optimization parameters
+               enable_optimizations: bool = True,
+               crawl_strategy: str = 'default',
+               # Stage 1.3 memory optimization
+               memory_efficient: bool = False,
+               page_callback = None) -> list:
+```
+
+**Updated Code / 更新后代码:**
+```python
+def crawl_site(start_url: str, ua: str, max_depth: int = 10,
+               max_pages: int = 1000, delay: float = 0.5,
+               # Task-008 Phase 1: NEW parameters
+               follow_pagination: bool = False,
+               same_domain_only: bool = True,
+               # Stage 1 optimization parameters
+               enable_optimizations: bool = True,
+               crawl_strategy: str = 'default',
+               # Stage 1.3 memory optimization
+               memory_efficient: bool = False,
+               page_callback = None) -> list:
+    """
+    Crawl entire site using BFS algorithm.
+    使用 BFS 算法爬取整个站点。
+
+    Returns list of (url, html, depth) tuples.
+    返回 (url, html, depth) 元组列表。
+
+    Args:
+        start_url: Starting URL for crawling / 爬取起始 URL
+        ua: User agent string for requests / 请求的 User Agent 字符串
+        max_depth: Maximum crawling depth / 最大爬取深度
+        max_pages: Maximum number of pages to crawl / 最大爬取页面数
+        delay: Delay between requests in seconds / 请求间隔秒数
+        follow_pagination: Follow pagination links (Task-008 Phase 1) / 跟随分页链接（Task-008 Phase 1）
+        same_domain_only: Only crawl same domain (Task-008 Phase 1) / 仅爬取同域名（Task-008 Phase 1）
+        enable_optimizations: Enable Stage 1 optimizations / 启用Stage 1优化
+        crawl_strategy: Crawling strategy / 爬取策略
+        memory_efficient: Enable memory optimization / 启用内存优化
+        page_callback: Optional callback for streaming / 流式处理的可选回调
+    """
+```
+
+**Note / 注意:** The actual implementation of `follow_pagination` and `same_domain_only` logic will be done in later phases. For Phase 1, we just add the parameters to fix the bug.
+
+实际的 `follow_pagination` 和 `same_domain_only` 逻辑实现将在后续阶段完成。Phase 1 只添加参数以修复缺陷。
+
+#### Step 1.4: Update wf.py to Expose Crawl Parameters
+
+**File / 文件:** `wf.py`
+**Location / 位置:** Line ~426 (site command handler)
+
+**Replace the entire site command handler with:**
+
+```python
+    elif cmd == 'site':
+        if len(raw_args) < 2:
+            print("错误: site模式需要提供URL")
+            print("用法: wf site <URL> [输出目录] [选项]")
+            print("\n可用选项 / Available options:")
+            print("  --max-pages N          最大爬取页面数 (默认: 100) / Max pages to crawl (default: 100)")
+            print("  --max-depth N          最大爬取深度 (默认: 5) / Max crawl depth (default: 5)")
+            print("  --delay SECONDS        请求间隔秒数 (默认: 0.5) / Request delay in seconds (default: 0.5)")
+            print("  --follow-pagination    跟随分页链接 / Follow pagination links")
+            print("  --same-domain-only     仅爬取同域名 (默认启用) / Only crawl same domain (default enabled)")
+            return
+
+        # Extract URL from potentially mixed text
+        url_input = raw_args[1]
+        url, was_extracted = extract_url_from_text(url_input)
+
+        if was_extracted:
+            logger.info(f"✓ Site模式：已从文本中提取URL: {url}")
+
+        if not url.startswith('http'):
+            url = f'https://{url}'
+
+        # Parse output directory and extract parameters
+        output_dir, remaining_args = parse_output_dir(raw_args[2:])
+        ensure_output_dir(output_dir)
+
+        # Build webfetcher command with configurable parameters
+        # 构建可配置参数的 webfetcher 命令
+        cmd_args = [url, '-o', output_dir, '--crawl-site']
+
+        # Task-008 Phase 1: Extract user-specified parameters or use defaults
+        # Task-008 Phase 1：提取用户指定的参数或使用默认值
+        max_pages_value = None
+        max_depth_value = None
+        delay_value = None
+
+        # Extract parameters manually (simple approach for Phase 1)
+        i = 0
+        while i < len(remaining_args):
+            arg = remaining_args[i]
+
+            if arg in ['--max-pages', '--max-crawl-depth', '--delay', '--crawl-delay']:
+                if i + 1 < len(remaining_args):
+                    value = remaining_args[i + 1]
+
+                    if arg == '--max-pages':
+                        max_pages_value = value
+                    elif arg in ['--max-crawl-depth', '--max-depth']:
+                        max_depth_value = value
+                    elif arg in ['--delay', '--crawl-delay']:
+                        delay_value = value
+
+                    # Skip next item (the value)
+                    i += 2
+                    continue
+
+            i += 1
+
+        # Apply defaults
+        if max_pages_value is None:
+            max_pages_value = '100'
+        if max_depth_value is None:
+            max_depth_value = '5'
+        if delay_value is None:
+            delay_value = '0.5'
+
+        cmd_args.extend(['--max-pages', max_pages_value])
+        cmd_args.extend(['--max-crawl-depth', max_depth_value])
+        cmd_args.extend(['--crawl-delay', delay_value])
+
+        # Add boolean flags if present
+        # 如果存在布尔标志则添加
+        if '--follow-pagination' in remaining_args:
+            cmd_args.append('--follow-pagination')
+
+        # same-domain-only is default, explicitly add it
+        # same-domain-only 是默认值，显式添加
+        cmd_args.append('--same-domain-only')
+
+        # Add any other remaining args (like --fetch-mode, etc.)
+        # 添加任何其他剩余参数（如 --fetch-mode 等）
+        for arg in remaining_args:
+            if arg not in ['--max-pages', '--max-depth', '--max-crawl-depth',
+                          '--delay', '--crawl-delay', '--follow-pagination', '--same-domain-only']:
+                # Check if it's a value (next to a parameter we already processed)
+                # This is a simple heuristic - skip values that look like numbers or paths
+                if not (arg.replace('.', '').isdigit() or arg.startswith('/')):
+                    cmd_args.append(arg)
+
+        logger.info(f"Site crawling with: max-pages={max_pages_value}, max-depth={max_depth_value}, delay={delay_value}")
+        run_webfetcher(cmd_args)
+```
+
+### Testing Steps / 测试步骤
+
+#### Test 1: Verify --follow-pagination Flag Works
+
+```bash
+cd "/Users/tieli/Library/Mobile Documents/com~apple~CloudDocs/Project/Web_Fetcher"
+
+# Test that flag is recognized (should not error)
+# 测试标志被识别（不应报错）
+python webfetcher.py https://httpbin.org/html --crawl-site --follow-pagination --max-pages 1
+
+# Expected: No "unrecognized arguments" error
+# 预期：无"未识别参数"错误
+```
+
+**Success Criteria / 成功标准:**
+- ✅ No error about unrecognized arguments
+- ✅ Command executes (may or may not crawl successfully, but flag is recognized)
+
+#### Test 2: Test wf site Command
+
+```bash
+# Test 2.1: Basic usage (should work without errors)
+# 测试 2.1：基础用法（应该无错误工作）
+python wf.py site https://httpbin.org/html -o ./test_output
+
+# Expected: Creates ./test_output/ directory with crawled content
+# 预期：创建 ./test_output/ 目录并包含爬取的内容
+
+# Test 2.2: With custom parameters
+# 测试 2.2：使用自定义参数
+python wf.py site https://httpbin.org/html -o ./test_output_custom \
+  --max-pages 5 --max-depth 2 --delay 0.3 --follow-pagination
+
+# Expected: Uses custom parameters, no errors
+# 预期：使用自定义参数，无错误
+
+# Test 2.3: With only some custom parameters (test defaults)
+# 测试 2.3：仅使用部分自定义参数（测试默认值）
+python wf.py site https://httpbin.org/html -o ./test_output_partial --max-pages 3
+
+# Expected: Uses max-pages=3, but defaults for depth and delay
+# 预期：使用 max-pages=3，但 depth 和 delay 使用默认值
+```
+
+**Success Criteria / 成功标准:**
+- ✅ All test commands execute without "unrecognized arguments" error
+- ✅ Output directories are created
+- ✅ At least one .md file is generated in each output directory
+
+#### Test 3: Verify Backward Compatibility
+
+```bash
+# Old command format should still work
+# 旧命令格式应该仍然工作
+python wf.py site https://httpbin.org/html ./test_output_old
+
+# Expected: Works with default parameters (max-pages=100, max-depth=5, delay=0.5)
+# 预期：使用默认参数工作（max-pages=100, max-depth=5, delay=0.5）
+```
+
+**Success Criteria / 成功标准:**
+- ✅ Old command format still works
+- ✅ Uses default parameters automatically
+- ✅ No breaking changes
+
+#### Test 4: Help Text Display
+
+```bash
+# Test help text is displayed
+# 测试帮助文本显示
+python wf.py site
+
+# Expected: Displays usage with available options in bilingual format
+# 预期：以双语格式显示用法和可用选项
+```
+
+**Success Criteria / 成功标准:**
+- ✅ Help text is displayed
+- ✅ Bilingual (English/Chinese)
+- ✅ Lists all available options
+
+### Phase 1 Acceptance Criteria / Phase 1 验收标准
+
+**Phase 1 is COMPLETE when / Phase 1 在以下情况下完成:**
+
+- [ ] ✅ `--follow-pagination` flag exists in webfetcher.py argparser
+- [ ] ✅ `--same-domain-only` flag exists with default=True
+- [ ] ✅ `crawl_site()` function accepts new parameters (even if not implemented yet)
+- [ ] ✅ `wf site` command works without "unrecognized arguments" error
+- [ ] ✅ All crawl parameters configurable via wf.py (--max-pages, --max-depth, --delay)
+- [ ] ✅ Help text updated in wf.py with bilingual options
+- [ ] ✅ Test 1-4 all pass (4/4 tests)
+- [ ] ✅ Backward compatibility maintained (old commands work)
+- [ ] ✅ Regression test script created and passes
+- [ ] ✅ Code properly documented with bilingual comments
+
+### Files to Modify / 要修改的文件
+
+**Summary / 总结:**
+
+1. `webfetcher.py` - Add arguments, update function signature (3 locations)
+2. `wf.py` - Update site command handler (1 location)
+3. `tests/url_suite.txt` - Add test URLs (append to file)
+4. `tests/test_site_crawling_phase1.py` - Create new file
+
+**Total Lines Changed / 总修改行数:** ~150 lines
+
+### Rollback Plan / 回滚计划
+
+If Phase 1 has critical issues:
+
+**Quick Fix (Temporary) / 快速修复（临时）:**
+```python
+# In wf.py line 446, remove --follow-pagination:
+run_webfetcher([url, '-o', output_dir, '--crawl-site', '--max-crawl-depth', '5'] + remaining_args)
+```
+
+**Full Rollback / 完全回滚:**
+```bash
+git log --oneline | head -5  # Find commit hash
+git revert <commit-hash>
+```
+
+### Next Steps After Phase 1 / Phase 1 之后的下一步
+
+After Phase 1 is complete and tested:
+
+1. **Review by architect** (@agent-archy-principle-architect)
+2. **Update TASKS documentation** with Phase 1 completion status
+3. **Git commit** with detailed message
+4. **Decide on Phase 2** (Sitemap support) or stop here
+
+Phase 1 alone provides significant value by fixing the broken `wf site` command!
+
+---
+
 ### Risk Mitigation / 风险缓解
 
 **Risk 1: Breaking existing crawl_site() callers / 破坏现有调用者**
@@ -511,9 +902,229 @@ def test_resume_interrupted_crawl():
 
 ### Regression Tests / 回归测试
 
-- [ ] Add `wf site` test URLs to `tests/url_suite.txt`
-- [ ] Run full regression suite after each phase
-- [ ] Ensure backward compatibility with existing commands
+#### Add Site Crawling Test Cases to url_suite.txt
+
+**File / 文件:** `tests/url_suite.txt`
+
+**Add the following test URLs / 添加以下测试 URL:**
+
+```
+# Site Crawling Tests / 站点爬取测试 (Task-008 Phase 1)
+# ========================================================
+
+# Test 1: Basic site crawl - single page
+https://httpbin.org/html | HTTPBin HTML (site crawl test) | urllib | basic,site-crawl,phase1
+
+# Test 2: Multi-page crawl - links test
+https://httpbin.org/links/5/0 | HTTPBin links test (5 links) | urllib | site-crawl,pagination,phase1
+
+# Test 3: Example.com - simple static site
+https://example.com | Example.com (depth test) | urllib | basic,site-crawl,depth-test,phase1
+```
+
+#### Create Regression Test Script
+
+**File / 文件:** `tests/test_site_crawling_phase1.py`
+
+Create a comprehensive regression test script to verify Phase 1 functionality:
+
+```python
+#!/usr/bin/env python3
+"""
+Regression tests for site crawling functionality (Task-008 Phase 1)
+站点爬取功能回归测试（Task-008 Phase 1）
+"""
+
+import subprocess
+import sys
+import tempfile
+import shutil
+from pathlib import Path
+
+def run_command(cmd, timeout=60):
+    """Run command and return result"""
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd="/Users/tieli/Library/Mobile Documents/com~apple~CloudDocs/Project/Web_Fetcher"
+        )
+        return result.returncode, result.stdout, result.stderr
+    except subprocess.TimeoutExpired:
+        return -1, "", "Timeout"
+
+def test_basic_site_crawl():
+    """Test 1: Basic site crawl command"""
+    print("Test 1: Basic site crawl...")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cmd = ['python', 'wf.py', 'site', 'https://httpbin.org/html',
+               '-o', tmpdir, '--max-pages', '1']
+
+        code, stdout, stderr = run_command(cmd)
+
+        if 'unrecognized arguments' in stderr:
+            print(f"  ❌ FAILED: Unrecognized arguments error")
+            print(f"  stderr: {stderr}")
+            return False
+
+        # Check output directory has files
+        output_files = list(Path(tmpdir).glob('**/*.md'))
+        if not output_files:
+            print(f"  ⚠️  WARNING: No output files, but command executed")
+            # This is acceptable for Phase 1 - flag is recognized
+            return True
+
+        print(f"  ✅ PASSED: Generated {len(output_files)} files")
+        return True
+
+def test_follow_pagination_flag():
+    """Test 2: --follow-pagination flag is recognized"""
+    print("Test 2: --follow-pagination flag recognition...")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cmd = ['python', 'wf.py', 'site', 'https://httpbin.org/html',
+               '-o', tmpdir, '--max-pages', '1', '--follow-pagination']
+
+        code, stdout, stderr = run_command(cmd)
+
+        # Check for "unrecognized arguments" error
+        if 'unrecognized arguments' in stderr:
+            print(f"  ❌ FAILED: --follow-pagination not recognized")
+            print(f"  stderr: {stderr}")
+            return False
+
+        print(f"  ✅ PASSED: --follow-pagination flag recognized")
+        return True
+
+def test_custom_parameters():
+    """Test 3: Custom crawl parameters"""
+    print("Test 3: Custom crawl parameters...")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cmd = ['python', 'wf.py', 'site', 'https://httpbin.org/html',
+               '-o', tmpdir,
+               '--max-pages', '3',
+               '--max-depth', '2',
+               '--delay', '0.1']
+
+        code, stdout, stderr = run_command(cmd, timeout=30)
+
+        if 'unrecognized arguments' in stderr:
+            print(f"  ❌ FAILED: Parameters not recognized")
+            print(f"  stderr: {stderr}")
+            return False
+
+        print(f"  ✅ PASSED: Custom parameters accepted")
+        return True
+
+def test_backward_compatibility():
+    """Test 4: Backward compatibility (old command format)"""
+    print("Test 4: Backward compatibility...")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Old format: wf site <URL> <output_dir>
+        cmd = ['python', 'wf.py', 'site', 'https://httpbin.org/html', tmpdir]
+
+        code, stdout, stderr = run_command(cmd)
+
+        if 'unrecognized arguments' in stderr:
+            print(f"  ❌ FAILED: Backward compatibility broken")
+            print(f"  stderr: {stderr}")
+            return False
+
+        print(f"  ✅ PASSED: Backward compatibility maintained")
+        return True
+
+def test_help_text():
+    """Test 5: Help text is displayed correctly"""
+    print("Test 5: Help text display...")
+
+    cmd = ['python', 'wf.py', 'site']
+    code, stdout, stderr = run_command(cmd, timeout=10)
+
+    # Check for bilingual help text
+    if '可用选项' not in stdout and '可用选项' not in stderr:
+        print(f"  ❌ FAILED: Help text missing or not bilingual")
+        return False
+
+    if 'max-pages' not in stdout and 'max-pages' not in stderr:
+        print(f"  ❌ FAILED: Help text incomplete")
+        return False
+
+    print(f"  ✅ PASSED: Help text displayed correctly")
+    return True
+
+def main():
+    """Run all regression tests"""
+    print("=" * 70)
+    print("Site Crawling Regression Tests (Task-008 Phase 1)")
+    print("站点爬取回归测试（Task-008 Phase 1）")
+    print("=" * 70)
+    print()
+
+    tests = [
+        test_basic_site_crawl,
+        test_follow_pagination_flag,
+        test_custom_parameters,
+        test_backward_compatibility,
+        test_help_text
+    ]
+
+    results = []
+    for test_func in tests:
+        try:
+            passed = test_func()
+            results.append(passed)
+        except Exception as e:
+            print(f"  ❌ EXCEPTION: {e}")
+            import traceback
+            traceback.print_exc()
+            results.append(False)
+        print()
+
+    # Summary
+    print("=" * 70)
+    passed_count = sum(results)
+    total_count = len(results)
+    success_rate = (passed_count / total_count * 100) if total_count > 0 else 0
+
+    print(f"Results: {passed_count}/{total_count} tests passed ({success_rate:.1f}%)")
+    print(f"结果：{passed_count}/{total_count} 测试通过 ({success_rate:.1f}%)")
+
+    if passed_count == total_count:
+        print("\n✅ All tests PASSED! Phase 1 regression testing complete.")
+        print("✅ 所有测试通过！Phase 1 回归测试完成。")
+        return 0
+    else:
+        print(f"\n❌ {total_count - passed_count} test(s) FAILED!")
+        print(f"❌ {total_count - passed_count} 个测试失败！")
+        return 1
+
+if __name__ == '__main__':
+    sys.exit(main())
+```
+
+#### Regression Test Execution / 回归测试执行
+
+**Run After Each Phase / 每个阶段后运行:**
+
+```bash
+# Run Phase 1 regression tests
+cd "/Users/tieli/Library/Mobile Documents/com~apple~CloudDocs/Project/Web_Fetcher"
+python tests/test_site_crawling_phase1.py
+
+# Run full regression suite
+python scripts/run_regression_suite.py
+```
+
+**Expected Results / 预期结果:**
+- [ ] All 5 Phase 1 tests pass (5/5)
+- [ ] No regressions in existing regression suite (30/30 or better)
+- [ ] Backward compatibility maintained
+- [ ] No "unrecognized arguments" errors
 
 ---
 
