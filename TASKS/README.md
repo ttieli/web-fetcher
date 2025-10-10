@@ -14,32 +14,42 @@
 ## 🚀 Active Tasks / 当前任务
 
 ### Task-008: Enhanced Multi-Page and Whole-Site Crawling 🆕
-- **Status:** IN PROGRESS - Phase 1 COMPLETED ✅ / 进行中 - Phase 1 已完成 ✅
+- **Status:** IN PROGRESS - Phase 1 & 2 COMPLETED ✅ / 进行中 - Phase 1 & 2 已完成 ✅
 - **Priority:** P2 (Important / 重要)
 - **File:** `task-008-enhanced-multi-page-site-crawling.md`
-- **Estimated Effort:** 14-19 hours total / 14-19小时 (Phase 1: 4-6h ✅ DONE)
+- **Estimated Effort:** 14-19 hours total / Phase 1: 4-6h ✅ / Phase 2: 3-4h ✅
 - **Created:** 2025-10-10
 - **Phase 1 Completed:** 2025-10-10 19:25 (Commit: 0db222b)
+- **Phase 2 Completed:** 2025-10-10 (Commit: 2ec139d)
 - **Objective:**
   - ✅ **Phase 1 COMPLETE:** Fix critical bug + expose crawl parameters
     - Fixed `--follow-pagination` flag missing in webfetcher.py
     - All crawl parameters now configurable (--max-pages, --max-depth, --delay)
     - 5/5 regression tests passed (100%)
     - 4 files modified (+305 lines, -24 lines)
-  - Phase 2: Sitemap support (3-4h) - PENDING
+  - ✅ **Phase 2 COMPLETE:** Sitemap.xml support with automatic discovery
+    - Sitemap discovery at 5 common locations
+    - XML parsing with namespace support (priority, lastmod, changefreq)
+    - Gzipped sitemap support (.gz decompression)
+    - Sitemap index support (recursive parsing)
+    - Intelligent URL prioritization (priority + lastmod sorting)
+    - Automatic BFS fallback (no sitemap? no problem!)
+    - --use-sitemap flag in CLI
+    - 6/6 regression tests passed (100%)
+    - 4 files modified (+344 lines)
   - Phase 3: Advanced crawling features (4-6h) - PENDING
   - Phase 4: Structured output (3-4h) - PENDING
   - Phase 5: Resume capability (3-4h) - PENDING
-- **Phase 1 Results:**
-  - 🎯 Critical bug fixed: `wf site` command now fully functional
-  - 🎯 All manual tests passed (4/4)
-  - 🎯 All regression tests passed (5/5 - 100%)
+- **Combined Results (Phase 1 & 2):**
+  - 🎯 Critical bug fixed + sitemap support added
+  - 🎯 All tests passed (11/11 - 100%)
   - 🎯 Backward compatibility maintained
   - 🎯 Bilingual documentation (English/Chinese)
 - **Impact:**
-  - ✅ `wf site` command now works without errors
+  - ✅ `wf site` command fully functional
   - ✅ Site crawling parameters fully configurable
-  - ✅ Production-ready for Phase 1 features
+  - ✅ Sitemap.xml support for efficient large-site crawling
+  - ✅ Production-ready for Phases 1 & 2 features
 - **Note:** No robots.txt compliance (personal use tool)
 
 ### Deferred / 延期
