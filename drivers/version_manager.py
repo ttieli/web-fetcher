@@ -353,7 +353,8 @@ class VersionDownloader:
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             # Find chromedriver executable in zip
             for name in zip_ref.namelist():
-                if name.endswith('chromedriver') and not name.endswith('/'):
+                # Match only the actual binary, not files like LICENSE.chromedriver
+                if (name.endswith('/chromedriver') or name == 'chromedriver') and not name.endswith('/'):
                     # Extract to cache directory
                     zip_ref.extract(name, cache_dir)
                     extracted_path = cache_dir / name
