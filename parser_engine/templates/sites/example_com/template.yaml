@@ -1,0 +1,64 @@
+# Parser Template for example.com
+# Generated: 2025-10-10 11:37:19
+# Template Type: article
+# Version: 1.0.0
+#
+# This is an automatically generated template. Please customize the selectors
+# according to your target website's structure.
+#
+# 这是一个自动生成的模板。请根据目标网站的结构自定义选择器。
+
+name: Example.Com Parser
+version: 1.0.0
+domains:
+- example.com
+selectors:
+  title:
+  - selector: meta[property='og:title']
+    strategy: css
+    attribute: content
+  - selector: h1
+    strategy: css
+  - selector: .article-title
+    strategy: css
+  content:
+  - selector: article
+    strategy: css
+  - selector: .article-content
+    strategy: css
+  - selector: .post-content
+    strategy: css
+  author:
+  - selector: meta[name='author']
+    strategy: css
+    attribute: content
+  - selector: .author
+    strategy: css
+  - selector: .byline
+    strategy: css
+  date:
+  - selector: meta[property='article:published_time']
+    strategy: css
+    attribute: content
+  - selector: time[datetime]
+    strategy: css
+    attribute: datetime
+  - selector: .published-date
+    strategy: css
+  images:
+  - selector: meta[property='og:image']
+    strategy: css
+    attribute: content
+  - selector: article img
+    strategy: css
+    attribute: src
+metadata:
+  created: '2025-10-10T11:37:19.544595'
+  template_type: article
+  generator_version: 1.0.0
+test_cases:
+- name: Basic extraction test
+  url: https://example.com/sample-page
+  expected:
+    title: Sample Title
+    content: Sample content...

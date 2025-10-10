@@ -44,12 +44,51 @@ def cmd_init(args) -> int:
     Returns:
         int: 0 on success, 1 on failure
     """
+    from ..generators.template_generator import generate_template_file
+    import os
+
     print(f"Initializing template for domain: {args.domain}")
     print(f"Template type: {args.type}")
-    if hasattr(args, 'output') and args.output:
-        print(f"Output path: {args.output}")
-    print("\n✗ Not implemented yet / 尚未实现")
-    return 1
+
+    try:
+        # Determine output path
+        if args.output:
+            output_path = args.output
+            print(f"Output path: {output_path}")
+        else:
+            # Default path: parser_engine/templates/sites/{domain}/template.yaml
+            # Get the project root directory
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+
+            # Create domain-specific directory name (replace dots with underscores for safety)
+            domain_dir = args.domain.replace('.', '_')
+            output_path = os.path.join(
+                project_root,
+                'parser_engine',
+                'templates',
+                'sites',
+                domain_dir,
+                'template.yaml'
+            )
+            print(f"Output path (default): {output_path}")
+
+        # Generate and save template
+        print(f"\nGenerating {args.type} template...")
+        generate_template_file(args.domain, args.type, output_path)
+
+        print(f"\n✓ Template created successfully!")
+        print(f"  Location: {output_path}")
+        print(f"\nNext steps:")
+        print(f"  1. Review and customize the selectors in {output_path}")
+        print(f"  2. Validate the template: python scripts/template_tool.py validate {output_path}")
+        print(f"  3. Test the template with a sample page")
+
+        return 0
+
+    except Exception as e:
+        print(f"\n✗ Error creating template: {e}", file=sys.stderr)
+        return 1
 
 
 def cmd_validate(args) -> int:
@@ -76,11 +115,51 @@ def cmd_validate(args) -> int:
     Returns:
         int: 0 if valid, 1 if invalid or error
     """
+    from ..validators.schema_validator import SchemaValidator
+    import os
+
     print(f"Validating template: {args.template}")
     if hasattr(args, 'strict') and args.strict:
         print("Strict mode: enabled")
-    print("\n✗ Not implemented yet / 尚未实现")
-    return 1
+
+    try:
+        # Check if template file exists
+        if not os.path.exists(args.template):
+            print(f"\n✗ Template file not found: {args.template}", file=sys.stderr)
+            return 1
+
+        # Create validator and validate
+        print("\nLoading schema and validating template...")
+        validator = SchemaValidator()
+        is_valid, errors = validator.validate_file(args.template)
+
+        # Display results
+        print("\n" + "=" * 60)
+        if is_valid:
+            print("✓ Template is VALID")
+            print("=" * 60)
+            print("\nAll validation checks passed!")
+            print("Template is ready to use.")
+            return 0
+        else:
+            print("✗ Template is INVALID")
+            print("=" * 60)
+            print(f"\nFound {len(errors)} error(s):")
+            for i, error in enumerate(errors, 1):
+                print(f"\n{i}. {error}")
+
+            print("\n" + "=" * 60)
+            print("\nPlease fix the errors and validate again.")
+            return 1
+
+    except FileNotFoundError as e:
+        print(f"\n✗ Schema or template file not found: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"\n✗ Validation error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return 1
 
 
 def cmd_preview(args) -> int:
