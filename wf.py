@@ -433,6 +433,7 @@ def main():
             print("  --delay SECONDS        请求间隔秒数 (默认: 0.5) / Request delay in seconds (default: 0.5)")
             print("  --follow-pagination    跟随分页链接 / Follow pagination links")
             print("  --same-domain-only     仅爬取同域名 (默认启用) / Only crawl same domain (default enabled)")
+            print("  --use-sitemap          使用sitemap.xml进行爬取 / Use sitemap.xml for crawling (Phase 2)")
             return
 
         # Extract URL from potentially mixed text
@@ -498,6 +499,11 @@ def main():
         if '--follow-pagination' in remaining_args:
             cmd_args.append('--follow-pagination')
 
+        # Task-008 Phase 2: Add --use-sitemap flag
+        if '--use-sitemap' in remaining_args:
+            cmd_args.append('--use-sitemap')
+            logger.info("Sitemap-first crawling enabled / 已启用sitemap优先爬取")
+
         # same-domain-only is default, explicitly add it
         # same-domain-only 是默认值，显式添加
         cmd_args.append('--same-domain-only')
@@ -506,7 +512,7 @@ def main():
         # 添加任何其他剩余参数（如 --fetch-mode 等）
         for arg in remaining_args:
             if arg not in ['--max-pages', '--max-depth', '--max-crawl-depth',
-                          '--delay', '--crawl-delay', '--follow-pagination', '--same-domain-only']:
+                          '--delay', '--crawl-delay', '--follow-pagination', '--same-domain-only', '--use-sitemap']:
                 # Check if it's a value (next to a parameter we already processed)
                 # This is a simple heuristic - skip values that look like numbers or paths
                 if not (arg.replace('.', '').isdigit() or arg.startswith('/')):

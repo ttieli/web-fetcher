@@ -34,6 +34,8 @@ import time
 import random
 import signal
 from collections import deque
+import xml.etree.ElementTree as ET  # Task-008 Phase 2: Sitemap parsing
+import gzip  # Task-008 Phase 2: Gzipped sitemap support
 
 # Selenium integration (Phase 2) - graceful degradation when not available
 try:
@@ -2919,6 +2921,272 @@ def is_documentation_url(url: str) -> bool:
     
     return True  # Default: include
 
+# ============================================================================
+# Task-008 Phase 2: Sitemap Discovery and Parsing Functions
+# Task-008 Phase 2：Sitemap 发现与解析功能
+# ============================================================================
+
+def discover_sitemaps(base_url: str, ua: str) -> list:
+    """
+    Discover sitemap.xml files for a given base URL.
+    为给定的基础 URL 发现 sitemap.xml 文件。
+
+    Tries common sitemap locations:
+    尝试常见的 sitemap 位置：
+    - /sitemap.xml
+    - /sitemap_index.xml
+    - /sitemap-index.xml
+    - /sitemaps.xml
+
+    Args:
+        base_url: Base URL of the website (e.g., https://example.com)
+        ua: User agent string for requests
+
+    Returns:
+        List[str]: List of discovered sitemap URLs (empty if none found)
+    """
+    parsed = urllib.parse.urlparse(base_url)
+    base = f"{parsed.scheme}://{parsed.netloc}"
+
+    common_sitemap_paths = [
+        '/sitemap.xml',
+        '/sitemap_index.xml',
+        '/sitemap-index.xml',
+        '/sitemaps.xml',
+        '/sitemap.xml.gz',
+    ]
+
+    discovered = []
+
+    for path in common_sitemap_paths:
+        sitemap_url = base + path
+
+        try:
+            # Try to fetch the sitemap with a HEAD request first
+            req = urllib.request.Request(sitemap_url, method='HEAD')
+            req.add_header('User-Agent', ua)
+
+            with urllib.request.urlopen(req, timeout=10) as response:
+                if response.status == 200:
+                    content_type = response.headers.get('Content-Type', '')
+                    # Accept text/xml, application/xml, or gzipped content
+                    if 'xml' in content_type or path.endswith('.gz'):
+                        discovered.append(sitemap_url)
+                        logging.info(f"Discovered sitemap: {sitemap_url}")
+        except Exception as e:
+            logging.debug(f"No sitemap at {sitemap_url}: {e}")
+            continue
+
+    if not discovered:
+        logging.info(f"No sitemaps found for {base_url}")
+
+    return discovered
+
+def parse_sitemap(sitemap_url: str, ua: str) -> list:
+    """
+    Parse sitemap.xml and extract URLs with metadata.
+    解析 sitemap.xml 并提取带元数据的 URL。
+
+    Supports:
+    - Regular sitemap.xml files
+    - Gzipped sitemap.xml.gz files
+    - Sitemap index files (references to other sitemaps)
+
+    Args:
+        sitemap_url: URL of the sitemap to parse
+        ua: User agent string for requests
+
+    Returns:
+        List[dict]: List of URL dictionaries with keys:
+            - url: The URL
+            - priority: Priority value (0.0-1.0, default 0.5)
+            - lastmod: Last modification date (ISO format string, or None)
+            - changefreq: Change frequency (e.g., 'daily', 'weekly', or None)
+    """
+    urls = []
+
+    try:
+        # Fetch sitemap content
+        req = urllib.request.Request(sitemap_url)
+        req.add_header('User-Agent', ua)
+
+        with urllib.request.urlopen(req, timeout=30) as response:
+            content = response.read()
+
+        # Handle gzipped sitemaps
+        if sitemap_url.endswith('.gz'):
+            try:
+                content = gzip.decompress(content)
+            except Exception as e:
+                logging.error(f"Failed to decompress gzipped sitemap {sitemap_url}: {e}")
+                return []
+
+        # Parse XML
+        try:
+            root = ET.fromstring(content)
+        except ET.ParseError as e:
+            logging.error(f"Failed to parse sitemap XML {sitemap_url}: {e}")
+            return []
+
+        # Detect sitemap namespace (if any)
+        namespace_match = re.match(r'\{(.*)\}', root.tag)
+        ns = {'sm': namespace_match.group(1)} if namespace_match else {}
+
+        # Check if this is a sitemap index (contains <sitemap> tags)
+        if root.tag.endswith('sitemapindex'):
+            logging.info(f"Detected sitemap index: {sitemap_url}")
+
+            # Parse sitemap index - find all <sitemap> entries
+            sitemap_tags = root.findall('.//sm:sitemap/sm:loc', ns) if ns else root.findall('.//sitemap/loc')
+
+            for sitemap_tag in sitemap_tags:
+                sub_sitemap_url = sitemap_tag.text.strip()
+                logging.info(f"Found sub-sitemap: {sub_sitemap_url}")
+
+                # Recursively parse sub-sitemaps
+                sub_urls = parse_sitemap(sub_sitemap_url, ua)
+                urls.extend(sub_urls)
+
+        else:
+            # Parse regular sitemap - find all <url> entries
+            url_tags = root.findall('.//sm:url', ns) if ns else root.findall('.//url')
+
+            for url_tag in url_tags:
+                # Extract URL
+                loc_tag = url_tag.find('sm:loc', ns) if ns else url_tag.find('loc')
+                if loc_tag is None or not loc_tag.text:
+                    continue
+
+                url_str = loc_tag.text.strip()
+
+                # Extract priority (optional, default 0.5)
+                priority_tag = url_tag.find('sm:priority', ns) if ns else url_tag.find('priority')
+                priority = float(priority_tag.text) if priority_tag is not None and priority_tag.text else 0.5
+
+                # Extract lastmod (optional)
+                lastmod_tag = url_tag.find('sm:lastmod', ns) if ns else url_tag.find('lastmod')
+                lastmod = lastmod_tag.text.strip() if lastmod_tag is not None and lastmod_tag.text else None
+
+                # Extract changefreq (optional)
+                changefreq_tag = url_tag.find('sm:changefreq', ns) if ns else url_tag.find('changefreq')
+                changefreq = changefreq_tag.text.strip() if changefreq_tag is not None and changefreq_tag.text else None
+
+                urls.append({
+                    'url': url_str,
+                    'priority': priority,
+                    'lastmod': lastmod,
+                    'changefreq': changefreq
+                })
+
+            logging.info(f"Parsed {len(urls)} URLs from sitemap {sitemap_url}")
+
+    except urllib.error.HTTPError as e:
+        logging.error(f"HTTP error fetching sitemap {sitemap_url}: {e.code} {e.reason}")
+    except urllib.error.URLError as e:
+        logging.error(f"URL error fetching sitemap {sitemap_url}: {e.reason}")
+    except Exception as e:
+        logging.error(f"Unexpected error parsing sitemap {sitemap_url}: {e}")
+
+    return urls
+
+def crawl_from_sitemap(start_url: str, ua: str, max_pages: int = 1000,
+                       delay: float = 0.5, **kwargs) -> list:
+    """
+    Crawl a website using sitemap.xml as the primary URL source.
+    使用 sitemap.xml 作为主要 URL 来源爬取网站。
+
+    Falls back to regular BFS crawling if no sitemap is found.
+    如果未找到 sitemap 则回退到常规 BFS 爬取。
+
+    Args:
+        start_url: Starting URL for crawling
+        ua: User agent string
+        max_pages: Maximum number of pages to crawl
+        delay: Delay between requests
+        **kwargs: Additional arguments to pass to crawl_site() if fallback is needed
+
+    Returns:
+        List of (url, html, depth) tuples, same format as crawl_site()
+    """
+    logging.info("Task-008 Phase 2: Attempting sitemap-first crawling / 尝试sitemap优先爬取")
+
+    # Step 1: Discover sitemaps
+    sitemaps = discover_sitemaps(start_url, ua)
+
+    if not sitemaps:
+        logging.info("No sitemaps found, falling back to BFS crawling / 未找到sitemap，回退到BFS爬取")
+        return crawl_site(start_url, ua, max_pages=max_pages, delay=delay, **kwargs)
+
+    # Step 2: Parse all discovered sitemaps
+    all_urls = []
+    for sitemap_url in sitemaps:
+        logging.info(f"Parsing sitemap: {sitemap_url}")
+        urls_from_sitemap = parse_sitemap(sitemap_url, ua)
+        all_urls.extend(urls_from_sitemap)
+
+    if not all_urls:
+        logging.warning("Sitemaps found but no URLs extracted, falling back to BFS / Sitemap已找到但无URL提取，回退到BFS")
+        return crawl_site(start_url, ua, max_pages=max_pages, delay=delay, **kwargs)
+
+    logging.info(f"Extracted {len(all_urls)} URLs from sitemaps / 从sitemap提取了 {len(all_urls)} 个URL")
+
+    # Step 3: Sort URLs by priority (high to low) and lastmod (recent first)
+    def sort_key(url_dict):
+        priority = url_dict.get('priority', 0.5)
+        # Convert lastmod to timestamp for sorting (None = 0)
+        lastmod = url_dict.get('lastmod')
+        lastmod_ts = 0
+        if lastmod:
+            try:
+                # Parse ISO format date/datetime
+                from datetime import datetime
+                dt = datetime.fromisoformat(lastmod.replace('Z', '+00:00'))
+                lastmod_ts = dt.timestamp()
+            except:
+                lastmod_ts = 0
+
+        return (-priority, -lastmod_ts)  # Negative for descending order
+
+    all_urls.sort(key=sort_key)
+
+    # Step 4: Limit to max_pages
+    urls_to_fetch = all_urls[:max_pages]
+    logging.info(f"Will fetch {len(urls_to_fetch)} URLs (limited by max_pages={max_pages}) / 将获取 {len(urls_to_fetch)} 个URL")
+
+    # Step 5: Fetch each URL from sitemap
+    results = []
+    for i, url_dict in enumerate(urls_to_fetch):
+        url = url_dict['url']
+
+        try:
+            logging.info(f"[{i+1}/{len(urls_to_fetch)}] Fetching: {url}")
+
+            # Fetch the page
+            html = fetch_html(url, ua)
+
+            if html:
+                # Add to results (depth=0 for sitemap-sourced URLs)
+                results.append((url, html, 0))
+            else:
+                logging.warning(f"Failed to fetch: {url}")
+
+            # Respect crawl delay
+            if delay > 0 and i < len(urls_to_fetch) - 1:
+                time.sleep(delay)
+
+        except Exception as e:
+            logging.error(f"Error fetching {url}: {e}")
+            continue
+
+    logging.info(f"Sitemap crawl completed: {len(results)}/{len(urls_to_fetch)} pages fetched successfully")
+
+    return results
+
+# ============================================================================
+# End of Task-008 Phase 2 Sitemap Functions
+# Task-008 Phase 2 Sitemap 功能结束
+# ============================================================================
+
 def detect_government_site(url: str, html: str) -> bool:
     """
     Detect if a website is a government site based on domain patterns and HTML content.
@@ -4031,6 +4299,11 @@ def main():
     ap.add_argument('--same-domain-only', action='store_true', default=True,
                     help='Only crawl URLs from the same domain (default: True) / 仅爬取同域名的URL（默认：True）')
 
+    # Task-008 Phase 2: Sitemap support
+    # Task-008 Phase 2：Sitemap 支持
+    ap.add_argument('--use-sitemap', action='store_true',
+                    help='Use sitemap.xml for site crawling (if available, falls back to BFS if not found) / 使用 sitemap.xml 进行站点爬取（如可用，未找到时回退到BFS）')
+
     ap.add_argument('--format', choices=['markdown', 'html', 'both'], default='markdown',
                     help='Output format: markdown (default), html, or both')
     
@@ -4101,20 +4374,37 @@ def main():
         if not args.same_domain_only:
             logging.warning("Cross-domain crawling enabled - use with caution / 已启用跨域爬取 - 请谨慎使用")
 
+        # Task-008 Phase 2: Log sitemap mode
+        if args.use_sitemap:
+            logging.info("Sitemap-first crawling enabled / 已启用sitemap优先爬取")
+
         # Check if supported site type
         if 'mp.weixin.qq.com' in host or 'xiaohongshu.com' in host or 'xhslink.com' in original_host or 'dianping.com' in host:
             logging.error("Site crawling not supported for social media sites")
             sys.exit(1)
 
-        # Crawl the site
-        crawled_pages = crawl_site(
-            url, ua,
-            max_depth=args.max_crawl_depth,
-            max_pages=args.max_pages,
-            delay=args.crawl_delay,
-            follow_pagination=args.follow_pagination,      # NEW: pass pagination flag
-            same_domain_only=args.same_domain_only        # NEW: pass domain filter
-        )
+        # Task-008 Phase 2: Choose crawling method based on --use-sitemap flag
+        if args.use_sitemap:
+            # Use sitemap-first crawling (with automatic fallback to BFS)
+            crawled_pages = crawl_from_sitemap(
+                url, ua,
+                max_pages=args.max_pages,
+                delay=args.crawl_delay,
+                # Pass additional args for fallback
+                max_depth=args.max_crawl_depth,
+                follow_pagination=args.follow_pagination,
+                same_domain_only=args.same_domain_only
+            )
+        else:
+            # Use regular BFS crawling
+            crawled_pages = crawl_site(
+                url, ua,
+                max_depth=args.max_crawl_depth,
+                max_pages=args.max_pages,
+                delay=args.crawl_delay,
+                follow_pagination=args.follow_pagination,      # Task-008 Phase 1
+                same_domain_only=args.same_domain_only        # Task-008 Phase 1
+            )
         
         if crawled_pages:
             # Detect appropriate parser from first page
