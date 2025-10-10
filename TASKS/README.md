@@ -2,31 +2,40 @@
 # TASKS目录 - 任务管理中心
 
 ## Current Status / 当前状态
-*Last Updated / 最后更新: 2025-10-10 15:40*
+*Last Updated / 最后更新: 2025-10-10 16:05*
 
 | Priority / 优先级 | Pending / 待办 | Completed / 已完成 | Deferred / 延期 |
 |-------------------|----------------|--------------------|------------------|
 | P1 (Critical) | 0 | 10 | 0 |
-| P2 (Important) | 1 | 4 | 0 |
+| P2 (Important) | 0 | 5 | 0 |
 | P3 (Stability) | 0 | 1 | 0 |
 | Deferred | 0 | 0 | 1 |
 
 ## 🚀 Active Tasks / 当前任务
 
-### **Task-4: Wikipedia Parser Optimization** *(P2)*
-- **Status / 状态**: Planning Complete ✅ / Ready for Execution / 规划完成，准备执行
-- **Goal / 目标**: Create Wikipedia-specific template, improve content extraction quality / 创建维基百科专用模板，提升内容提取质量
-- **Value / 价值**: Improve parsing quality from 20% → >95% content-to-noise ratio / 将解析质量从20%提升到>95%内容噪音比
-- **Deliverables / 交付物**: Wikipedia template, tests, documentation / 维基百科模板、测试、文档
-- **Estimated Effort / 预计工时**: 6-8 hours / 6-8小时
-- **Next Action / 下一步**: Ready to begin execution / 准备开始执行
+*No active tasks at the moment. All P1/P2 tasks completed!*
+
+*当前无活动任务。所有P1/P2任务已完成！*
 
 ### Deferred / 延期
 - `deferred/task-005-error-system-phase3-4.md`：错误系统高级特性，待收集生产数据后再评估。
 
 ## ✅ Recently Completed / 最近完成
 
-### Task-003: Core Module Pruning ✅ *(NEW)*
+### Task-004: Wikipedia Parser Optimization ✅ *(NEW)*
+- **Status:** Completed 2025-10-10
+- **Grade:** A (95/100)
+- **Commit:** be80b8b
+- **Archive:** [task-004](archive/completed/task-004-wikipedia-parser-optimization/)
+- **Key Results:**
+  - Wikipedia template achieving >95% content-to-noise ratio
+  - 4.75x quality improvement (20% → >95%)
+  - Zero navigation noise (120 lines → 0 lines)
+  - Output reduced 50% (639 → 317 lines)
+  - CSS leakage completely eliminated
+  - Phase 3.5: Template-based generic parser implemented
+
+### Task-003: Core Module Pruning ✅
 - **Status:** Partially Completed 2025-10-10
 - **Grade:** B+ (88/100)
 - **Commit:** e0790e4
@@ -91,7 +100,7 @@ archive/
 2. ✅ ~~完成 Task-2 Regression Test Harness，为后续精简与回归提供保障。~~ (COMPLETED 2025-10-10)
 3. ✅ ~~完成 Task-3 ChromeDriver Version Management，锁定兜底稳定性。~~ (COMPLETED 2025-10-10)
 4. ✅ ~~完成 Task-3 Core Module Pruning (Stages 1-2)，删除19个文件。~~ (COMPLETED 2025-10-10)
-5. 🎯 **当前任务：Task-4 Wikipedia Parser Optimization** / Current task: Improve Wikipedia parsing quality
+5. ✅ ~~完成 Task-4 Wikipedia Parser Optimization，4.75x质量提升。~~ (COMPLETED 2025-10-10)
 6. 🔮 **战略规划：下阶段功能规划** / Strategic planning: Next phase feature planning
 
 ## 📝 Maintenance Notes / 维护指引
