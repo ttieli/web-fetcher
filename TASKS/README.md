@@ -2,18 +2,39 @@
 # TASKS目录 - 任务管理中心
 
 ## Current Status / 当前状态
-*Last Updated / 最后更新: 2025-10-10 22:00*
+*Last Updated / 最后更新: 2025-10-10 23:00*
 
 | Priority / 优先级 | Pending / 待办 | Completed / 已完成 | Deferred / 延期 |
 |-------------------|----------------|--------------------|------------------|
 | P1 (Critical) | 0 | 10 | 0 |
-| P2 (Important) | 0 | 8 | 0 |
+| P2 (Important) | 1 | 8 | 0 |
 | P3 (Stability) | 0 | 1 | 0 |
 | Deferred | 0 | 0 | 1 |
 
 ## 🚀 Active Tasks / 当前任务
 
-No active tasks. Ready for next phase planning. / 无活跃任务。准备下一阶段规划。
+### Task-008: Enhanced Multi-Page and Whole-Site Crawling 🆕
+- **Status:** PENDING / 待办
+- **Priority:** P2 (Important / 重要)
+- **File:** `task-008-enhanced-multi-page-site-crawling.md`
+- **Estimated Effort:** 16-22 hours / 16-22小时
+- **Created:** 2025-10-10
+- **Objective:**
+  - Fix critical bug: `--follow-pagination` flag missing in webfetcher.py
+  - Enhance multi-page crawling capabilities (page ranges, URL patterns)
+  - Improve whole-site crawling (robots.txt, sitemap.xml support)
+  - Add structured output formats (JSON index, CSV reports)
+  - Implement resume capability for interrupted crawls
+- **Key Features:**
+  - Phase 1: Bug fixes + parameter exposure (4-6h)
+  - Phase 2: Robots.txt + sitemap support (5-7h)
+  - Phase 3: Advanced crawling features (4-6h)
+  - Phase 4: Structured output (3-4h)
+  - Phase 5: Resume capability (3-4h)
+- **Impact:**
+  - Fixes broken `wf site` command
+  - Enables production-ready site crawling
+  - Supports diverse crawling strategies
 
 ### Deferred / 延期
 - `deferred/task-005-error-system-phase3-4.md`：错误系统高级特性，待收集生产数据后再评估。
