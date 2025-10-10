@@ -53,6 +53,11 @@ from tests.regression.regression_runner import (
     TestStatus,
     print_summary
 )
+from tests.regression.dual_method_runner import (
+    DualMethodRunner,
+    DualMethodResult,
+    print_summary as print_dual_summary
+)
 from tests.regression.baseline_manager import BaselineManager, Baseline
 from tests.regression.report_generator import ReportGenerator, write_report
 
@@ -206,6 +211,14 @@ Examples / 示例:
         help='Exit 1 on any warning / 任何警告时退出码为 1'
     )
 
+    # Dual-method testing
+    # 双方法测试
+    parser.add_argument(
+        '--dual-method',
+        action='store_true',
+        help='Enable dual-method testing (urllib + selenium) / 启用双方法测试（urllib + selenium）'
+    )
+
     args = parser.parse_args()
 
     # Setup logging
@@ -219,12 +232,19 @@ Examples / 示例:
     else:
         suite_file = Path(__file__).parent.parent / 'tests' / 'url_suite.txt'
 
-    # Initialize runner
-    # 初始化运行器
-    runner = RegressionRunner(
-        timeout=args.timeout,
-        skip_manual=not args.include_manual
-    )
+    # Initialize runner (dual-method or single-method)
+    # 初始化运行器（双方法或单方法）
+    if args.dual_method:
+        runner = DualMethodRunner(
+            timeout=args.timeout,
+            skip_manual=not args.include_manual
+        )
+        print("Dual-method testing enabled (urllib + selenium)\n")
+    else:
+        runner = RegressionRunner(
+            timeout=args.timeout,
+            skip_manual=not args.include_manual
+        )
 
     # Handle single URL mode
     # 处理单个 URL 模式
@@ -233,31 +253,72 @@ Examples / 示例:
 
         # Create ad-hoc test
         # 创建临时测试
-        test = URLTest(
-            url=args.url,
-            description="Ad-hoc URL test",
-            expected_strategy="auto",
-            tags=set(),
-            line_number=0
-        )
+        if args.dual_method:
+            test = URLTest(
+                url=args.url,
+                description="Ad-hoc URL test (dual-method)",
+                expected_strategies=["urllib", "selenium"],
+                tags=set(),
+                line_number=0,
+                compare_methods=True
+            )
+            result = runner.run_dual_method_test(test)
 
-        result = runner.run_test(test)
+            # Print dual-method result
+            print(f"URL: {args.url}\n")
+            if result.urllib_result:
+                status = "✓ PASSED" if result.urllib_result.passed else "✗ FAILED"
+                print(f"urllib: {status}")
+                print(f"  Duration: {result.urllib_result.duration:.2f}s")
+                print(f"  Content Size: {result.urllib_result.content_size:,} bytes")
+                if result.urllib_result.error_message:
+                    print(f"  Error: {result.urllib_result.error_message}")
+                print()
 
-        # Print result
-        # 打印结果
-        if result.passed:
-            print(f"✓ PASSED: {args.url}")
-            print(f"  Duration: {result.duration:.2f}s")
-            print(f"  Content Size: {result.content_size:,} bytes")
-            if result.strategy_used:
-                print(f"  Strategy Used: {result.strategy_used}")
-            sys.exit(0)
+            if result.selenium_result:
+                status = "✓ PASSED" if result.selenium_result.passed else "✗ FAILED"
+                print(f"selenium: {status}")
+                print(f"  Duration: {result.selenium_result.duration:.2f}s")
+                print(f"  Content Size: {result.selenium_result.content_size:,} bytes")
+                if result.selenium_result.error_message:
+                    print(f"  Error: {result.selenium_result.error_message}")
+                print()
+
+            if result.comparison:
+                print(f"Comparison:")
+                print(f"  Difference Level: {result.comparison.difference_level.value}")
+                print(f"  URL Classification: {result.comparison.url_classification.value}")
+                print(f"  Size Difference: {result.comparison.size_diff_percent:.1f}%")
+                print(f"  Speed Ratio: {result.comparison.speed_ratio:.2f}x")
+                if result.comparison.notes:
+                    print(f"  Notes: {', '.join(result.comparison.notes)}")
+
+            sys.exit(0 if result.any_passed else 1)
         else:
-            print(f"✗ FAILED: {args.url}")
-            print(f"  Duration: {result.duration:.2f}s")
-            if result.error_message:
-                print(f"  Error: {result.error_message}")
-            sys.exit(1)
+            test = URLTest(
+                url=args.url,
+                description="Ad-hoc URL test",
+                expected_strategies=["auto"],
+                tags=set(),
+                line_number=0
+            )
+            result = runner.run_test(test)
+
+            # Print result
+            # 打印结果
+            if result.passed:
+                print(f"✓ PASSED: {args.url}")
+                print(f"  Duration: {result.duration:.2f}s")
+                print(f"  Content Size: {result.content_size:,} bytes")
+                if result.strategy_used:
+                    print(f"  Strategy Used: {result.strategy_used}")
+                sys.exit(0)
+            else:
+                print(f"✗ FAILED: {args.url}")
+                print(f"  Duration: {result.duration:.2f}s")
+                if result.error_message:
+                    print(f"  Error: {result.error_message}")
+                sys.exit(1)
 
     # Load test suite
     # 加载测试套件
@@ -362,7 +423,10 @@ Examples / 示例:
     else:
         # Default: print summary to terminal
         # 默认：向终端打印摘要
-        print_summary(results)
+        if args.dual_method:
+            print_dual_summary(results)
+        else:
+            print_summary(results)
 
         # Show comparison if baseline provided
         # 如果提供基线，显示比较
@@ -397,8 +461,13 @@ Examples / 示例:
 
     # Determine exit code
     # 确定退出代码
-    passed = sum(1 for r in results if r.passed)
-    failed = sum(1 for r in results if r.failed or r.status == TestStatus.ERROR)
+    if args.dual_method:
+        # For dual-method, count tests where at least one method passed
+        passed = sum(1 for r in results if r.any_passed)
+        failed = sum(1 for r in results if r.both_failed)
+    else:
+        passed = sum(1 for r in results if r.passed)
+        failed = sum(1 for r in results if r.failed or r.status == TestStatus.ERROR)
 
     # Check for regressions if --fail-on-regression
     # 如果 --fail-on-regression，检查回归
