@@ -62,6 +62,21 @@ from error_handler import (
 # Smart routing for SSL problematic domains (Phase 3.5)
 from config.ssl_problematic_domains import should_use_selenium_directly
 
+# Config-Driven Routing System (Task-1) - intelligently route URLs to appropriate fetcher
+try:
+    from routing import RoutingEngine, RoutingDecision
+    routing_engine = RoutingEngine()
+    ROUTING_ENGINE_AVAILABLE = True
+    logging.info("Config-driven routing system initialized")
+except ImportError as e:
+    logging.debug(f"Routing engine not available: {e}")
+    ROUTING_ENGINE_AVAILABLE = False
+    routing_engine = None
+except Exception as e:
+    logging.warning(f"Failed to initialize routing engine: {e}")
+    ROUTING_ENGINE_AVAILABLE = False
+    routing_engine = None
+
 # Manual Chrome Hybrid Mode (Task 000) - graceful degradation when not available
 try:
     import yaml
@@ -1047,7 +1062,38 @@ def ensure_chrome_debug(config: Optional[Dict[str, Any]] = None) -> tuple[bool, 
         )
 
 
-def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30, 
+def _determine_fetcher_via_routing(url: str) -> Optional[str]:
+    """
+    Determine which fetcher to use based on routing configuration.
+
+    This replaces hardcoded routing logic with configuration-driven decisions.
+
+    Args:
+        url: Target URL to fetch
+
+    Returns:
+        Fetcher name ('urllib', 'selenium', 'manual_chrome') or None if routing disabled
+    """
+    if not ROUTING_ENGINE_AVAILABLE or routing_engine is None:
+        return None
+
+    try:
+        decision = routing_engine.evaluate(url)
+
+        # Log the routing decision
+        logging.info(
+            f"Routing decision: {decision.fetcher} for {url} "
+            f"(rule: {decision.rule_name}, priority: {decision.priority})"
+        )
+
+        return decision.fetcher
+
+    except Exception as e:
+        logging.warning(f"Routing engine evaluation failed for {url}: {e}")
+        return None
+
+
+def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
                          fetch_mode: str = 'auto') -> tuple[str, FetchMetrics]:
     """
     Fetch HTML with exponential backoff retry logic and optional Selenium fallback.
@@ -1071,23 +1117,34 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
     start_time = time.time()
     last_exception = None
 
-    # === IMMEDIATE ROUTING: Check for SSL problematic domains ===
-    # === 即刻路由：检查SSL问题域名 ===
-    if fetch_mode == 'auto' and should_use_selenium_directly(url):
-        print(f"🚀 Direct routing to Selenium for known problematic domain: {url}", file=sys.stderr)
-        logging.info(f"🚀 Direct routing to Selenium for known problematic domain: {url}")
-        metrics.primary_method = "selenium_direct"
+    # === CONFIG-DRIVEN ROUTING: Intelligent fetcher selection ===
+    # === 配置驱动路由：智能获取器选择 ===
+    if fetch_mode == 'auto':
+        # Try config-driven routing first (Task-1)
+        fetcher_choice = _determine_fetcher_via_routing(url)
 
-        # Use existing Selenium fetch helper function
-        # 使用现有的Selenium获取辅助函数
-        try:
-            return _try_selenium_fetch(url, ua, timeout, metrics, start_time)
-        except Exception as e:
-            # Log but don't fail completely - let urllib try as last resort
-            # 记录但不完全失败 - 让urllib作为最后手段尝试
-            logging.warning(f"Direct Selenium fetch failed for {url}, falling back to urllib: {e}")
-            metrics.primary_method = "urllib"  # Reset for urllib attempt
-            # Continue to urllib logic below
+        if fetcher_choice == 'selenium':
+            print(f"🚀 Config-driven routing: Using Selenium for {url}", file=sys.stderr)
+            logging.info(f"🚀 Config-driven routing to Selenium: {url}")
+            metrics.primary_method = "selenium_direct"
+
+            try:
+                return _try_selenium_fetch(url, ua, timeout, metrics, start_time)
+            except Exception as e:
+                logging.warning(f"Selenium fetch failed for {url}, falling back to urllib: {e}")
+                metrics.primary_method = "urllib"
+                # Continue to urllib logic below
+
+        elif fetcher_choice == 'manual_chrome':
+            # Manual Chrome requested by routing config
+            # This should rarely happen as manual_chrome is typically a fallback
+            # But configuration allows it for specific problematic sites
+            logging.info(f"Config-driven routing requested manual_chrome for {url}")
+            # Let manual Chrome be triggered via normal fallback chain
+            # Don't force it here to allow other methods to try first
+            pass
+
+        # If fetcher_choice is 'urllib' or None, continue with normal urllib flow
 
     # Phase 2: Handle selenium-only mode first
     if fetch_mode == 'selenium':

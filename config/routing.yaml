@@ -1,0 +1,68 @@
+# Web Fetcher Routing Configuration
+# 网页获取器路由配置
+version: "1.0"
+
+# Global Settings / 全局设置
+global:
+  default_fetcher: urllib
+  cache_ttl: 3600
+  enable_logging: true
+
+# Routing Rules / 路由规则
+# Rules are evaluated in priority order (higher number = higher priority)
+# 规则按优先级顺序评估（数字越大优先级越高）
+rules:
+  # High Priority: Known problematic sites / 高优先级：已知问题网站
+  - name: "CEB Bank Anti-Bot Protection"
+    name_zh: "光大银行反爬虫保护"
+    priority: 100
+    enabled: true
+    conditions:
+      domain: "cebbank.com.cn"
+      url_pattern: ".*/(site|zhpd)/.*"
+    action:
+      fetcher: "manual_chrome"
+      reason: "Known anti-bot protection requiring manual navigation"
+      reason_zh: "已知反爬虫保护，需要手动导航"
+
+  - name: "JavaScript-Heavy Sites"
+    name_zh: "JavaScript重度网站"
+    priority: 50
+    enabled: true
+    conditions:
+      domain_list:
+        - "xiaohongshu.com"
+        - "xhs.com"
+      url_pattern: ".*/(explore|user|note)/.*"
+    action:
+      fetcher: "selenium"
+      config:
+        wait_time: 5
+        scroll: true
+      reason: "Requires JavaScript rendering"
+      reason_zh: "需要JavaScript渲染"
+
+  - name: "WeChat Articles"
+    name_zh: "微信文章"
+    priority: 50
+    enabled: true
+    conditions:
+      domain: "mp.weixin.qq.com"
+    action:
+      fetcher: "selenium"
+      config:
+        wait_time: 3
+      reason: "WeChat requires JavaScript"
+      reason_zh: "微信需要JavaScript"
+
+  # Default fallback (lowest priority) / 默认回退（最低优先级）
+  - name: "Default - Static Sites"
+    name_zh: "默认 - 静态网站"
+    priority: 1
+    enabled: true
+    conditions:
+      always: true
+    action:
+      fetcher: "urllib"
+      reason: "Standard static content"
+      reason_zh: "标准静态内容"
