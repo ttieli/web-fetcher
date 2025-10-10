@@ -1,0 +1,20 @@
+{
+  "timestamp": "2025-10-09T19:31:50.636507",
+  "checks": {
+    "python_version": "3.13.7",
+    "selenium": {
+      "installed": true,
+      "version": "4.35.0"
+    },
+    "pychrome": {
+      "installed": false
+    },
+    "requests": {
+      "installed": false
+    },
+    "chrome_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "chrome_version": "Google Chrome 141.0.7390.65",
+    "chromedriver": "ChromeDriver 140.0.7339.207 (17230b545fd18b35aad49122e5af97a463bc7a9c-refs/branch-heads/7339@{#2364})",
+    "chrome_debug": null
+  }
+}

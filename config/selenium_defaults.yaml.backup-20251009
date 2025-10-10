@@ -58,6 +58,7 @@ js_detection:
   
 # Chrome Options for Stability
 chrome_options:
+  - "--disable-web-security"     # Bypass CORS for development
   - "--disable-features=VizDisplayCompositor"  # Stability improvement
   - "--disable-extensions"       # Reduce overhead
   - "--no-sandbox"               # Required for some environments
