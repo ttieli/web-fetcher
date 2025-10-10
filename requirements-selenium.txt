@@ -20,6 +20,9 @@ jsonschema>=4.0.0,<5.0.0
 # HTML to Markdown conversion for content extraction
 html2text>=2020.1.16
 
+# HTTP library for ChromeDriver download
+requests>=2.28.0,<3.0.0
+
 # REMOVED: webdriver-manager - conflicts with CDP-only approach
 # webdriver-manager is NOT needed because we connect to existing Chrome debug port
 # This avoids ChromeDriver version management complexity
