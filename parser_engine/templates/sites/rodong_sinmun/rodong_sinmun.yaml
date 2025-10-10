@@ -1,0 +1,44 @@
+# Rodong Sinmun Template v1.0
+# Template for parsing Rodong Sinmun articles (www.rodong.rep.kp)
+# Using string-based selectors for TemplateParser compatibility
+
+name: "Rodong Sinmun Articles"
+version: "1.0.0"
+domains:
+  - "www.rodong.rep.kp"
+  - "rodong.rep.kp"
+priority: 100  # High priority for exact domain match
+
+# ============================================================================
+# SELECTOR PATTERNS - String format for TemplateParser compatibility
+# ============================================================================
+
+selectors:
+  # Title from paragraph with class TitleP
+  title: "p.TitleP, .RevoTitleP, title"
+
+  # Content from ContDIV container
+  content: "#ContDIV, #articleContent .container"
+
+  # Date from article header
+  date: "#article-date"
+
+  # Author default (no author field on page)
+  author: "meta[name='author']@content"
+
+  # Images
+  images: "#ContDIV img, #articleContent img"
+
+# Metadata configuration
+metadata:
+  fields:
+    - author
+    - publish_time
+    - images
+    - title
+    - url
+    - fetch_time
+  defaults:
+    author: "劳动新闻"
+    title: "未命名"
+    publish_time: ""
