@@ -227,10 +227,11 @@ def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
 
 def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_crawling: bool = False) -> tuple[str, str, dict]:
     """
-    Generic parser - Migration adapter
+    Generic parser - Template-based implementation
 
     Phase 3.1: Framework with TODO markers
     Phase 3.3: Implement template-based generic parsing
+    Phase 3.5 (Task-4): Added template-based parsing with fallback to legacy
 
     Args:
         html: HTML content of the page
@@ -241,17 +242,80 @@ def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_craw
     Returns:
         tuple: (date_only, markdown_content, metadata)
     """
-    # TODO Phase 3.3: Implement template-based generic parsing
-    # 1. Use adaptive template selection based on content analysis
-    # 2. Initialize TemplateParser with selected template
-    # 3. Parse HTML using template selectors
-    # 4. Transform parsed data to markdown
-    # 5. Return formatted result
+    try:
+        # Phase 3.5: Try template-based parsing first
+        from parser_engine.template_parser import TemplateParser
+        from parser_engine.engine.template_loader import TemplateLoader
+        import os
 
-    # For now, delegate to legacy implementation
-    logger.info("Phase 3.1: Using legacy generic parser (template-based migration pending)")
-    from parsers_legacy import generic_to_markdown as legacy_generic_parser
-    return legacy_generic_parser(html, url, filter_level, is_crawling)
+        # Initialize template parser
+        template_dir = os.path.join(
+            os.path.dirname(__file__),
+            'parser_engine', 'templates'
+        )
+        parser = TemplateParser(template_dir=template_dir)
+
+        # Parse using template engine (will auto-select based on URL domain)
+        result = parser.parse(html, url)
+
+        if not result.success:
+            # Template parsing failed or no template found, use legacy
+            raise Exception(f"Template parsing failed: {result.errors}")
+
+        # Template parsing succeeded
+        logger.info(f"Phase 3.5: Successfully parsed using template '{result.template_name}' for {url}")
+
+        # Extract parsed data
+        title = result.title or "未命名"
+        author = result.metadata.get('author', 'Wikipedia contributors')
+        publish_time = result.metadata.get('date', '')
+        images = result.metadata.get('images', [])
+        content = result.content or ''
+
+        # Parse date
+        date_only, date_time = parse_date_like(publish_time)
+
+        # Format markdown output
+        lines = [f"# {title}"]
+        meta = [f"- 标题: {title}"]
+        if author:
+            meta.append(f"- 作者: {author}")
+        if publish_time:
+            meta.append(f"- 发布时间: {date_time}")
+        meta += [
+            f"- 来源: {url}",
+            f"- 抓取时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        ]
+
+        # Add metadata section
+        lines += meta
+
+        # Add main content
+        if content:
+            lines += ["", content]
+
+        # Add images section if images exist
+        if images:
+            lines += ["", "## 图片", ""] + [f"![]({normalize_media_url(u)})" for u in images]
+
+        # Combine into markdown
+        markdown_content = "\n\n".join(lines).strip() + "\n"
+
+        # Build metadata dictionary
+        metadata = {
+            'author': author,
+            'images': [normalize_media_url(u) for u in images],
+            'publish_time': publish_time,
+            'template_used': result.template_name
+        }
+
+        return date_only, markdown_content, metadata
+
+    except Exception as e:
+        # Fallback to legacy implementation if template parsing fails
+        logger.info(f"Phase 3.5: No template found or template parsing failed for {url}, using legacy parser")
+        from parsers_legacy import generic_to_markdown as legacy_generic_parser
+        return legacy_generic_parser(html, url, filter_level, is_crawling)
 
 
 # ============================================================================
