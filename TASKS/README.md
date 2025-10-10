@@ -2,18 +2,30 @@
 # TASKS目录 - 任务管理中心
 
 ## Current Status / 当前状态
-*Last Updated / 最后更新: 2025-10-10 18:00*
+*Last Updated / 最后更新: 2025-10-10 18:15*
 
 | Priority / 优先级 | Pending / 待办 | Completed / 已完成 | Deferred / 延期 |
 |-------------------|----------------|--------------------|------------------|
 | P1 (Critical) | 0 | 10 | 0 |
-| P2 (Important) | 0 | 6 | 0 |
+| P2 (Important) | 1 | 6 | 0 |
 | P3 (Stability) | 0 | 1 | 0 |
 | Deferred | 0 | 0 | 1 |
 
 ## 🚀 Active Tasks / 当前任务
 
-*No pending tasks / 无待办任务*
+### Task-006: CRI News Empty Content Fix 📋 *(NEW)*
+- **File:** `task-6-cri-news-empty-content-fix.md`
+- **Priority:** P2 (Important) / P2（重要）
+- **Status:** 📋 Pending / 待办
+- **Estimated Effort:** 2-3 hours / 预计2-3小时
+- **Description:** Fix empty content extraction from CRI News (国际在线) by creating site-specific template
+- **描述：** 通过创建站点专用模板修复国际在线新闻空内容提取问题
+- **Root Cause:** Generic template doesn't include `#atitle` and `#abody` ID selectors used by CRI News
+- **根本原因：** 通用模板不包含国际在线使用的`#atitle`和`#abody` ID选择器
+- **Solution:** Create `cri_news.yaml` template with selectors: `#atitle`, `#abody`, `#apublishtime`, `#asource`
+- **解决方案：** 创建`cri_news.yaml`模板，选择器：`#atitle`、`#abody`、`#apublishtime`、`#asource`
+- **Comparison:** Similar to Task-5 (Rodong Sinmun), same TemplateParser format limitation
+- **对比：** 与Task-5（劳动新闻）类似，相同的TemplateParser格式限制
 
 ### Deferred / 延期
 - `deferred/task-005-error-system-phase3-4.md`：错误系统高级特性，待收集生产数据后再评估。
