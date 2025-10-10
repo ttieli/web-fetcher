@@ -28,6 +28,10 @@ class TemplateLoader:
 
         # Find all YAML files in templates directory
         for template_path in self.template_dir.rglob("*.yaml"):
+            # Skip schema files (not actual templates)
+            if template_path.name == 'schema.yaml':
+                continue
+
             try:
                 self._load_template_file(template_path)
             except Exception as e:

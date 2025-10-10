@@ -42,6 +42,18 @@ rules:
       reason: "Requires JavaScript rendering"
       reason_zh: "需要JavaScript渲染"
 
+  # Wikipedia: Static content with template-based parsing / 维基百科：使用模板解析的静态内容
+  - name: "Wikipedia - Static Content"
+    name_zh: "维基百科 - 静态内容"
+    priority: 90
+    enabled: true
+    conditions:
+      domain: "zh.wikipedia.org"
+    action:
+      fetcher: "urllib"
+      reason: "Static MediaWiki content, template-based parsing"
+      reason_zh: "静态MediaWiki内容，使用模板解析"
+
   # Default fallback (lowest priority) / 默认回退（最低优先级）
   - name: "Default - Static Sites"
     name_zh: "默认 - 静态网站"
