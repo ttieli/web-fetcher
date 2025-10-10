@@ -92,3 +92,15 @@ https://www.news.cn/politics/leaders/20251004/0c3e48feeb53492b9d8511ac54f639d3/c
 # Developer Sites / 开发者站点
 # -------------------------------------------
 https://developer.chrome.com/blog/chrome-devtools-mcp?utm_source=chatgpt.com&hl=zh-cn | Chrome DevTools MCP blog | urllib | developer,fast,chrome
+
+# Site Crawling Tests / 站点爬取测试 (Task-008 Phase 1)
+# ========================================================
+
+# Test 1: Basic site crawl - single page
+https://httpbin.org/html | HTTPBin HTML (site crawl test) | urllib | basic,site-crawl,phase1
+
+# Test 2: Multi-page crawl - links test
+https://httpbin.org/links/5/0 | HTTPBin links test (5 links) | urllib | site-crawl,pagination,phase1
+
+# Test 3: Example.com - simple static site
+https://example.com | Example.com (depth test) | urllib | basic,site-crawl,depth-test,phase1
