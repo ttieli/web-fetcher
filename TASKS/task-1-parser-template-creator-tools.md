@@ -1,10 +1,10 @@
-# Task 2: Parser Template Creator Tools / 解析模板创作工具
+# Task 1: Parser Template Creator Tools / 解析模板创作工具
 
 ## Status / 状态
 - Phases 1–3 complete, Phase 4 pending / 第1-3阶段已完成，第4阶段待启动
 
 ## Priority / 优先级
-- P2 – Finish parser modernization / 第二优先级，用于收官解析器现代化
+- P1 – Complete parser modernization / 第一优先级，完成解析器现代化
 
 ## Estimated Effort / 预计工时
 - 3 hours / 3小时

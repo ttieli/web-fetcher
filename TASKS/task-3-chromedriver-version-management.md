@@ -4,7 +4,7 @@
 - Pending execution / 待实施
 
 ## Priority / 优先级
-- P3 – 保证手动与Selenium兜底可持续 / third priority focused on fallback stability
+- P2 – Maintain fallback stability / 第二优先级，维持兜底稳定性
 
 ## Estimated Effort / 预计工时
 - 4 hours / 4小时
