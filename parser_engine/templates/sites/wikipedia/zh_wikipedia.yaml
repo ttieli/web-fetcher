@@ -1,0 +1,306 @@
+# Wikipedia Chinese Articles Template v1.0
+# Template for parsing Chinese Wikipedia articles (zh.wikipedia.org)
+# Optimized for clean content extraction with minimal navigation noise
+# Target: >95% content-to-noise ratio (vs 20% baseline)
+
+name: "Wikipedia Chinese Articles"
+version: "1.0.0"
+domains:
+  - "zh.wikipedia.org"
+priority: 100  # High priority for exact domain match
+
+# ============================================================================
+# SELECTOR PATTERNS - Wikipedia-specific extraction rules
+# ============================================================================
+
+selectors:
+  # ---------------------------------------------------------------------------
+  # TITLE EXTRACTION
+  # Wikipedia uses h1.firstHeading as the canonical article title
+  # Comma-separated fallback selectors (simple string format for TemplateParser)
+  # ---------------------------------------------------------------------------
+  title: "h1.firstHeading, title"
+
+  # ---------------------------------------------------------------------------
+  # AUTHOR EXTRACTION
+  # Wikipedia articles are collaborative, authored by "Wikipedia contributors"
+  # ---------------------------------------------------------------------------
+  author: "meta[name='author']@content"
+
+  # ---------------------------------------------------------------------------
+  # PUBLISH DATE EXTRACTION
+  # Wikipedia shows last modified date in footer
+  # ---------------------------------------------------------------------------
+  date: "#footer-info-lastmod, meta[property='article:modified_time']@content"
+
+  # ---------------------------------------------------------------------------
+  # MAIN CONTENT EXTRACTION
+  # Priority: .mw-parser-output (main content wrapper)
+  # NOTE: Navigation filtering happens in post-processing
+  # ---------------------------------------------------------------------------
+  content: "#mw-content-text .mw-parser-output, article, #bodyContent"
+
+  # ---------------------------------------------------------------------------
+  # IMAGE EXTRACTION
+  # Wikipedia article images
+  # ---------------------------------------------------------------------------
+  images: "#mw-content-text img, .mw-parser-output img"
+
+# ============================================================================
+# METADATA CONFIGURATION
+# ============================================================================
+
+metadata:
+  # Fields to extract for metadata
+  fields:
+    - author
+    - publish_time
+    - images
+    - title
+    - url
+    - fetch_time
+
+  # Default values if extraction fails
+  defaults:
+    author: "Wikipedia contributors"
+    title: "未命名"
+    publish_time: ""
+
+# ============================================================================
+# OUTPUT CONFIGURATION
+# ============================================================================
+
+output:
+  format: "markdown"
+
+  # Markdown header template
+  header_template: |
+    # {title}
+
+    - 标题: {title}
+    - 作者: {author}
+    - 最后修订: {last_modified}
+    - 来源: [{url}]({url})
+    - 抓取时间: {fetch_time}
+
+  # Infobox section (if present)
+  infobox_template: |
+
+    ## 信息框
+
+    {infobox}
+
+  # Content processing rules
+  content_processing:
+    # Remove script and style tags (CSS leak prevention)
+    remove_tags:
+      - "script"
+      - "style"
+      - "noscript"
+
+    # Normalize whitespace
+    normalize_whitespace: true
+
+    # Maximum consecutive newlines
+    max_newlines: 2
+
+    # Convert Wikipedia headings to markdown
+    heading_conversion:
+      enabled: true
+      h2_prefix: "## "
+      h3_prefix: "### "
+      h4_prefix: "#### "
+
+    # Image format in markdown
+    image_format: "![{alt}]({src})"
+
+    # Link format in markdown
+    link_format: "[{text}]({href})"
+
+  # Section templates
+  sections:
+    # Infobox section (if exists)
+    infobox_section: |
+
+      ## 基本信息
+
+      {infobox}
+
+    # Main content section
+    content_section: |
+
+      {content}
+
+    # References section (if exists)
+    references_section: |
+
+      ## 参考文献
+
+      {references}
+
+    # Categories section (if exists)
+    categories_section: |
+
+      ## 分类
+
+      {categories}
+
+# ============================================================================
+# CONTENT FILTERING RULES
+# Critical for achieving >95% content-to-noise ratio
+# ============================================================================
+
+filters:
+  # Remove specific text patterns (UI elements that slip through CSS selectors)
+  remove_patterns:
+    - "^\\[编辑\\]$"                    # [编辑] edit links
+    - "^\\[来源请求\\]$"                # [来源请求] citation needed
+    - "^\\[需要解释\\]$"                # [需要解释] clarification needed
+    - "^目录$"                         # "目录" table of contents header
+    - "^开关目录$"                     # "开关目录" toggle TOC
+    - "^\\d+种语言$"                   # "7种语言" language count
+    - "^编辑链接$"                     # "编辑链接" edit links
+    - "^工具$"                         # "工具" tools menu
+    - "^移至侧栏$"                     # "移至侧栏" move to sidebar
+    - "^隐藏$"                         # "隐藏" hide
+    - "^导航$"                         # "导航" navigation
+    - "^搜索$"                         # "搜索" search
+    - "^个人工具$"                     # "个人工具" personal tools
+    - "^未登录$"                       # "未登录" not logged in
+    - "^讨论$"                         # "讨论" talk
+    - "^贡献$"                         # "贡献" contributions
+    - "^创建账号$"                     # "创建账号" create account
+    - "^登录$"                         # "登录" log in
+    - "^页面$"                         # "页面" page
+    - "^阅读$"                         # "阅读" read
+    - "^查看源代码$"                   # "查看源代码" view source
+    - "^查看历史$"                     # "查看历史" view history
+
+  # CSS classes to remove (additional cleanup)
+  css_classes_to_remove:
+    - "mw-editsection"
+    - "mw-jump"
+    - "noprint"
+    - "metadata"
+    - "navbox"
+    - "sistersitebox"
+
+  # ID attributes to remove
+  ids_to_remove:
+    - "toc"
+    - "catlinks"
+    - "footer"
+
+# ============================================================================
+# SPECIAL HANDLING - Wikipedia-specific
+# ============================================================================
+
+special_handling:
+  # Chinese variant handling (zh-cn, zh-tw, zh-hk, zh-sg)
+  chinese_variants:
+    enabled: true
+    preserve_variant_param: true
+    supported_variants:
+      - "zh-cn"  # Simplified Chinese (China)
+      - "zh-tw"  # Traditional Chinese (Taiwan)
+      - "zh-hk"  # Traditional Chinese (Hong Kong)
+      - "zh-sg"  # Simplified Chinese (Singapore)
+      - "zh-my"  # Simplified Chinese (Malaysia)
+
+  # Infobox extraction and formatting
+  infobox_handling:
+    extract_as_table: true
+    format_as_yaml: true
+    clean_html: true
+    preserve_links: false
+
+  # Reference link handling
+  reference_handling:
+    # Keep reference text but remove superscript markers
+    remove_markers: true
+    preserve_links: true
+    format_as_list: true
+
+  # Heading structure preservation
+  heading_structure:
+    preserve_hierarchy: true
+    convert_to_markdown: true
+    include_section_ids: false
+
+  # URL normalization
+  normalize_urls: true
+
+  # Extract internal wiki links
+  extract_wiki_links: false
+
+# ============================================================================
+# VALIDATION RULES
+# ============================================================================
+
+validation:
+  # Minimum content length (characters)
+  min_content_length: 50
+
+  # Required fields
+  required_fields:
+    - title
+
+  # Content quality checks
+  quality_checks:
+    # Target >95% content-to-noise ratio
+    min_content_to_noise_ratio: 0.95
+
+    # Ensure no CSS code in output
+    no_css_code: true
+
+    # Ensure no JavaScript in output
+    no_javascript: true
+
+    # Minimum text content
+    min_text_length: 100
+
+  # Noise detection patterns (should not appear in output)
+  noise_patterns:
+    - "开关目录"
+    - "编辑链接"
+    - "移至侧栏"
+    - "\\.mw-parser-output"
+    - "function\\s*\\("
+    - "var\\s+\\w+\\s*="
+
+# ============================================================================
+# PERFORMANCE OPTIMIZATION
+# ============================================================================
+
+performance:
+  # Target parsing time (milliseconds)
+  target_parse_time: 3000  # 3 seconds for typical articles
+
+  # Cache template selectors
+  cache_selectors: true
+
+  # Maximum extraction attempts per field
+  max_attempts: 5
+
+  # Timeout for complex regex patterns (milliseconds)
+  regex_timeout: 100
+
+# ============================================================================
+# DEBUGGING AND LOGGING
+# ============================================================================
+
+debug:
+  # Enable debug logging
+  enabled: false
+
+  # Log extraction attempts
+  log_attempts: false
+
+  # Log validation failures
+  log_validation: true
+
+  # Log performance metrics
+  log_performance: true
+
+  # Log noise detection
+  log_noise_detected: true
