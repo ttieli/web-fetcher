@@ -1,0 +1,226 @@
+// Jenkins Pipeline for Regression Tests
+// Jenkins 回归测试管道
+//
+// Usage: Configure in Jenkins as Pipeline from SCM
+// 用法：在 Jenkins 中配置为来自 SCM 的管道
+
+pipeline {
+    agent {
+        docker {
+            image 'python:3.9'
+            args '-v $HOME/.cache/pip:/root/.cache/pip'
+        }
+    }
+
+    options {
+        // Keep builds for 30 days
+        // 保留构建 30 天
+        buildDiscarder(logRotator(daysToKeepStr: '30', numToKeepStr: '50'))
+
+        // Timeout after 1 hour
+        // 1 小时后超时
+        timeout(time: 1, unit: 'HOURS')
+
+        // Timestamps in console
+        // 控制台中的时间戳
+        timestamps()
+    }
+
+    parameters {
+        choice(
+            name: 'TEST_SUITE',
+            choices: ['fast', 'full', 'wechat', 'xhs', 'all'],
+            description: 'Which test suite to run / 运行哪个测试套件'
+        )
+        booleanParam(
+            name: 'COMPARE_BASELINE',
+            defaultValue: true,
+            description: 'Compare against baseline / 与基线比较'
+        )
+        booleanParam(
+            name: 'SAVE_BASELINE',
+            defaultValue: false,
+            description: 'Save new baseline / 保存新基线'
+        )
+    }
+
+    environment {
+        // Project paths
+        // 项目路径
+        REGRESSION_DIR = 'tests/regression'
+        BASELINES_DIR = "${REGRESSION_DIR}/baselines"
+        REPORTS_DIR = 'reports'
+    }
+
+    stages {
+        stage('Setup') {
+            steps {
+                echo 'Installing dependencies / 安装依赖...'
+                sh '''
+                    pip install --upgrade pip
+                    pip install -r requirements.txt
+                '''
+
+                // Create directories
+                // 创建目录
+                sh "mkdir -p ${REPORTS_DIR}"
+            }
+        }
+
+        stage('Smoke Test') {
+            steps {
+                echo 'Running smoke tests / 运行冒烟测试...'
+                sh """
+                    python scripts/run_regression_suite.py \
+                        --tags fast,reference \
+                        --report markdown \
+                        --output ${REPORTS_DIR}/smoke-test.md
+                """
+            }
+        }
+
+        stage('Regression Test') {
+            steps {
+                script {
+                    def testTags = params.TEST_SUITE
+                    def baselineArg = ''
+
+                    // Build test command based on parameters
+                    // 根据参数构建测试命令
+                    if (params.COMPARE_BASELINE && fileExists("${BASELINES_DIR}/main.json")) {
+                        baselineArg = "--baseline baselines/main.json --fail-on-regression"
+                    }
+
+                    echo "Running ${testTags} tests / 运行 ${testTags} 测试..."
+
+                    sh """
+                        python scripts/run_regression_suite.py \
+                            --tags ${testTags} \
+                            ${baselineArg} \
+                            --report markdown \
+                            --output ${REPORTS_DIR}/regression-report.md
+                    """
+
+                    // Generate JSON for programmatic processing
+                    // 生成 JSON 以便程序处理
+                    sh """
+                        python scripts/run_regression_suite.py \
+                            --tags ${testTags} \
+                            --report json \
+                            --output ${REPORTS_DIR}/regression-report.json
+                    """
+                }
+            }
+        }
+
+        stage('Save Baseline') {
+            when {
+                expression { params.SAVE_BASELINE == true }
+            }
+            steps {
+                echo 'Saving baseline / 保存基线...'
+                sh """
+                    python scripts/run_regression_suite.py \
+                        --exclude-tags manual,slow \
+                        --save-baseline jenkins-${BUILD_NUMBER}
+                """
+
+                // Copy to main baseline
+                // 复制到主基线
+                sh """
+                    cp ${BASELINES_DIR}/jenkins-${BUILD_NUMBER}.json \
+                       ${BASELINES_DIR}/main.json
+                """
+            }
+        }
+
+        stage('Archive Results') {
+            steps {
+                echo 'Archiving reports / 归档报告...'
+
+                // Archive reports
+                // 归档报告
+                archiveArtifacts artifacts: "${REPORTS_DIR}/*.md,${REPORTS_DIR}/*.json",
+                                 allowEmptyArchive: false
+
+                // Publish HTML report if plugin available
+                // 如果插件可用，发布 HTML 报告
+                publishHTML([
+                    reportDir: REPORTS_DIR,
+                    reportFiles: 'regression-report.md',
+                    reportName: 'Regression Test Report',
+                    keepAll: true,
+                    alwaysLinkToLastBuild: true
+                ])
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Cleaning up workspace / 清理工作空间...'
+            cleanWs(
+                deleteDirs: true,
+                patterns: [
+                    [pattern: '**/__pycache__', type: 'INCLUDE'],
+                    [pattern: '**/*.pyc', type: 'INCLUDE']
+                ]
+            )
+        }
+
+        success {
+            echo 'Regression tests passed! / 回归测试通过！'
+
+            // Send notification (example using email)
+            // 发送通知（使用电子邮件的示例）
+            emailext(
+                subject: "SUCCESS: Regression Tests - Build #${BUILD_NUMBER}",
+                body: """
+                    Regression tests completed successfully.
+                    回归测试成功完成。
+
+                    Test Suite: ${params.TEST_SUITE}
+                    Build: ${BUILD_URL}
+
+                    Reports: ${BUILD_URL}artifact/reports/
+                """,
+                to: '${DEFAULT_RECIPIENTS}'
+            )
+        }
+
+        failure {
+            echo 'Regression tests failed! / 回归测试失败！'
+
+            emailext(
+                subject: "FAILURE: Regression Tests - Build #${BUILD_NUMBER}",
+                body: """
+                    Regression tests failed.
+                    回归测试失败。
+
+                    Test Suite: ${params.TEST_SUITE}
+                    Build: ${BUILD_URL}
+                    Console: ${BUILD_URL}console
+
+                    Reports: ${BUILD_URL}artifact/reports/
+                """,
+                to: '${DEFAULT_RECIPIENTS}'
+            )
+        }
+
+        unstable {
+            echo 'Tests unstable / 测试不稳定'
+        }
+    }
+}
+
+// Cron triggers (optional)
+// Cron 触发器（可选）
+// Uncomment to enable scheduled runs
+// 取消注释以启用定时运行
+/*
+triggers {
+    // Nightly at 2 AM
+    // 每天凌晨 2 点
+    cron('0 2 * * *')
+}
+*/
