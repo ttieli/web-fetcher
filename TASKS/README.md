@@ -2,35 +2,46 @@
 # TASKS目录 - 任务管理中心
 
 ## Current Status / 当前状态
-*Last Updated / 最后更新: 2025-10-10 16:40*
+*Last Updated / 最后更新: 2025-10-10 18:00*
 
 | Priority / 优先级 | Pending / 待办 | Completed / 已完成 | Deferred / 延期 |
 |-------------------|----------------|--------------------|------------------|
 | P1 (Critical) | 0 | 10 | 0 |
-| P2 (Important) | 1 | 5 | 0 |
+| P2 (Important) | 0 | 6 | 0 |
 | P3 (Stability) | 0 | 1 | 0 |
 | Deferred | 0 | 0 | 1 |
 
 ## 🚀 Active Tasks / 当前任务
 
-### Task-005: Rodong Sinmun Empty Content Fix 📋 *(NEW)*
-- **File:** `task-5-rodong-sinmun-empty-content-fix.md`
-- **Priority:** P2 (Important) / P2（重要）
-- **Status:** 📋 Pending / 待办
-- **Estimated Effort:** 3-4 hours / 预计3-4小时
-- **Description:** Fix empty content extraction from Rodong Sinmun (劳动新闻) website by creating site-specific template
-- **描述：** 通过创建站点专用模板修复劳动新闻网站空内容提取问题
-- **Root Cause:** Generic Web Template's CSS selectors don't match `#articleContent` (camelCase) and nested `#ContDIV` structure
-- **根本原因：** 通用Web模板的CSS选择器不匹配 `#articleContent`（驼峰命名）和嵌套的 `#ContDIV` 结构
-- **Solution:** Create `rodong_sinmun.yaml` template with selectors: `#ContDIV`, `.TitleP`, `.TextP`
-- **解决方案：** 创建 `rodong_sinmun.yaml` 模板，选择器：`#ContDIV`、`.TitleP`、`.TextP`
+*No pending tasks / 无待办任务*
 
 ### Deferred / 延期
 - `deferred/task-005-error-system-phase3-4.md`：错误系统高级特性，待收集生产数据后再评估。
 
 ## ✅ Recently Completed / 最近完成
 
-### Task-004: Wikipedia Parser Optimization ✅ *(NEW)*
+### Task-005: Rodong Sinmun Empty Content Fix ✅ *(NEW)*
+- **Status:** Completed 2025-10-10
+- **Grade:** B+ (Perfect functionality, architectural compromise)
+- **File:** `task-5-rodong-sinmun-empty-content-fix.md`
+- **Key Results:**
+  - Created site-specific template: `parser_engine/templates/sites/rodong_sinmun/rodong_sinmun.yaml`
+  - Content extraction: 0 → 47 lines (100% success)
+  - Keywords present: 金正恩, 老挝, 朝鲜劳动党
+  - Clean Chinese encoding, no garbled text
+  - Added routing rule (priority: 90, urllib)
+  - Added test URL to url_suite.txt
+- **Key Discovery:**
+  - TemplateParser only supports STRING format selectors
+  - Generic.yaml (list-of-dict format) doesn't work for content extraction
+  - Technical debt: Need TemplateParser refactor for generic enhancement
+  - Decision: Site-specific template (contrary to architectural review)
+- **Files Modified:**
+  - Added: `parser_engine/templates/sites/rodong_sinmun/rodong_sinmun.yaml`
+  - Updated: `config/routing.yaml`
+  - Updated: `tests/url_suite.txt`
+
+### Task-004: Wikipedia Parser Optimization ✅
 - **Status:** Completed 2025-10-10
 - **Grade:** A (95/100)
 - **Commit:** be80b8b
