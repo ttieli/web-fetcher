@@ -6,18 +6,12 @@
 
 | Priority / 优先级 | Pending / 待办 | Completed / 已完成 | Deferred / 延期 |
 |-------------------|----------------|--------------------|------------------|
-| P1 (Critical) | 1 | 7 | 0 |
+| P1 (Critical) | 0 | 8 | 0 |
 | P2 (Important) | 2 | 2 | 0 |
 | P3 (Stability) | 0 | 1 | 0 |
 | Deferred | 0 | 0 | 1 |
 
 ## 🚀 Active Tasks / 当前任务
-
-### **Task 1: Regression Test Harness** *(P1)* 🔥
-- **Status / 状态**: Pending / 待实施
-- **Goal / 目标**: Build reusable regression harness based on editable TXT URL list / 构建基于可编辑 TXT 列表的回归测试工具
-- **Value / 价值**: Ensures upgrades do not regress wf 行为并量化优化成效
-- **Deliverables / 交付物**: `tests/url_suite.txt` 模板、`run_regression_suite.py` CLI、Markdown/JSON 报告基线
 
 ### **Task 2: ChromeDriver Version Management** *(P2)*
 - **Status / 状态**: Pending / 待实施
@@ -35,7 +29,28 @@
 - `deferred/task-005-error-system-phase3-4.md`：错误系统高级特性，待收集生产数据后再评估。
 
 ## ✅ Recently Completed / 最近完成
-- **Task 1: Parser Template Creator Tools (A)** – CLI工具链已完成，支持无代码快速创建解析模板。详见 `task-1-completion-report.md`
+
+### Task-002: Regression Test Harness ✅ *(NEW)*
+- **Status:** Completed 2025-10-10
+- **Grade:** A+ (97/100)
+- **Archive:** [task-002](archive/completed/task-002-regression-test-harness/)
+- **Key Features:**
+  - Automated regression testing across 16+ URLs
+  - Baseline comparison and trend tracking
+  - CI/CD integration (GitHub Actions, GitLab CI, Jenkins)
+  - Multi-format reporting (Markdown/JSON/Text)
+  - Docker support and 2,500+ lines of documentation
+
+### Task-001: Parser Template Creator Tools ✅
+- **Status:** Completed 2025-10-09
+- **Grade:** A (94/100)
+- **Archive:** [task-001](archive/completed/task-001-parser-template-creator/)
+- **Key Features:**
+  - CLI toolchain for no-code template creation
+  - Schema validation and synchronization
+  - Template generation and preview tools
+
+### Previous Completions
 - **Task 1: Config-Driven Routing System (A+)** – YAML 路由体系已投产，决策 <5ms。详见 `archive/completed/task-001-config-driven-routing-v2/`
 - **Task 000 / 001 / 002 / 004 / 006 / 007 / 010** – 核心抓取与错误处理优化均已归档，参见 `archive/completed/`
 
@@ -52,8 +67,8 @@ archive/
 ```
 
 ## 🧭 Next Steps / 下一步计划
-1. ✅ ~~完成 Task 1 Phase 4，交付模板工具链。~~ (COMPLETED 2025-10-10)
-2. 实施 Task 1 回归测试平台，为后续精简与回归提供保障。
+1. ✅ ~~完成 Task 1 Phase 4，交付模板工具链。~~ (COMPLETED 2025-10-09)
+2. ✅ ~~实施 Task 2 回归测试平台，为后续精简与回归提供保障。~~ (COMPLETED 2025-10-10)
 3. 启动 Task 2 ChromeDriver 版本管理，锁定兜底稳定性。
 4. 基于 pydeps 结果编制核心模块精简方案，准备执行阶段。
 
