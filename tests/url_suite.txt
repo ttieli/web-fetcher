@@ -67,23 +67,27 @@ https://httpbin.org/redirect/1 | HTTPBin single redirect | urllib | redirect,fas
 
 # Rodong Sinmun / 劳动新闻
 # -------------------------------------------
-http://www.rodong.rep.kp/cn/index.php?MTJAMjAyNS0xMC0xMC0wMTNAM0AxQEAwQDNA=%3D | Rodong Sinmun article | urllib | rodong,production,fast,north-korea
+# DUAL-METHOD TEST: Recently fixed (Task-5), test static vs dynamic rendering
+http://www.rodong.rep.kp/cn/index.php?MTJAMjAyNS0xMC0xMC0wMTNAM0AxQEAwQDNA=%3D | Rodong Sinmun article | urllib,selenium,compare | rodong,production,dual-method,north-korea
 
 # Additional WeChat Articles / 更多微信文章
 # -------------------------------------------
-https://mp.weixin.qq.com/s/jbzywm4c_P6BkYxr5h_-PQ | WeChat article 2 | urllib | wechat,production,fast
+# DUAL-METHOD TEST: High-value production URLs, validate static extraction
+https://mp.weixin.qq.com/s/jbzywm4c_P6BkYxr5h_-PQ | WeChat article 2 | urllib,selenium,compare | wechat,production,dual-method
 https://mp.weixin.qq.com/s/UdOmm1NcVUM2p7H_d5l1xg | WeChat article 3 | urllib | wechat,production,fast
 https://mp.weixin.qq.com/s/Z375UG7t270F3j5zvRJgmQ | WeChat article 4 | urllib | wechat,production,fast
 
 # Wikipedia Articles / 维基百科文章
 # -------------------------------------------
-https://zh.wikipedia.org/wiki/%E8%81%82%E5%85%83%E6%A2%93 | Wikipedia - 聂元梓 | urllib | wikipedia,production,fast,chinese
+# DUAL-METHOD TEST: Recently optimized (Task-4), high content-to-noise ratio (>95%)
+https://zh.wikipedia.org/wiki/%E8%81%82%E5%85%83%E6%A2%93 | Wikipedia - 聂元梓 | urllib,selenium,compare | wikipedia,production,dual-method,chinese
 https://zh.wikipedia.org/wiki/%E9%99%86%E5%B9%B3 | Wikipedia - 陆平 | urllib | wikipedia,production,fast,chinese
 https://zh.wikipedia.org/w/index.php?title=%E8%81%82%E5%85%83%E6%A2%93&oldformat=true&variant=zh-cn | Wikipedia - 聂元梓 (old format) | urllib | wikipedia,production,fast,chinese
 
 # News Sites / 新闻站点
 # -------------------------------------------
-https://www.news.cn/politics/leaders/20251004/0c3e48feeb53492b9d8511ac54f639d3/c.html | Xinhua News article | urllib | news,production,fast,chinese
+# DUAL-METHOD TEST: CRI News recently fixed (Task-6), 11.88x improvement
+https://www.news.cn/politics/leaders/20251004/0c3e48feeb53492b9d8511ac54f639d3/c.html | Xinhua News article | urllib,selenium,compare | news,production,dual-method,chinese
 
 # Developer Sites / 开发者站点
 # -------------------------------------------
