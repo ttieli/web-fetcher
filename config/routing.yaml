@@ -42,19 +42,6 @@ rules:
       reason: "Requires JavaScript rendering"
       reason_zh: "需要JavaScript渲染"
 
-  - name: "WeChat Articles"
-    name_zh: "微信文章"
-    priority: 50
-    enabled: true
-    conditions:
-      domain: "mp.weixin.qq.com"
-    action:
-      fetcher: "selenium"
-      config:
-        wait_time: 3
-      reason: "WeChat requires JavaScript"
-      reason_zh: "微信需要JavaScript"
-
   # Default fallback (lowest priority) / 默认回退（最低优先级）
   - name: "Default - Static Sites"
     name_zh: "默认 - 静态网站"
