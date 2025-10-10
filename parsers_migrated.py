@@ -254,6 +254,7 @@ def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_craw
             'parser_engine', 'templates'
         )
         parser = TemplateParser(template_dir=template_dir)
+        parser.reload_templates()  # Force reload to get updated generic.yaml v2.1.0
 
         # Parse using template engine (will auto-select based on URL domain)
         result = parser.parse(html, url)
