@@ -13,19 +13,20 @@
 
 ## 🚀 Active Tasks / 当前任务
 
-### Task-006: CRI News Empty Content Fix 📋 *(NEW)*
+### Task-006: CRI News Empty Content Fix 🔍 *(IN PROGRESS)*
 - **File:** `task-6-cri-news-empty-content-fix.md`
 - **Priority:** P2 (Important) / P2（重要）
-- **Status:** 📋 Pending / 待办
-- **Estimated Effort:** 2-3 hours / 预计2-3小时
-- **Description:** Fix empty content extraction from CRI News (国际在线) by creating site-specific template
-- **描述：** 通过创建站点专用模板修复国际在线新闻空内容提取问题
-- **Root Cause:** Generic template doesn't include `#atitle` and `#abody` ID selectors used by CRI News
-- **根本原因：** 通用模板不包含国际在线使用的`#atitle`和`#abody` ID选择器
-- **Solution:** Create `cri_news.yaml` template with selectors: `#atitle`, `#abody`, `#apublishtime`, `#asource`
-- **解决方案：** 创建`cri_news.yaml`模板，选择器：`#atitle`、`#abody`、`#apublishtime`、`#asource`
-- **Comparison:** Similar to Task-5 (Rodong Sinmun), same TemplateParser format limitation
-- **对比：** 与Task-5（劳动新闻）类似，相同的TemplateParser格式限制
+- **Status:** 🔍 Phase 2 Analysis Complete / 阶段2分析完成
+- **Phase 2 File:** `task-6-phase2-templateparser-cache-bug.md`
+- **Estimated Effort:** 15 min (cache fix) or 2 hours (site template) / 预计15分钟（缓存修复）或2小时（站点模板）
+- **Phase 1:** Original analysis - site-specific template approach
+- **Phase 2:** TemplateParser refactoring attempted - discovered cache bug
+- **Root Cause Found:** TemplateLoader caching v1.1.0, not reloading updated v2.1.0
+- **已发现根本原因：** TemplateLoader缓存v1.1.0，未重新加载更新的v2.1.0
+- **Solution:** Call `parser.reload_templates()` before parsing (15 min fix)
+- **解决方案：** 在解析前调用`parser.reload_templates()`（15分钟修复）
+- **Status:** Diagnostic complete, ready for 15-minute fix
+- **状态：** 诊断完成，准备15分钟修复
 
 ### Deferred / 延期
 - `deferred/task-005-error-system-phase3-4.md`：错误系统高级特性，待收集生产数据后再评估。
