@@ -1,0 +1,40 @@
+# Parser Template for generic.org
+# Generated: 2025-10-10 11:37:38
+# Template Type: generic
+# Version: 1.0.0
+#
+# This is an automatically generated template. Please customize the selectors
+# according to your target website's structure.
+#
+# 这是一个自动生成的模板。请根据目标网站的结构自定义选择器。
+
+name: Generic.Org Parser
+version: 1.0.0
+domains:
+- generic.org
+selectors:
+  title:
+  - selector: meta[property='og:title']
+    strategy: css
+    attribute: content
+  - selector: title
+    strategy: css
+  - selector: h1
+    strategy: css
+  content:
+  - selector: main
+    strategy: css
+  - selector: article
+    strategy: css
+  - selector: '#content'
+    strategy: css
+metadata:
+  created: '2025-10-10T11:37:38.223172'
+  template_type: generic
+  generator_version: 1.0.0
+test_cases:
+- name: Basic extraction test
+  url: https://generic.org/sample-page
+  expected:
+    title: Sample Title
+    content: Sample content...

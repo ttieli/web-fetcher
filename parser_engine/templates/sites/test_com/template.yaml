@@ -1,0 +1,41 @@
+# Parser Template for test.com
+# Generated: 2025-10-10 11:37:31
+# Template Type: list
+# Version: 1.0.0
+#
+# This is an automatically generated template. Please customize the selectors
+# according to your target website's structure.
+#
+# 这是一个自动生成的模板。请根据目标网站的结构自定义选择器。
+
+name: Test.Com Parser
+version: 1.0.0
+domains:
+- test.com
+selectors:
+  items:
+  - selector: .item
+    strategy: css
+  - selector: li
+    strategy: css
+  - selector: .list-item
+    strategy: css
+  title:
+  - selector: h1
+    strategy: css
+  - selector: .page-title
+    strategy: css
+  link:
+  - selector: a
+    strategy: css
+    attribute: href
+metadata:
+  created: '2025-10-10T11:37:31.655965'
+  template_type: list
+  generator_version: 1.0.0
+test_cases:
+- name: Basic extraction test
+  url: https://test.com/sample-page
+  expected:
+    title: Sample Title
+    content: Sample content...
