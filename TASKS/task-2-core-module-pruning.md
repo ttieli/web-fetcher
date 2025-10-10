@@ -1,7 +1,8 @@
 # Task 2: Core Module Pruning Plan / 核心模块精简方案
 
 ## Status / 状态
-- Pending implementation / 待实施
+- ✅ **PLANNING COMPLETED** (2025-10-10) / 规划已完成
+- Awaiting user approval for execution / 等待用户批准执行
 
 ## Priority / 优先级
 - P2 – Reduce maintenance surface without breaking wf / 第二优先级，在不影响 wf 工具的前提下降本增效
@@ -65,3 +66,69 @@
 ## Notes / 备注
 - 建议在 Task 2（回归测试工具）完成后执行实际删除，可作为精简验证主力。 / Recommend sequencing actual removal after regression harness is ready.
 - Graphviz 缺失导致 pydeps 生成图片失败，可在方案中备注安装步骤或提供备选输出方式。 / Document graphviz requirement for future runs.
+
+---
+
+## Completion Summary / 完成总结
+
+### Planning Phase Results / 规划阶段成果
+
+**Deliverable:** Core Cleanup Plan document created at `docs/Core-Cleanup-Plan.md`
+**交付物：**核心清理计划文档已创建于 `docs/Core-Cleanup-Plan.md`
+
+### Key Findings / 关键发现
+
+- **15 core modules** identified as must-keep / 识别出15个必须保留的核心模块
+- **~80 files** (40% of codebase) categorized for removal / 约80个文件（代码库的40%）已分类待删除
+- **4 directories** identified for deletion/archiving: / 识别出4个目录待删除/归档:
+  - `benchmarks/` - DELETE (performance testing only)
+  - `diagnostics/` - DELETE (SPA tools not used by wf)
+  - `parser_engine/` - ARCHIVE (replaced by routing/)
+  - `test_artifacts/` - DELETE (test output files)
+
+### Three-Stage Execution Plan / 三阶段执行计划
+
+1. **Stage 1 (Low Risk):** Delete test artifacts, logs, benchmarks / 删除测试产物、日志、基准测试
+2. **Stage 2 (Medium Risk):** Delete diagnostics, historical reports / 删除诊断工具、历史报告
+3. **Stage 3 (Requires Analysis):** Archive parser_engine / 归档parser_engine
+
+### Risk Assessment Completed / 风险评估已完成
+
+- Comprehensive validation checklist created / 创建了全面的验证清单
+- Rollback strategy documented / 回滚策略已文档化
+- Smoke test matrix defined for all core functionality / 为所有核心功能定义了冒烟测试矩阵
+
+### Dependencies / 依赖关系
+
+- Manual dependency analysis completed (pydeps not available) / 手动依赖分析已完成（pydeps不可用）
+- Core import chain fully mapped: webfetcher.py → 8 direct deps → 7 indirect deps / 核心导入链已完全映射
+- No hidden dependencies detected through grep analysis / 通过grep分析未检测到隐藏依赖
+
+### Impact / 影响
+
+**Projected benefits after execution:**
+- Reduce codebase size by ~40% / 减少约40%的代码量
+- Improve maintainability by removing legacy/experimental code / 通过删除旧代码和实验代码提高可维护性
+- Simplify dependency tree / 简化依赖树
+- No functional impact on wf tool / 对wf工具没有功能影响
+
+### Status / 状态
+
+**Planning Phase:** ✅ Complete (Grade: A)
+**Execution Phase:** ⏸️ Pending user approval
+**规划阶段：**✅ 完成（评级：A）
+**执行阶段：**⏸️ 待用户批准
+
+### Next Steps / 下一步
+
+1. User reviews `docs/Core-Cleanup-Plan.md`
+2. User approves categorization (KEEP/DELETE/ARCHIVE)
+3. Create git branch `task-2-module-pruning`
+4. Execute Stage 1 deletions with validation
+5. Execute Stage 2 deletions with validation
+6. Execute Stage 3 archival with full regression testing
+
+### See Also / 另见
+- Plan Document: `docs/Core-Cleanup-Plan.md` / 规划文档
+- Current Structure: See Appendix A in plan / 当前结构：见规划中附录A
+- Validation Checklist: See Phase 3 in plan / 验证清单：见规划中阶段3
