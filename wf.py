@@ -14,6 +14,12 @@ from pathlib import Path
 import logging
 import re
 
+# Import ChromeDriver version management
+try:
+    from drivers import check_chrome_driver_compatibility
+except ImportError:
+    check_chrome_driver_compatibility = None
+
 # 获取脚本所在目录，以便找到webfetcher.py
 # 如果是符号链接，需要解析到真实路径
 SCRIPT_PATH = Path(__file__).resolve()
@@ -237,6 +243,96 @@ def extract_url_from_text(text: str) -> tuple:
     # No URL found
     return text, False
 
+def diagnose_system():
+    """Diagnose system configuration and ChromeDriver compatibility"""
+    print("=" * 70)
+    print("WebFetcher System Diagnostic / WebFetcher系统诊断")
+    print("=" * 70 + "\n")
+
+    exit_code = 0
+
+    # 1. Python version check
+    print("1. Python Version Check / Python版本检查")
+    print("-" * 70)
+    python_version = sys.version.split()[0]
+    print(f"   Python Version / Python版本: {python_version}")
+    if sys.version_info >= (3, 7):
+        print(f"   ✓ Python version is compatible / Python版本兼容\n")
+    else:
+        print(f"   ⚠️  Python 3.7+ is recommended / 建议使用Python 3.7+\n")
+        exit_code = 1
+
+    # 2. Working directory check
+    print("2. Working Directory / 工作目录")
+    print("-" * 70)
+    print(f"   Current directory / 当前目录: {os.getcwd()}")
+    print(f"   Script location / 脚本位置: {SCRIPT_DIR}")
+    print(f"   WebFetcher path / WebFetcher路径: {WEBFETCHER_PATH}")
+    if WEBFETCHER_PATH.exists():
+        print(f"   ✓ WebFetcher found / 找到WebFetcher\n")
+    else:
+        print(f"   ❌ WebFetcher not found / 未找到WebFetcher\n")
+        exit_code = 2
+
+    # 3. ChromeDriver version check
+    print("3. ChromeDriver Version Check / ChromeDriver版本检查")
+    print("-" * 70)
+
+    if check_chrome_driver_compatibility is None:
+        print("   ⚠️  ChromeDriver management module not available")
+        print("   ⚠️  ChromeDriver管理模块不可用\n")
+    else:
+        try:
+            result = check_chrome_driver_compatibility()
+            print(f"   Chrome: {result.chrome_version or 'NOT FOUND / 未找到'}")
+            print(f"   ChromeDriver: {result.driver_version or 'NOT FOUND / 未找到'}")
+            print(f"   Status / 状态: {result.status.value}")
+            print(f"   {result.message_en}")
+            print(f"   {result.message_cn}")
+
+            if not result.is_compatible:
+                print(f"\n   ⚠️  WARNING: Version mismatch detected!")
+                print(f"   ⚠️  警告：检测到版本不匹配！")
+                print(f"   Fix / 修复: Run 'python scripts/manage_chromedriver.py sync'")
+                print(f"   修复: 运行 'python scripts/manage_chromedriver.py sync'\n")
+                exit_code = 3  # Specific exit code for version mismatch
+            else:
+                print(f"   ✓ ChromeDriver is compatible / ChromeDriver兼容\n")
+        except Exception as e:
+            print(f"   ❌ Error checking ChromeDriver / 检查ChromeDriver时出错: {e}\n")
+            exit_code = 2
+
+    # 4. Output directory check
+    print("4. Output Directory / 输出目录")
+    print("-" * 70)
+    default_output = os.environ.get('WF_OUTPUT_DIR', DEFAULT_OUTPUT_DIR)
+    print(f"   Default output / 默认输出: {default_output}")
+    if os.path.exists(default_output):
+        print(f"   ✓ Output directory exists / 输出目录存在\n")
+    else:
+        print(f"   ℹ️  Output directory will be created on first use")
+        print(f"   ℹ️  首次使用时将创建输出目录\n")
+
+    # Summary
+    print("=" * 70)
+    print("Diagnostic Summary / 诊断摘要")
+    print("=" * 70)
+    if exit_code == 0:
+        print("✓ System is healthy / 系统正常")
+        print("  Ready to fetch web content / 准备抓取网页内容")
+    elif exit_code == 1:
+        print("⚠️  System has warnings / 系统有警告")
+        print("   System may work but not optimally / 系统可能工作但不是最佳状态")
+    elif exit_code == 3:
+        print("⚠️  ChromeDriver version mismatch / ChromeDriver版本不匹配")
+        print("   Run: python scripts/manage_chromedriver.py sync")
+        print("   运行: python scripts/manage_chromedriver.py sync")
+    else:
+        print("❌ System has errors / 系统有错误")
+        print("   Please fix the issues above / 请修复上述问题")
+
+    sys.exit(exit_code)
+
 def main():
     if len(sys.argv) < 2:
         print_help()
@@ -397,6 +493,10 @@ def main():
                 url = f'https://{url}'
             run_webfetcher([url, '-o', output_dir] + remaining_args)
     
+    # 诊断系统
+    elif cmd == 'diagnose' or cmd == '--diagnose':
+        diagnose_system()
+
     # 帮助
     elif cmd in ['-h', '--help', 'help']:
         print_help()
@@ -487,6 +587,7 @@ wf - WebFetcher便捷命令
   wf raw URL [输出目录]             # Raw模式（完整内容）
   wf site URL [输出目录]            # 整站爬虫
   wf batch urls.txt [输出目录]     # 批量抓取
+  wf diagnose                       # 系统诊断（含ChromeDriver检查）
 
 处理复杂URL的示例:
   # URL包含路径时，推荐使用-o或--
