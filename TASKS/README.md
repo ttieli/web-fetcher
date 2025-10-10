@@ -17,24 +17,26 @@
 - **Status:** PENDING / 待办
 - **Priority:** P2 (Important / 重要)
 - **File:** `task-008-enhanced-multi-page-site-crawling.md`
-- **Estimated Effort:** 16-22 hours / 16-22小时
+- **Estimated Effort:** 14-19 hours / 14-19小时 (revised - robots.txt removed)
 - **Created:** 2025-10-10
+- **Revised:** 2025-10-10 (removed robots.txt - personal use only)
 - **Objective:**
   - Fix critical bug: `--follow-pagination` flag missing in webfetcher.py
   - Enhance multi-page crawling capabilities (page ranges, URL patterns)
-  - Improve whole-site crawling (robots.txt, sitemap.xml support)
+  - Improve whole-site crawling (sitemap.xml support)
   - Add structured output formats (JSON index, CSV reports)
   - Implement resume capability for interrupted crawls
 - **Key Features:**
   - Phase 1: Bug fixes + parameter exposure (4-6h)
-  - Phase 2: Robots.txt + sitemap support (5-7h)
+  - Phase 2: Sitemap support (3-4h) - no robots.txt
   - Phase 3: Advanced crawling features (4-6h)
   - Phase 4: Structured output (3-4h)
   - Phase 5: Resume capability (3-4h)
 - **Impact:**
   - Fixes broken `wf site` command
-  - Enables production-ready site crawling
+  - Enables site crawling for personal use
   - Supports diverse crawling strategies
+- **Note:** No robots.txt compliance (personal use tool)
 
 ### Deferred / 延期
 - `deferred/task-005-error-system-phase3-4.md`：错误系统高级特性，待收集生产数据后再评估。
