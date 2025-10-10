@@ -183,15 +183,58 @@ def cmd_preview(args) -> int:
     Returns:
         int: 0 on success, 1 on failure
     """
+    from ..preview.html_preview import HTMLPreviewer
+    import os
+
     print(f"Preview mode for template: {args.template}")
+
+    # Determine input source
     if hasattr(args, 'html') and args.html:
         print(f"HTML file: {args.html}")
+        source = args.html
+        source_type = 'file'
     elif hasattr(args, 'url') and args.url:
         print(f"URL: {args.url}")
-    if hasattr(args, 'output') and args.output:
-        print(f"Output format: {args.output}")
-    print("\n✗ Not implemented yet / 尚未实现")
-    return 1
+        print("\n✗ Error: URL fetching not yet implemented in preview")
+        print("Please use --html with a local file")
+        return 1
+    else:
+        print("\n✗ Error: Either --html or --url is required")
+        return 1
+
+    output_format = getattr(args, 'output', 'text')
+    print(f"Output format: {output_format}")
+
+    try:
+        # Check if template file exists
+        if not os.path.exists(args.template):
+            print(f"\n✗ Template file not found: {args.template}", file=sys.stderr)
+            return 1
+
+        # Check if HTML file exists
+        if source_type == 'file' and not os.path.exists(source):
+            print(f"\n✗ HTML file not found: {source}", file=sys.stderr)
+            return 1
+
+        # Create previewer and generate preview
+        print("\nLoading template and parsing HTML...")
+        previewer = HTMLPreviewer(args.template)
+        result = previewer.preview_from_file(source, output_format)
+
+        # Display result
+        print("\n" + result)
+
+        print("\n✓ Preview completed successfully!")
+        return 0
+
+    except FileNotFoundError as e:
+        print(f"\n✗ File not found: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"\n✗ Preview error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return 1
 
 
 def cmd_doc(args) -> int:
@@ -220,13 +263,57 @@ def cmd_doc(args) -> int:
     Returns:
         int: 0 on success, 1 on failure
     """
+    from ..generators.doc_generator import DocGenerator
+    import os
+
     print(f"Generating documentation for: {args.template}")
-    if hasattr(args, 'output') and args.output:
-        print(f"Output directory: {args.output}")
-    if hasattr(args, 'format') and args.format:
-        print(f"Format: {args.format}")
-    print("\n✗ Not implemented yet / 尚未实现")
-    return 1
+
+    output_dir = getattr(args, 'output', None)
+    if output_dir:
+        print(f"Output directory: {output_dir}")
+
+    doc_format = getattr(args, 'format', 'markdown')
+    print(f"Format: {doc_format}")
+
+    try:
+        # Check if template file exists
+        if not os.path.exists(args.template):
+            print(f"\n✗ Template file not found: {args.template}", file=sys.stderr)
+            return 1
+
+        # Create documentation generator
+        print("\nLoading template...")
+        generator = DocGenerator(args.template)
+
+        if doc_format == 'markdown':
+            if output_dir:
+                # Generate filename from template name
+                template_name = os.path.basename(args.template).replace('.yaml', '').replace('.yml', '')
+                output_file = os.path.join(output_dir, f"{template_name}.md")
+
+                print(f"Generating Markdown documentation...")
+                generator.save_markdown(output_file)
+                print(f"\n✓ Documentation generated successfully!")
+                print(f"  Location: {output_file}")
+                return 0
+            else:
+                # Output to stdout
+                print("\nGenerating Markdown documentation...\n")
+                generator.print_to_stdout()
+                return 0
+        else:
+            print(f"\n✗ Format '{doc_format}' not yet supported", file=sys.stderr)
+            print("Supported formats: markdown")
+            return 1
+
+    except FileNotFoundError as e:
+        print(f"\n✗ File not found: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"\n✗ Documentation generation error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return 1
 
 
 def create_parser() -> argparse.ArgumentParser:
