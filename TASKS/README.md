@@ -2,7 +2,7 @@
 # TASKS目录 - 任务管理中心
 
 ## Current Status / 当前状态
-*Last Updated / 最后更新: 2025-10-10 23:00*
+*Last Updated / 最后更新: 2025-10-10 19:25*
 
 | Priority / 优先级 | Pending / 待办 | Completed / 已完成 | Deferred / 延期 |
 |-------------------|----------------|--------------------|------------------|
@@ -14,28 +14,32 @@
 ## 🚀 Active Tasks / 当前任务
 
 ### Task-008: Enhanced Multi-Page and Whole-Site Crawling 🆕
-- **Status:** PENDING / 待办
+- **Status:** IN PROGRESS - Phase 1 COMPLETED ✅ / 进行中 - Phase 1 已完成 ✅
 - **Priority:** P2 (Important / 重要)
 - **File:** `task-008-enhanced-multi-page-site-crawling.md`
-- **Estimated Effort:** 14-19 hours / 14-19小时 (revised - robots.txt removed)
+- **Estimated Effort:** 14-19 hours total / 14-19小时 (Phase 1: 4-6h ✅ DONE)
 - **Created:** 2025-10-10
-- **Revised:** 2025-10-10 (removed robots.txt - personal use only)
+- **Phase 1 Completed:** 2025-10-10 19:25 (Commit: 0db222b)
 - **Objective:**
-  - Fix critical bug: `--follow-pagination` flag missing in webfetcher.py
-  - Enhance multi-page crawling capabilities (page ranges, URL patterns)
-  - Improve whole-site crawling (sitemap.xml support)
-  - Add structured output formats (JSON index, CSV reports)
-  - Implement resume capability for interrupted crawls
-- **Key Features:**
-  - Phase 1: Bug fixes + parameter exposure (4-6h)
-  - Phase 2: Sitemap support (3-4h) - no robots.txt
-  - Phase 3: Advanced crawling features (4-6h)
-  - Phase 4: Structured output (3-4h)
-  - Phase 5: Resume capability (3-4h)
+  - ✅ **Phase 1 COMPLETE:** Fix critical bug + expose crawl parameters
+    - Fixed `--follow-pagination` flag missing in webfetcher.py
+    - All crawl parameters now configurable (--max-pages, --max-depth, --delay)
+    - 5/5 regression tests passed (100%)
+    - 4 files modified (+305 lines, -24 lines)
+  - Phase 2: Sitemap support (3-4h) - PENDING
+  - Phase 3: Advanced crawling features (4-6h) - PENDING
+  - Phase 4: Structured output (3-4h) - PENDING
+  - Phase 5: Resume capability (3-4h) - PENDING
+- **Phase 1 Results:**
+  - 🎯 Critical bug fixed: `wf site` command now fully functional
+  - 🎯 All manual tests passed (4/4)
+  - 🎯 All regression tests passed (5/5 - 100%)
+  - 🎯 Backward compatibility maintained
+  - 🎯 Bilingual documentation (English/Chinese)
 - **Impact:**
-  - Fixes broken `wf site` command
-  - Enables site crawling for personal use
-  - Supports diverse crawling strategies
+  - ✅ `wf site` command now works without errors
+  - ✅ Site crawling parameters fully configurable
+  - ✅ Production-ready for Phase 1 features
 - **Note:** No robots.txt compliance (personal use tool)
 
 ### Deferred / 延期
