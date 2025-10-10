@@ -10,9 +10,9 @@ Format: <url> | <description> | <expected_strategy> | <tags>
 格式：<url> | <描述> | <期望策略> | <标签>
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Set, Optional
+from typing import List, Set, Optional, Union
 import logging
 
 
@@ -25,15 +25,56 @@ class URLTest:
     Attributes:
         url: Target URL to test / 目标测试 URL
         description: Brief description of the test / 测试简短描述
-        expected_strategy: Expected fetch strategy (urllib/selenium/manual) / 期望的抓取策略
+        expected_strategies: Expected fetch strategies (urllib/selenium/manual) / 期望的抓取策略列表
         tags: Set of tags for filtering / 用于过滤的标签集
         line_number: Source line number (for error reporting) / 源文件行号（用于错误报告）
+        compare_methods: Enable comparison when testing multiple methods / 启用多方法测试时的比较
+
+    Note:
+        For backward compatibility, expected_strategy (singular) is supported via property.
+        为了向后兼容，通过属性支持 expected_strategy（单数）。
     """
     url: str
     description: str
-    expected_strategy: str
+    expected_strategies: List[str]
     tags: Set[str]
     line_number: int
+    compare_methods: bool = False
+
+    @property
+    def expected_strategy(self) -> str:
+        """
+        Backward compatibility property for single-method tests.
+        单方法测试的向后兼容性属性。
+
+        Returns the first strategy in the list.
+        返回列表中的第一个策略。
+        """
+        return self.expected_strategies[0] if self.expected_strategies else "urllib"
+
+    @property
+    def is_dual_method(self) -> bool:
+        """
+        Check if this test uses dual-method testing.
+        检查此测试是否使用双方法测试。
+
+        Returns:
+            bool: True if testing with multiple methods
+        """
+        return len(self.expected_strategies) > 1
+
+    def has_strategy(self, strategy: str) -> bool:
+        """
+        Check if test includes a specific strategy.
+        检查测试是否包含特定策略。
+
+        Args:
+            strategy: Strategy name (urllib/selenium/manual)
+
+        Returns:
+            bool: True if strategy is in expected_strategies
+        """
+        return strategy.lower() in [s.lower() for s in self.expected_strategies]
 
     def has_tag(self, tag: str) -> bool:
         """Check if test has a specific tag / 检查测试是否有特定标签"""
@@ -90,7 +131,7 @@ def parse_url_suite(file_path: Path) -> List[URLTest]:
                 )
                 continue
 
-            url, description, expected_strategy, tags_str = parts
+            url, description, strategy_str, tags_str = parts
 
             # Validate required fields
             # 验证必需字段
@@ -102,10 +143,42 @@ def parse_url_suite(file_path: Path) -> List[URLTest]:
                 logging.warning(f"Skipping line {line_num}: empty description")
                 continue
 
-            if expected_strategy not in ('urllib', 'selenium', 'manual'):
+            # Parse strategies (supports both single and comma-separated list)
+            # 解析策略（支持单个和逗号分隔列表）
+            # Examples:
+            #   "urllib" → ["urllib"]
+            #   "urllib,selenium" → ["urllib", "selenium"]
+            #   "urllib,selenium,compare" → ["urllib", "selenium"] with compare_methods=True
+            expected_strategies = []
+            compare_methods = False
+
+            if strategy_str:
+                strategy_parts = [s.strip().lower() for s in strategy_str.split(',') if s.strip()]
+
+                # Check for special 'compare' flag
+                # 检查特殊的 'compare' 标志
+                if 'compare' in strategy_parts:
+                    compare_methods = True
+                    strategy_parts = [s for s in strategy_parts if s != 'compare']
+
+                # Validate strategies
+                # 验证策略
+                valid_strategies = {'urllib', 'selenium', 'manual'}
+                for strategy in strategy_parts:
+                    if strategy not in valid_strategies:
+                        logging.warning(
+                            f"Line {line_num}: unexpected strategy '{strategy}', "
+                            f"expected urllib/selenium/manual"
+                        )
+                    else:
+                        expected_strategies.append(strategy)
+
+            # Default to urllib if no valid strategies found
+            # 如果未找到有效策略，默认为 urllib
+            if not expected_strategies:
+                expected_strategies = ['urllib']
                 logging.warning(
-                    f"Line {line_num}: unexpected strategy '{expected_strategy}', "
-                    f"expected urllib/selenium/manual"
+                    f"Line {line_num}: no valid strategies, defaulting to urllib"
                 )
 
             # Parse tags (comma-separated)
@@ -117,9 +190,10 @@ def parse_url_suite(file_path: Path) -> List[URLTest]:
             tests.append(URLTest(
                 url=url,
                 description=description,
-                expected_strategy=expected_strategy,
+                expected_strategies=expected_strategies,
                 tags=tags,
-                line_number=line_num
+                line_number=line_num,
+                compare_methods=compare_methods
             ))
 
     logging.info(f"Parsed {len(tests)} test cases from {file_path}")
