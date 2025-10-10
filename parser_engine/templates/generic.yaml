@@ -1,9 +1,9 @@
-# Generic Web Template v2.0
+# Generic Web Template v2.1
 # Comprehensive extraction patterns for various website types
-# Enhanced with multi-strategy support and CMS-specific selectors
+# Enhanced with multi-strategy support, CMS-specific selectors, and list-of-dict format
 
 name: "Generic Web Template"
-version: "2.0.0"
+version: "2.1.0"
 domains:
   - "*"  # Matches all domains as fallback
 
@@ -13,11 +13,17 @@ domains:
 
 selectors:
   # ---------------------------------------------------------------------------
-  # TITLE EXTRACTION (15+ selectors)
-  # Priority: OG/Twitter meta -> Page title -> Semantic headings -> Common patterns
+  # TITLE EXTRACTION (17+ selectors)
+  # Priority: Site-specific IDs -> OG/Twitter meta -> Page title -> Semantic headings
   # ---------------------------------------------------------------------------
   title:
-    # Social media meta tags (highest priority - most reliable)
+    # Site-specific ID selectors (v2.1.0 - highest priority)
+    - selector: "#atitle"
+      strategy: "css"
+    - selector: "p.TitleP"
+      strategy: "css"
+
+    # Social media meta tags (high priority - most reliable)
     - selector: "meta[property='og:title']"
       strategy: "css"
       attribute: "content"
@@ -88,11 +94,19 @@ selectors:
       strategy: "css"
 
   # ---------------------------------------------------------------------------
-  # CONTENT EXTRACTION (20+ selectors)
-  # Priority: Semantic HTML5 -> Article containers -> Common CMS patterns
+  # CONTENT EXTRACTION (23+ selectors)
+  # Priority: Site-specific IDs -> Semantic HTML5 -> Article containers
   # ---------------------------------------------------------------------------
   content:
-    # Semantic HTML5 elements (highest priority)
+    # Site-specific ID/class selectors (v2.1.0 - highest priority)
+    - selector: "#abody"
+      strategy: "css"
+    - selector: "#ContDIV"
+      strategy: "css"
+    - selector: ".list-abody"
+      strategy: "css"
+
+    # Semantic HTML5 elements (high priority)
     - selector: "article"
       strategy: "css"
     - selector: "main"
@@ -636,6 +650,17 @@ output:
 # VERSION HISTORY
 # ============================================================================
 
+# v2.1.0 (2025-10-10) - TemplateParser List-of-Dict Support
+# - CRITICAL FIX: TemplateParser now supports list-of-dict selector format
+# - Added site-specific selectors for Rodong Sinmun: p.TitleP, #ContDIV
+# - Added site-specific selectors for CRI News: #atitle, #abody, .list-abody
+# - TemplateParser refactored with _normalize_selector_config() method
+# - Supports 3 formats: string, list-of-dict, single dict
+# - Fixes Task-5 (Rodong Sinmun) and Task-6 (CRI News) empty content issues
+# - 100% backward compatible with string-format templates (Wikipedia, WeChat, XHS)
+# - Total selectors: 23 content + 17 title (40 total, up from 35 in v2.0)
+# - Generic template now works WITHOUT site-specific templates
+#
 # v2.0.0 (2025-10-09)
 # - Expanded from 59 to 280+ lines (374% increase)
 # - Added 50+ selector patterns (150% increase from v1.1.0)
