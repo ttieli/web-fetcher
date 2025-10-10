@@ -6,18 +6,12 @@
 
 | Priority / 优先级 | Pending / 待办 | Completed / 已完成 | Deferred / 延期 |
 |-------------------|----------------|--------------------|------------------|
-| P1 (Critical) | 2 | 6 | 0 |
+| P1 (Critical) | 1 | 7 | 0 |
 | P2 (Important) | 2 | 2 | 0 |
 | P3 (Stability) | 0 | 1 | 0 |
 | Deferred | 0 | 0 | 1 |
 
 ## 🚀 Active Tasks / 当前任务
-
-### **Task 1: Parser Template Creator Tools** *(P1)* 🔥
-- **Status / 状态**: Phase 4 pending / 第4阶段待完成
-- **Goal / 目标**: Provide CLI tooling for rapid parser template creation without core code changes / 提供 CLI 工具实现无代码快速创建解析模板
-- **Value / 价值**: Accelerates new site support, keeps urllib/selenium 输出一致
-- **Deliverables / 交付物**: `parser_engine/tools/` CLI、校验+预览流水线、模板文档生成器
 
 ### **Task 1: Regression Test Harness** *(P1)* 🔥
 - **Status / 状态**: Pending / 待实施
@@ -41,6 +35,7 @@
 - `deferred/task-005-error-system-phase3-4.md`：错误系统高级特性，待收集生产数据后再评估。
 
 ## ✅ Recently Completed / 最近完成
+- **Task 1: Parser Template Creator Tools (A)** – CLI工具链已完成，支持无代码快速创建解析模板。详见 `task-1-completion-report.md`
 - **Task 1: Config-Driven Routing System (A+)** – YAML 路由体系已投产，决策 <5ms。详见 `archive/completed/task-001-config-driven-routing-v2/`
 - **Task 000 / 001 / 002 / 004 / 006 / 007 / 010** – 核心抓取与错误处理优化均已归档，参见 `archive/completed/`
 
@@ -57,7 +52,7 @@ archive/
 ```
 
 ## 🧭 Next Steps / 下一步计划
-1. 完成 Task 1 Phase 4，交付模板工具链。
+1. ✅ ~~完成 Task 1 Phase 4，交付模板工具链。~~ (COMPLETED 2025-10-10)
 2. 实施 Task 1 回归测试平台，为后续精简与回归提供保障。
 3. 启动 Task 2 ChromeDriver 版本管理，锁定兜底稳定性。
 4. 基于 pydeps 结果编制核心模块精简方案，准备执行阶段。
