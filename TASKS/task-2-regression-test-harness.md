@@ -1,10 +1,10 @@
-# Task 1: Regression Test Harness / 回归测试工具
+# Task 2: Regression Test Harness / 回归测试工具
 
 ## Status / 状态
-- Drafted, pending implementation / 已立项，待实施
+- Pending implementation / 待实施
 
 ## Priority / 优先级
-- P1 – Safeguard crawl reliability / 一类优先级，保障抓取稳定性
+- P1 – Ensure quality assurance / 第一优先级，确保质量保障
 
 ## Estimated Effort / 预计工时
 - 6 hours / 6小时
