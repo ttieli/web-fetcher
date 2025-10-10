@@ -50,8 +50,11 @@ from tests.regression.url_suite_parser import (
 from tests.regression.regression_runner import (
     RegressionRunner,
     TestResult,
+    TestStatus,
     print_summary
 )
+from tests.regression.baseline_manager import BaselineManager, Baseline
+from tests.regression.report_generator import ReportGenerator, write_report
 
 
 def setup_logging(verbose: bool = False):
@@ -142,6 +145,65 @@ Examples / 示例:
         metavar='PATH',
         default=None,
         help='Path to url_suite.txt (default: tests/url_suite.txt) / url_suite.txt 的路径（默认：tests/url_suite.txt）'
+    )
+
+    # Baseline management
+    # 基线管理
+    parser.add_argument(
+        '--save-baseline',
+        metavar='NAME',
+        help='Save current run as baseline / 将当前运行保存为基线'
+    )
+
+    parser.add_argument(
+        '--baseline',
+        metavar='FILE',
+        help='Compare against baseline / 与基线比较'
+    )
+
+    # Reporting
+    # 报告
+    parser.add_argument(
+        '--report',
+        choices=['markdown', 'json', 'text'],
+        metavar='FORMAT',
+        help='Output format: markdown|json|text (default: text) / 输出格式：markdown|json|text（默认：text）'
+    )
+
+    parser.add_argument(
+        '--output',
+        metavar='FILE',
+        help='Write report to file (default: stdout) / 将报告写入文件（默认：标准输出）'
+    )
+
+    # Advanced filtering
+    # 高级过滤
+    parser.add_argument(
+        '--strategy',
+        choices=['urllib', 'selenium', 'auto'],
+        metavar='TYPE',
+        help='Filter by strategy: urllib|selenium|auto / 按策略过滤：urllib|selenium|auto'
+    )
+
+    parser.add_argument(
+        '--min-duration',
+        type=float,
+        metavar='SEC',
+        help='Only show tests taking > N seconds / 仅显示耗时 > N 秒的测试'
+    )
+
+    # CI/CD integration
+    # CI/CD 集成
+    parser.add_argument(
+        '--fail-on-regression',
+        action='store_true',
+        help='Exit 1 if performance regression detected / 如果检测到性能回归，退出码为 1'
+    )
+
+    parser.add_argument(
+        '--strict',
+        action='store_true',
+        help='Exit 1 on any warning / 任何警告时退出码为 1'
     )
 
     args = parser.parse_args()
@@ -252,23 +314,109 @@ Examples / 示例:
     # 清除进度行
     print(" " * 80 + "\r", end='')
 
-    # Print summary
-    # 打印摘要
-    print_summary(results)
+    # Apply strategy filter if specified
+    # 如果指定，应用策略过滤
+    if args.strategy:
+        results = [r for r in results if r.strategy_used == args.strategy]
+        print(f"Filtered to {len(results)} tests using {args.strategy} strategy\n")
+
+    # Apply duration filter if specified
+    # 如果指定，应用持续时间过滤
+    if args.min_duration is not None:
+        results = [r for r in results if r.duration >= args.min_duration]
+        print(f"Filtered to {len(results)} tests with duration >= {args.min_duration}s\n")
+
+    # Load baseline if specified
+    # 如果指定，加载基线
+    baseline = None
+    comparison = None
+    baseline_manager = BaselineManager()
+
+    if args.baseline:
+        try:
+            baseline = baseline_manager.load_baseline(args.baseline)
+            comparison = baseline_manager.compare(baseline, results)
+            print(f"Loaded baseline: {args.baseline}")
+            print(f"Comparison: {comparison.summary}\n")
+        except FileNotFoundError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            if args.strict:
+                sys.exit(2)
+
+    # Generate report
+    # 生成报告
+    report_generator = ReportGenerator(results, suite_file.name)
+
+    if args.report:
+        output_path = Path(args.output) if args.output else None
+
+        if args.report == 'markdown':
+            report = report_generator.generate_markdown(comparison=comparison)
+            write_report(report, output_path)
+        elif args.report == 'json':
+            report = report_generator.generate_json(comparison=comparison)
+            write_report(report, output_path)
+        elif args.report == 'text':
+            report = report_generator.generate_text(comparison=comparison)
+            write_report(report, output_path)
+    else:
+        # Default: print summary to terminal
+        # 默认：向终端打印摘要
+        print_summary(results)
+
+        # Show comparison if baseline provided
+        # 如果提供基线，显示比较
+        if comparison:
+            print("\n" + "=" * 70)
+            print("BASELINE COMPARISON / 基线对比")
+            print("=" * 70)
+            print(comparison.summary)
+
+            if comparison.has_regressions:
+                print("\nREGRESSIONS DETECTED / 检测到回归:")
+                for reg in comparison.regressions[:5]:  # Show first 5
+                    print(f"\n⚠ {reg['url']}")
+                    for detail in reg['changes']['details']:
+                        print(f"  {detail}")
+                if len(comparison.regressions) > 5:
+                    print(f"\n... and {len(comparison.regressions) - 5} more regressions")
+
+    # Save baseline if specified
+    # 如果指定，保存基线
+    if args.save_baseline:
+        saved_path = baseline_manager.save_baseline(
+            name=args.save_baseline,
+            results=results,
+            suite_file=suite_file,
+            metadata={
+                'total_tests': len(results),
+                'total_duration': total_duration
+            }
+        )
+        print(f"\nBaseline saved to: {saved_path}")
 
     # Determine exit code
     # 确定退出代码
-    # Exit code 0: all passed
-    # 退出代码 0：全部通过
-    # Exit code 1: any failures
-    # 退出代码 1：任何失败
     passed = sum(1 for r in results if r.passed)
-    failed = sum(1 for r in results if r.failed or r.status.value == 'error')
+    failed = sum(1 for r in results if r.failed or r.status == TestStatus.ERROR)
 
+    # Check for regressions if --fail-on-regression
+    # 如果 --fail-on-regression，检查回归
+    if args.fail_on_regression and comparison and comparison.has_regressions:
+        print("\nExiting with error: Performance regressions detected", file=sys.stderr)
+        sys.exit(1)
+
+    # Check for failures
+    # 检查失败
     if failed > 0:
         sys.exit(1)
-    else:
-        sys.exit(0)
+
+    # Check strict mode (any warnings)
+    # 检查严格模式（任何警告）
+    if args.strict and (failed > 0 or (comparison and comparison.has_regressions)):
+        sys.exit(1)
+
+    sys.exit(0)
 
 
 if __name__ == '__main__':
