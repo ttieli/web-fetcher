@@ -41,6 +41,7 @@ Web Fetcher项目处于**优秀的技术状态**，具有坚实的架构基础�
 | **Limited Monitoring / 监控有限** | MEDIUM | No real-time performance visibility | Pending |
 | **Hard-coded Routing / 硬编码路由** | MEDIUM | Inflexible, requires code changes | Pending |
 | **ChromeDriver Mismatch / 版本不匹配** | LOW | Version 140 vs 141, potential issues | Pending |
+| **CEB Bank Access / 光大银行访问** | N/A | Anti-bot protection blocks access | ✅ Investigation Closed |
 
 ---
 

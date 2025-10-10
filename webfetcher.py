@@ -62,6 +62,51 @@ from error_handler import (
 # Smart routing for SSL problematic domains (Phase 3.5)
 from config.ssl_problematic_domains import should_use_selenium_directly
 
+# Manual Chrome Hybrid Mode (Task 000) - graceful degradation when not available
+try:
+    import yaml
+    from manual_chrome import ManualChromeHelper
+    from manual_chrome.exceptions import (
+        ManualChromeError,
+        ChromeNotFoundError,
+        PortInUseError,
+        AttachmentError,
+        TimeoutError as ManualChromeTimeoutError
+    )
+    MANUAL_CHROME_AVAILABLE = True
+
+    # Load manual Chrome configuration
+    try:
+        manual_chrome_config_path = Path(__file__).parent / "config" / "manual_chrome_config.yaml"
+        with open(manual_chrome_config_path, 'r', encoding='utf-8') as f:
+            manual_chrome_config = yaml.safe_load(f)
+
+        # Check if manual Chrome is enabled in config
+        if manual_chrome_config.get('enabled', False):
+            manual_chrome_helper = ManualChromeHelper(manual_chrome_config)
+            logging.info("Manual Chrome mode enabled and initialized")
+        else:
+            manual_chrome_helper = None
+            logging.debug("Manual Chrome mode is disabled in configuration")
+    except FileNotFoundError:
+        logging.debug("Manual Chrome config not found, feature disabled")
+        manual_chrome_helper = None
+    except Exception as e:
+        logging.warning(f"Failed to initialize manual Chrome: {e}")
+        manual_chrome_helper = None
+
+except ImportError as e:
+    logging.debug(f"Manual Chrome integration not available: {e}")
+    MANUAL_CHROME_AVAILABLE = False
+    manual_chrome_helper = None
+    # Create dummy classes to prevent import errors
+    class ManualChromeHelper: pass
+    class ManualChromeError(Exception): pass
+    class ChromeNotFoundError(Exception): pass
+    class PortInUseError(Exception): pass
+    class AttachmentError(Exception): pass
+    class ManualChromeTimeoutError(Exception): pass
+
 # Parser modules
 import parsers
 from parsers import (
@@ -1307,6 +1352,100 @@ def _try_selenium_fetch(url: str, ua: Optional[str], timeout: int, metrics: Fetc
         raise SeleniumFetchError(error_msg) from e
 
 
+def _try_manual_chrome_fallback(url: str, metrics: FetchMetrics, start_time: float,
+                                previous_errors: str) -> tuple[str, FetchMetrics]:
+    """
+    Try manual Chrome hybrid fallback as last resort after all automated methods fail.
+
+    This function implements Task-000: Manual Chrome Hybrid Integration.
+    It should only be called after BOTH urllib and Selenium have failed.
+
+    The manual Chrome approach works by:
+    1. Starting Chrome with remote debugging enabled
+    2. Asking the user to manually navigate to the URL
+    3. Attaching via Selenium CDP to extract the content
+    4. Cleaning up resources
+
+    This bypasses anti-bot detection because the human navigation is legitimate.
+
+    Args:
+        url: Target URL to fetch
+        metrics: FetchMetrics object to update
+        start_time: Start time for duration calculation
+        previous_errors: Combined error messages from urllib and Selenium failures
+
+    Returns:
+        tuple[str, FetchMetrics]: (html_content, updated_metrics)
+                                  Returns empty string if manual Chrome fails or is disabled
+    """
+    # Check if manual Chrome is available and enabled
+    if not MANUAL_CHROME_AVAILABLE or manual_chrome_helper is None:
+        logging.debug("Manual Chrome fallback not available or disabled")
+        metrics.fetch_duration = time.time() - start_time
+        metrics.final_status = "failed"
+        metrics.error_message = (
+            f"All automated methods failed: {previous_errors}\n"
+            f"Manual Chrome fallback is not enabled. "
+            f"To enable, set enabled: true in config/manual_chrome_config.yaml"
+        )
+        return "", metrics
+
+    logging.info(f"All automated methods failed for {url}, attempting manual Chrome fallback...")
+    print("\n" + "="*70, file=sys.stderr)
+    print("  AUTOMATED METHODS FAILED - MANUAL CHROME FALLBACK TRIGGERED", file=sys.stderr)
+    print("="*70, file=sys.stderr)
+    print(f"\nURL: {url}", file=sys.stderr)
+    print(f"\nAutomated methods failed with: {previous_errors[:200]}...", file=sys.stderr)
+    print("\nAttempting manual Chrome fallback (human-assisted fetch)...\n", file=sys.stderr)
+
+    try:
+        # Call manual Chrome helper
+        success, html, error = manual_chrome_helper.start_session(url)
+
+        if success and html:
+            # Manual Chrome succeeded!
+            metrics.fallback_method = "manual_chrome"
+            metrics.fetch_duration = time.time() - start_time
+            metrics.final_status = "success"
+
+            logging.info(f"✓ Manual Chrome fallback successful for {url}! Extracted {len(html)} bytes")
+            print("\n" + "="*70, file=sys.stderr)
+            print(f"  SUCCESS! Extracted {len(html):,} bytes via manual Chrome", file=sys.stderr)
+            print("="*70 + "\n", file=sys.stderr)
+
+            return html, metrics
+        else:
+            # Manual Chrome failed
+            logging.warning(f"Manual Chrome fallback failed for {url}: {error}")
+            metrics.fetch_duration = time.time() - start_time
+            metrics.final_status = "failed"
+            metrics.error_message = (
+                f"All methods failed: {previous_errors}\n"
+                f"Manual Chrome fallback also failed: {error}"
+            )
+            return "", metrics
+
+    except KeyboardInterrupt:
+        # User cancelled (Ctrl+C)
+        logging.info("Manual Chrome fallback cancelled by user")
+        metrics.fetch_duration = time.time() - start_time
+        metrics.final_status = "cancelled"
+        metrics.error_message = "User cancelled manual Chrome fallback"
+        print("\n\nManual Chrome fallback cancelled by user (Ctrl+C)\n", file=sys.stderr)
+        return "", metrics
+
+    except Exception as e:
+        # Unexpected error in manual Chrome
+        logging.error(f"Unexpected error in manual Chrome fallback: {e}", exc_info=True)
+        metrics.fetch_duration = time.time() - start_time
+        metrics.final_status = "failed"
+        metrics.error_message = (
+            f"All methods failed: {previous_errors}\n"
+            f"Manual Chrome fallback error: {str(e)}"
+        )
+        return "", metrics
+
+
 def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], timeout: int, 
                                                metrics: FetchMetrics, start_time: float,
                                                urllib_error: str) -> tuple[str, FetchMetrics]:
@@ -1333,10 +1472,9 @@ def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], tim
     
     if not SELENIUM_INTEGRATION_AVAILABLE:
         logging.warning("Selenium fallback requested but integration not available")
-        metrics.fetch_duration = time.time() - start_time
-        metrics.final_status = "failed"
-        metrics.error_message = f"urllib failed: {urllib_error}. Selenium fallback not available - install requirements-selenium.txt"
-        return "", metrics
+        # Try manual Chrome as last resort
+        error_msg = f"urllib failed: {urllib_error}. Selenium fallback not available - install requirements-selenium.txt"
+        return _try_manual_chrome_fallback(url, metrics, start_time, error_msg)
     
     try:
         # Load Selenium configuration
@@ -1346,10 +1484,9 @@ def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], tim
         from selenium_fetcher import SELENIUM_AVAILABLE
         if not SELENIUM_AVAILABLE:
             logging.warning("Selenium package not installed, cannot use as fallback")
-            metrics.fetch_duration = time.time() - start_time
-            metrics.final_status = "failed"
-            metrics.error_message = f"urllib failed: {urllib_error}. Selenium package not installed. Run: pip install selenium PyYAML lxml"
-            return "", metrics
+            # Try manual Chrome as last resort
+            error_msg = f"urllib failed: {urllib_error}. Selenium package not installed. Run: pip install selenium PyYAML lxml"
+            return _try_manual_chrome_fallback(url, metrics, start_time, error_msg)
 
         # Phase 1 & 2: Ensure Chrome debug session is running with enhanced error handling
         logging.info("Checking Chrome debug session health for fallback...")
@@ -1363,10 +1500,9 @@ def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], tim
             logging.warning(f"Chrome unavailable for fallback: {e.message}")
             print(f"\nChrome debug session unavailable for fallback: {e.message}", file=sys.stderr)
             print("Suggestion: Try running './config/ensure-chrome-debug.sh' manually to diagnose.", file=sys.stderr)
-            metrics.fetch_duration = time.time() - start_time
-            metrics.final_status = "failed"
-            metrics.error_message = f"urllib failed: {urllib_error}. Chrome unavailable: {e.message}"
-            return "", metrics
+            # Try manual Chrome as last resort
+            error_msg = f"urllib failed: {urllib_error}. Chrome unavailable: {e.message}"
+            return _try_manual_chrome_fallback(url, metrics, start_time, error_msg)
 
         # Create Selenium fetcher after Chrome health check passed
         fetcher = SeleniumFetcher(config._config)
@@ -1376,10 +1512,9 @@ def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], tim
             success, message = fetcher.connect_to_chrome()
             if not success:
                 logging.warning(f"Failed to connect to Chrome debug session: {message}")
-                metrics.fetch_duration = time.time() - start_time
-                metrics.final_status = "failed"
-                metrics.error_message = f"urllib failed: {urllib_error}. Chrome connection failed: {message}"
-                return "", metrics
+                # Try manual Chrome as last resort
+                error_msg = f"urllib failed: {urllib_error}. Chrome connection failed: {message}"
+                return _try_manual_chrome_fallback(url, metrics, start_time, error_msg)
             
             # Attempt Selenium fetch
             html_content, selenium_metrics = fetcher.fetch_html_selenium(url, ua, timeout)
@@ -1397,17 +1532,15 @@ def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], tim
             
     except (ChromeConnectionError, SeleniumFetchError, SeleniumTimeoutError) as e:
         logging.error(f"Selenium fallback failed for {url}: {e}")
-        metrics.fetch_duration = time.time() - start_time
-        metrics.final_status = "failed"
-        metrics.error_message = f"urllib failed: {urllib_error}. Selenium fallback failed: {e}"
-        return "", metrics
-        
+        # Try manual Chrome as last resort
+        error_msg = f"urllib failed: {urllib_error}. Selenium fallback failed: {e}"
+        return _try_manual_chrome_fallback(url, metrics, start_time, error_msg)
+
     except Exception as e:
         logging.error(f"Unexpected error in Selenium fallback for {url}: {e}")
-        metrics.fetch_duration = time.time() - start_time
-        metrics.final_status = "failed"
-        metrics.error_message = f"urllib failed: {urllib_error}. Unexpected Selenium error: {e}"
-        return "", metrics
+        # Try manual Chrome as last resort
+        error_msg = f"urllib failed: {urllib_error}. Unexpected Selenium error: {e}"
+        return _try_manual_chrome_fallback(url, metrics, start_time, error_msg)
 
 
 def extract_charset_from_headers(response) -> Optional[str]:

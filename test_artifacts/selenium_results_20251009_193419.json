@@ -1,0 +1,15 @@
+[
+  {
+    "tab_index": 1,
+    "url": "https://www.cebbank.com.cn/site/zhpd/zxgg35/cgjggg/263565922/index.html",
+    "title": "中国光大银行互联网统一接入及认证平台开发服务选型入围项目中标候选人公示-中国光大银行",
+    "html_path": "test_artifacts/selenium_tab1_20251009_193419.html",
+    "screenshot": "test_artifacts/selenium_tab1_20251009_193419.png",
+    "body_len": 86279,
+    "has_real_content": true,
+    "has_article_content": true,
+    "is_empty_html": false,
+    "status": "SUCCESS",
+    "timestamp": "2025-10-09T19:34:19.748485"
+  }
+]
