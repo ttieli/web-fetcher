@@ -1,0 +1,130 @@
+# Docker Compose for Web Fetcher Regression Tests
+# Web Fetcher 回归测试的 Docker Compose 配置
+#
+# Usage: docker-compose -f tests/regression/examples/docker-compose.regression.yml up
+# 用法：docker-compose -f tests/regression/examples/docker-compose.regression.yml up
+
+version: '3.8'
+
+services:
+  # Fast regression tests
+  # 快速回归测试
+  regression-fast:
+    build:
+      context: ../../..
+      dockerfile: tests/regression/examples/Dockerfile.regression
+    container_name: webfetcher-regression-fast
+    command: --tags fast --report markdown --output /app/reports/fast-report.md
+    volumes:
+      - ./baselines:/app/baselines:ro
+      - ./reports:/app/reports
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - regression-net
+
+  # Full regression tests
+  # 完整回归测试
+  regression-full:
+    build:
+      context: ../../..
+      dockerfile: tests/regression/examples/Dockerfile.regression
+    container_name: webfetcher-regression-full
+    command: >
+      --exclude-tags manual,slow
+      --baseline baselines/main.json
+      --fail-on-regression
+      --report markdown
+      --output /app/reports/full-report.md
+    volumes:
+      - ./baselines:/app/baselines:ro
+      - ./reports:/app/reports
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - regression-net
+    depends_on:
+      - regression-fast
+
+  # WeChat platform tests
+  # 微信平台测试
+  regression-wechat:
+    build:
+      context: ../../..
+      dockerfile: tests/regression/examples/Dockerfile.regression
+    container_name: webfetcher-regression-wechat
+    command: --tags wechat --verbose --report markdown --output /app/reports/wechat-report.md
+    volumes:
+      - ./baselines:/app/baselines:ro
+      - ./reports:/app/reports
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - regression-net
+
+  # XiaoHongShu platform tests
+  # 小红书平台测试
+  regression-xhs:
+    build:
+      context: ../../..
+      dockerfile: tests/regression/examples/Dockerfile.regression
+    container_name: webfetcher-regression-xhs
+    command: --tags xhs --verbose --report markdown --output /app/reports/xhs-report.md
+    volumes:
+      - ./baselines:/app/baselines:ro
+      - ./reports:/app/reports
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - regression-net
+
+  # Baseline saver - creates new baseline
+  # 基线保存器 - 创建新基线
+  baseline-saver:
+    build:
+      context: ../../..
+      dockerfile: tests/regression/examples/Dockerfile.regression
+    container_name: webfetcher-baseline-saver
+    command: >
+      --exclude-tags manual,slow
+      --save-baseline docker-latest
+    volumes:
+      - ./baselines:/app/baselines
+      - ./reports:/app/reports
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - regression-net
+    profiles:
+      - baseline  # Only run when explicitly requested
+
+networks:
+  regression-net:
+    driver: bridge
+
+# Example usage:
+# 示例用法：
+#
+# Run all regression tests:
+# 运行所有回归测试：
+#   docker-compose -f tests/regression/examples/docker-compose.regression.yml up
+#
+# Run specific service:
+# 运行特定服务：
+#   docker-compose -f tests/regression/examples/docker-compose.regression.yml up regression-fast
+#
+# Run and save baseline:
+# 运行并保存基线：
+#   docker-compose -f tests/regression/examples/docker-compose.regression.yml --profile baseline up baseline-saver
+#
+# View logs:
+# 查看日志：
+#   docker-compose -f tests/regression/examples/docker-compose.regression.yml logs regression-full
+#
+# Clean up:
+# 清理：
+#   docker-compose -f tests/regression/examples/docker-compose.regression.yml down
+#
+# Run in detached mode:
+# 在后台模式下运行：
+#   docker-compose -f tests/regression/examples/docker-compose.regression.yml up -d

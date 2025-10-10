@@ -1,0 +1,196 @@
+# GitHub Actions Workflow for Regression Tests
+# GitHub Actions 回归测试工作流
+#
+# Usage: Copy to .github/workflows/regression.yml
+# 用法：复制到 .github/workflows/regression.yml
+
+name: Regression Tests
+
+on:
+  # Run on push to main or develop
+  # 在推送到 main 或 develop 时运行
+  push:
+    branches: [main, develop]
+
+  # Run on pull requests
+  # 在拉取请求时运行
+  pull_request:
+    branches: [main]
+
+  # Allow manual trigger
+  # 允许手动触发
+  workflow_dispatch:
+
+  # Scheduled daily runs at 2 AM UTC
+  # 每天 UTC 凌晨 2 点定时运行
+  schedule:
+    - cron: '0 2 * * *'
+
+jobs:
+  # Quick smoke test - runs on every push
+  # 快速冒烟测试 - 每次推送都运行
+  smoke-test:
+    name: Smoke Test (Fast)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run fast tests
+        run: |
+          python scripts/run_regression_suite.py \
+            --tags fast,reference \
+            --exclude-tags slow \
+            --report markdown \
+            --output smoke-test-report.md
+
+      - name: Upload smoke test report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: smoke-test-report
+          path: smoke-test-report.md
+          retention-days: 7
+
+  # Full regression test - runs on PR and scheduled
+  # 完整回归测试 - 在 PR 和定时任务时运行
+  full-regression:
+    name: Full Regression Test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Download baseline
+        id: download-baseline
+        continue-on-error: true
+        uses: actions/download-artifact@v3
+        with:
+          name: regression-baseline
+          path: tests/regression/baselines/
+
+      - name: Run full regression suite
+        run: |
+          python scripts/run_regression_suite.py \
+            --exclude-tags manual,slow \
+            --baseline baselines/main.json \
+            --fail-on-regression \
+            --report markdown \
+            --output regression-report.md
+        continue-on-error: true
+
+      - name: Generate JSON report
+        if: always()
+        run: |
+          python scripts/run_regression_suite.py \
+            --exclude-tags manual,slow \
+            --report json \
+            --output regression-report.json
+
+      - name: Upload regression report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: regression-report
+          path: |
+            regression-report.md
+            regression-report.json
+          retention-days: 30
+
+      - name: Save new baseline
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          python scripts/run_regression_suite.py \
+            --exclude-tags manual,slow \
+            --save-baseline main
+
+      - name: Upload baseline
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v3
+        with:
+          name: regression-baseline
+          path: tests/regression/baselines/main.json
+          retention-days: 90
+
+  # Platform-specific tests
+  # 平台特定测试
+  platform-tests:
+    name: Platform Tests (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    strategy:
+      matrix:
+        platform: [wechat, xhs]
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run ${{ matrix.platform }} tests
+        run: |
+          python scripts/run_regression_suite.py \
+            --tags ${{ matrix.platform }} \
+            --verbose \
+            --report markdown \
+            --output ${{ matrix.platform }}-report.md
+
+      - name: Upload platform report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.platform }}-report
+          path: ${{ matrix.platform }}-report.md
+
+  # Notify on failure (example using GitHub issue)
+  # 失败时通知（使用 GitHub issue 的示例）
+  notify-failure:
+    name: Notify Failure
+    runs-on: ubuntu-latest
+    needs: [smoke-test, full-regression]
+    if: failure() && github.event_name == 'schedule'
+
+    steps:
+      - name: Create issue on failure
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Scheduled Regression Tests Failed',
+              body: `The scheduled regression tests failed. Please check the workflow run: ${context.payload.repository.html_url}/actions/runs/${context.runId}`,
+              labels: ['regression-failure', 'automated']
+            })
