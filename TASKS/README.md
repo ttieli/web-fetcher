@@ -7,33 +7,38 @@
 | Priority / 优先级 | Pending / 待办 | Completed / 已完成 | Deferred / 延期 |
 |-------------------|----------------|--------------------|------------------|
 | P1 (Critical) | 0 | 10 | 0 |
-| P2 (Important) | 1 | 6 | 0 |
+| P2 (Important) | 0 | 7 | 0 |
 | P3 (Stability) | 0 | 1 | 0 |
 | Deferred | 0 | 0 | 1 |
 
 ## 🚀 Active Tasks / 当前任务
 
-### Task-006: CRI News Empty Content Fix 🔍 *(IN PROGRESS)*
-- **File:** `task-6-cri-news-empty-content-fix.md`
-- **Priority:** P2 (Important) / P2（重要）
-- **Status:** 🔍 Phase 2 Analysis Complete / 阶段2分析完成
-- **Phase 2 File:** `task-6-phase2-templateparser-cache-bug.md`
-- **Estimated Effort:** 15 min (cache fix) or 2 hours (site template) / 预计15分钟（缓存修复）或2小时（站点模板）
-- **Phase 1:** Original analysis - site-specific template approach
-- **Phase 2:** TemplateParser refactoring attempted - discovered cache bug
-- **Root Cause Found:** TemplateLoader caching v1.1.0, not reloading updated v2.1.0
-- **已发现根本原因：** TemplateLoader缓存v1.1.0，未重新加载更新的v2.1.0
-- **Solution:** Call `parser.reload_templates()` before parsing (15 min fix)
-- **解决方案：** 在解析前调用`parser.reload_templates()`（15分钟修复）
-- **Status:** Diagnostic complete, ready for 15-minute fix
-- **状态：** 诊断完成，准备15分钟修复
+No active tasks. Ready for next phase planning. / 无活跃任务。准备下一阶段规划。
 
 ### Deferred / 延期
 - `deferred/task-005-error-system-phase3-4.md`：错误系统高级特性，待收集生产数据后再评估。
 
 ## ✅ Recently Completed / 最近完成
 
-### Task-005: Rodong Sinmun Empty Content Fix ✅ *(NEW)*
+### Task-006: CRI News Empty Content Fix ✅ *(NEW)*
+- **Status:** Completed 2025-10-10
+- **Grade:** A (95/100)
+- **File:** `task-6-cri-news-empty-content-fix.md`, `task-6-phase2-templateparser-cache-bug.md`
+- **Key Results:**
+  - CRI News content extraction: 0 → 297 lines (11.88x improvement)
+  - Root cause: Template name collision (`generic_v1.1.0_backup.yaml` overwriting `generic.yaml`)
+  - Solution: Renamed backup file + added `reload_templates()` call
+  - TemplateParser refactored to support list-of-dict format selectors
+  - Generic.yaml v2.1.0 with multi-strategy selectors
+  - Keywords present: 新华社, 习近平, 全球妇女峰会, 人类命运共同体
+- **Regression Tests:** All passed (Wikipedia: 317 lines, WeChat: 120 lines, Rodong: 47 lines)
+- **Files Modified:**
+  - Modified: `parsers_migrated.py` (added reload call)
+  - Renamed: `generic_v1.1.0_backup.yaml` → `.yaml.bak`
+  - Enhanced: `parser_engine/template_parser.py` (multi-format support)
+  - Updated: `parser_engine/templates/generic.yaml` (v2.1.0)
+
+### Task-005: Rodong Sinmun Empty Content Fix ✅
 - **Status:** Completed 2025-10-10
 - **Grade:** B+ (Perfect functionality, architectural compromise)
 - **File:** `task-5-rodong-sinmun-empty-content-fix.md`
