@@ -5,20 +5,34 @@
 *Last Updated / 最后更新: 2025-10-11*
 *Last Reorganized / 最后重组: 2025-10-11*
 
-### 🎯 Project State: STABLE - Awaiting User Feedback
-### 🎯 项目状态: 稳定 - 等待用户反馈
+### 🎯 Project State: INVESTIGATING CRITICAL ISSUE
+### 🎯 项目状态: 调查关键问题
 
-**Strategic Decision / 战略决策:** Following the "Progressive Over Big Bang" principle, we are maintaining the current stable state and waiting for actual user feedback before implementing Task-001 Phases 3-5.
-遵循"渐进式胜过大爆炸"原则，我们保持当前稳定状态，等待实际用户反馈后再实施Task-001的第3-5阶段。
+**New Critical Issue / 新的关键问题:** Chrome Selenium timeout error blocking `-s` flag functionality. Task-002 created for investigation and resolution.
+Chrome Selenium 超时错误阻塞 `-s` 标志功能。已创建 Task-002 进行调查和解决。
 
 | Priority / 优先级 | Pending / 待办 | Completed / 已完成 | Deferred / 延期 |
 |-------------------|----------------|--------------------|------------------|
-| P1 (Critical) | 0 | 12 | 0 |
+| P1 (Critical) | 1 | 12 | 0 |
 | P2 (Important) | 0 | 8 | 1 |
 | P3 (Stability) | 0 | 1 | 0 |
 | Deferred | 0 | 0 | 1 |
 
 ## 🚀 Active Tasks / 当前任务
+
+### Task-002: Chrome Selenium Timeout Investigation
+- **Status:** INVESTIGATING / 调查中
+- **Priority:** P1 (Critical - blocks Selenium functionality / 关键 - 阻塞 Selenium 功能)
+- **File:** `task-002-chrome-selenium-timeout-investigation.md`
+- **Created:** 2025-10-11
+- **Estimated Effort:** 19 hours total (Investigation: 2h / Phase 1: 2h / Phase 2: 4h / Phase 3: 8h)
+- **Problem:** Chrome timeout error when using `-s` flag despite Chrome being healthy
+- **Root Cause:** False positive timeout in health check script
+- **Immediate Workaround:** `export WF_CHROME_TIMEOUT=30` before running command
+- **Next Steps:**
+  - Phase 1: Implement immediate workarounds (environment variable, force flag)
+  - Phase 2: Fix health check logic in ensure-chrome-debug.sh
+  - Phase 3: Refactor Chrome session management
 
 ### Task-001: Enhanced Multi-Page and Whole-Site Crawling
 - **Status:** DEFERRED - Phases 1-2 COMPLETED ✅, Phases 3-5 Awaiting User Feedback / 延期 - 第1-2阶段已完成 ✅，第3-5阶段等待用户反馈
