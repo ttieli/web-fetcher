@@ -1,0 +1,278 @@
+# News.cn Articles Template v1.0
+# Template for parsing news.cn (新华网) articles
+# Created to fix empty content extraction issue (Task-009)
+# Target: Extract content from <div id="detail"> container
+
+name: "News.cn Articles"
+version: "1.0.0"
+domains:
+  - "news.cn"
+  - "www.news.cn"
+  - "*.news.cn"
+priority: 95  # High priority for exact domain match
+
+# ============================================================================
+# SELECTOR PATTERNS - News.cn-specific extraction rules
+# ============================================================================
+
+selectors:
+  # ---------------------------------------------------------------------------
+  # TITLE EXTRACTION
+  # Priority: OG meta tag -> h1 -> title fallback
+  # ---------------------------------------------------------------------------
+  title:
+    # Open Graph meta tag (highest priority)
+    - selector: "meta[property='og:title']"
+      strategy: "css"
+      attribute: "content"
+
+    # Standard h1 heading
+    - selector: "h1"
+      strategy: "css"
+
+    # Page title fallback
+    - selector: "title"
+      strategy: "css"
+
+    # News.cn specific title class
+    - selector: ".title"
+      strategy: "css"
+
+  # ---------------------------------------------------------------------------
+  # AUTHOR EXTRACTION
+  # Priority: Meta author -> .info .source -> .author
+  # ---------------------------------------------------------------------------
+  author:
+    # Open Graph article author meta tag
+    - selector: "meta[property='og:article:author']"
+      strategy: "css"
+      attribute: "content"
+
+    # News.cn specific author meta tag
+    - selector: "meta[name='author']"
+      strategy: "css"
+      attribute: "content"
+
+    # Author in info section
+    - selector: ".info .source"
+      strategy: "css"
+
+    # Generic author class
+    - selector: ".author"
+      strategy: "css"
+
+    # Author span
+    - selector: "span.author"
+      strategy: "css"
+
+  # ---------------------------------------------------------------------------
+  # PUBLISH DATE EXTRACTION
+  # Priority: article:published_time meta -> .time element -> .info .time
+  # ---------------------------------------------------------------------------
+  date:
+    # Open Graph published time meta tag
+    - selector: "meta[property='article:published_time']"
+      strategy: "css"
+      attribute: "content"
+
+    # News.cn specific time meta tag
+    - selector: "meta[name='publishdate']"
+      strategy: "css"
+      attribute: "content"
+
+    # Time in info section
+    - selector: ".info .time"
+      strategy: "css"
+
+    # Generic time class
+    - selector: ".time"
+      strategy: "css"
+
+    # Publish time span
+    - selector: "span.time"
+      strategy: "css"
+
+  # ---------------------------------------------------------------------------
+  # CONTENT EXTRACTION
+  # Priority: #detail (CRITICAL - news.cn main container) -> #detailContent -> fallbacks
+  # NOTE: #detail is the PRIMARY selector for news.cn article content
+  # This is the ROOT CAUSE FIX for Task-009 empty content issue
+  # ---------------------------------------------------------------------------
+  content:
+    # News.cn PRIMARY content container (HIGHEST PRIORITY)
+    - selector: "#detail"
+      strategy: "css"
+
+    # Alternative detail container
+    - selector: "#detailContent"
+      strategy: "css"
+
+    # News.cn article body
+    - selector: ".article-body"
+      strategy: "css"
+
+    # Generic article content
+    - selector: "article"
+      strategy: "css"
+
+    # Main content area
+    - selector: "main"
+      strategy: "css"
+
+    # Content wrapper fallback
+    - selector: ".content"
+      strategy: "css"
+
+  # ---------------------------------------------------------------------------
+  # IMAGE EXTRACTION
+  # News.cn article images
+  # ---------------------------------------------------------------------------
+  images:
+    # Images in detail container
+    - selector: "#detail img"
+      strategy: "css"
+      attribute: "src"
+
+    # Images with data-src (lazy loading)
+    - selector: "#detail img"
+      strategy: "css"
+      attribute: "data-src"
+
+    # Images in detailContent
+    - selector: "#detailContent img"
+      strategy: "css"
+      attribute: "src"
+
+    # All article images
+    - selector: "article img"
+      strategy: "css"
+      attribute: "src"
+
+# ============================================================================
+# METADATA CONFIGURATION
+# ============================================================================
+
+metadata:
+  # Fields to extract for metadata
+  fields:
+    - author
+    - publish_time
+    - images
+    - title
+    - url
+    - fetch_time
+
+  # Default values if extraction fails
+  defaults:
+    author: "新华网"
+    title: "未命名"
+    publish_time: ""
+
+# ============================================================================
+# OUTPUT CONFIGURATION
+# ============================================================================
+
+output:
+  format: "markdown"
+
+  # Markdown header template
+  header_template: |
+    # {title}
+
+    - 标题: {title}
+    - 作者: {author}
+    - 发布时间: {publish_time}
+    - 来源: [{url}]({url})
+    - 抓取时间: {fetch_time}
+
+  # Content processing rules
+  content_processing:
+    # Remove script and style tags
+    remove_tags:
+      - "script"
+      - "style"
+      - "noscript"
+      - "iframe"
+
+    # Normalize whitespace
+    normalize_whitespace: true
+
+    # Maximum consecutive newlines
+    max_newlines: 2
+
+    # Image format in markdown
+    image_format: "![]({})"
+
+    # Link format in markdown
+    link_format: "[{}]({})"
+
+# ============================================================================
+# SPECIAL HANDLING
+# ============================================================================
+
+special_handling:
+  # URL normalization for media
+  normalize_media_urls: true
+
+  # Extract links from content
+  extract_links: true
+
+  # Preserve image order
+  preserve_image_order: true
+
+  # Handle Chinese encoding
+  encoding: "utf-8"
+
+  # Clean HTML entities
+  decode_html_entities: true
+
+# ============================================================================
+# VALIDATION RULES
+# ============================================================================
+
+validation:
+  # Minimum content length (characters)
+  min_content_length: 50
+
+  # Required fields
+  required_fields:
+    - title
+
+  # Content quality checks
+  quality_checks:
+    # Ensure content is not just navigation or ads
+    min_text_to_html_ratio: 0.1
+
+    # Minimum text content
+    min_text_length: 50
+
+# ============================================================================
+# PERFORMANCE OPTIMIZATION
+# ============================================================================
+
+performance:
+  # Target parsing time (milliseconds)
+  target_parse_time: 3000  # 3 seconds for typical articles
+
+  # Cache template selectors
+  cache_selectors: true
+
+  # Maximum extraction attempts per field
+  max_attempts: 3
+
+# ============================================================================
+# DEBUGGING AND LOGGING
+# ============================================================================
+
+debug:
+  # Enable debug logging
+  enabled: false
+
+  # Log extraction attempts
+  log_attempts: false
+
+  # Log validation failures
+  log_validation: true
+
+  # Log performance metrics
+  log_performance: true

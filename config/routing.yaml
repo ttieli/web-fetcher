@@ -54,6 +54,23 @@ rules:
       reason: "Static content, template-based parsing"
       reason_zh: "静态内容，使用模板解析"
 
+  # News.cn: Template-based parsing for Xinhua News Agency / 新华网：新华社新闻模板解析
+  - name: "News.cn - Template Parser"
+    name_zh: "新华网 - 模板解析器"
+    priority: 85
+    enabled: true
+    conditions:
+      domain_list:
+        - "news.cn"
+        - "www.news.cn"
+      domain_pattern: "^.*\\.news\\.cn$"
+    action:
+      fetcher: "urllib"
+      parser: "template"
+      template: "News.cn Articles"
+      reason: "Static content with custom HTML structure requiring specialized template"
+      reason_zh: "具有自定义HTML结构的静态内容，需要专用模板"
+
   # Wikipedia: Static content with template-based parsing / 维基百科：使用模板解析的静态内容
   - name: "Wikipedia - Static Content"
     name_zh: "维基百科 - 静态内容"
