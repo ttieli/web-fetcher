@@ -2,11 +2,11 @@
 # TASKS目录 - 任务管理中心
 
 ## Current Status / 当前状态
-*Last Updated / 最后更新: 2025-10-10 19:25*
+*Last Updated / 最后更新: 2025-10-11*
 
 | Priority / 优先级 | Pending / 待办 | Completed / 已完成 | Deferred / 延期 |
 |-------------------|----------------|--------------------|------------------|
-| P1 (Critical) | 0 | 10 | 0 |
+| P1 (Critical) | 0 | 11 | 0 |
 | P2 (Important) | 1 | 8 | 0 |
 | P3 (Stability) | 0 | 1 | 0 |
 | Deferred | 0 | 0 | 1 |
@@ -57,7 +57,32 @@
 
 ## ✅ Recently Completed / 最近完成
 
-### Task-007: Dual-Method Regression Testing ✅ *(NEW)*
+### Task-009: WF Command Alias Conflict Resolution ✅ *(NEW)*
+- **Status:** Completed 2025-10-11
+- **Grade:** A (98.3/100)
+- **Priority:** P1 (Critical / 关键)
+- **File:** `task-009-wf-command-alias-conflict.md`
+- **Actual Effort:** ~1 hour (vs 2-3h estimated)
+- **Key Results:**
+  - Root cause identified: Shell alias `wf='cd ...'` conflicting with `/usr/local/bin/wf` symlink
+  - Solution implemented: Removed conflicting alias (line 33 in ~/.zshrc)
+  - Created alternative alias `wfd` for directory navigation
+  - Backup created: `~/.zshrc.backup.20251011_114412`
+  - All acceptance criteria met (4/4 functional, 4/4 technical, 3/3 documentation)
+- **Verification:**
+  - `wf` command successfully fetches web content ✅
+  - WeChat article processing working correctly ✅
+  - All wf modes operational (fast, full, site, raw, batch) ✅
+  - No shell conflicts in new sessions ✅
+- **Impact:**
+  - Critical user workflow restored immediately
+  - Zero downtime, zero regressions
+  - Clear separation between navigation and command utilities established
+- **Architectural Insights:**
+  - Shell resolution order: Built-ins → Aliases → Functions → PATH
+  - Namespace separation pattern recommended for future commands
+
+### Task-007: Dual-Method Regression Testing ✅
 - **Status:** Completed 2025-10-10
 - **Grade:** A (95/100)
 - **File:** `task-007-dual-method-regression-testing.md`
