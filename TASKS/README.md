@@ -3,20 +3,28 @@
 
 ## Current Status / 当前状态
 *Last Updated / 最后更新: 2025-10-11*
+*Last Reorganized / 最后重组: 2025-10-11*
+
+### 🎯 Project State: STABLE - Awaiting User Feedback
+### 🎯 项目状态: 稳定 - 等待用户反馈
+
+**Strategic Decision / 战略决策:** Following the "Progressive Over Big Bang" principle, we are maintaining the current stable state and waiting for actual user feedback before implementing Task-001 Phases 3-5.
+遵循"渐进式胜过大爆炸"原则，我们保持当前稳定状态，等待实际用户反馈后再实施Task-001的第3-5阶段。
 
 | Priority / 优先级 | Pending / 待办 | Completed / 已完成 | Deferred / 延期 |
 |-------------------|----------------|--------------------|------------------|
-| P1 (Critical) | 0 | 11 | 0 |
-| P2 (Important) | 1 | 8 | 0 |
+| P1 (Critical) | 0 | 12 | 0 |
+| P2 (Important) | 0 | 8 | 1 |
 | P3 (Stability) | 0 | 1 | 0 |
 | Deferred | 0 | 0 | 1 |
 
 ## 🚀 Active Tasks / 当前任务
 
-### Task-008: Enhanced Multi-Page and Whole-Site Crawling 🆕
-- **Status:** IN PROGRESS - Phase 1 & 2 COMPLETED ✅ / 进行中 - Phase 1 & 2 已完成 ✅
+### Task-001: Enhanced Multi-Page and Whole-Site Crawling
+- **Status:** DEFERRED - Phases 1-2 COMPLETED ✅, Phases 3-5 Awaiting User Feedback / 延期 - 第1-2阶段已完成 ✅，第3-5阶段等待用户反馈
 - **Priority:** P2 (Important / 重要)
-- **File:** `task-008-enhanced-multi-page-site-crawling.md`
+- **File:** `task-001-enhanced-multi-page-site-crawling.md`
+- **Original ID:** Task-008 (renamed during reorganization)
 - **Estimated Effort:** 14-19 hours total / Phase 1: 4-6h ✅ / Phase 2: 3-4h ✅
 - **Created:** 2025-10-10
 - **Phase 1 Completed:** 2025-10-10 19:25 (Commit: 0db222b)
@@ -37,9 +45,9 @@
     - --use-sitemap flag in CLI
     - 6/6 regression tests passed (100%)
     - 4 files modified (+344 lines)
-  - Phase 3: Advanced crawling features (4-6h) - PENDING
-  - Phase 4: Structured output (3-4h) - PENDING
-  - Phase 5: Resume capability (3-4h) - PENDING
+  - Phase 3: Advanced crawling features (4-6h) - DEFERRED (awaiting user needs)
+  - Phase 4: Structured output (3-4h) - DEFERRED (awaiting user needs)
+  - Phase 5: Resume capability (3-4h) - DEFERRED (awaiting user needs)
 - **Combined Results (Phase 1 & 2):**
   - 🎯 Critical bug fixed + sitemap support added
   - 🎯 All tests passed (11/11 - 100%)
@@ -50,6 +58,12 @@
   - ✅ Site crawling parameters fully configurable
   - ✅ Sitemap.xml support for efficient large-site crawling
   - ✅ Production-ready for Phases 1 & 2 features
+- **Deferral Rationale / 延期理由:**
+  - Current system is stable with all critical features working
+  - No blocking issues or user complaints
+  - Following "Progressive Over Big Bang" principle
+  - Waiting for actual user feedback before adding complexity
+  - Phases 3-5 ready to resume when user needs arise
 - **Note:** No robots.txt compliance (personal use tool)
 
 ### Deferred / 延期
@@ -57,7 +71,7 @@
 
 ## ✅ Recently Completed / 最近完成
 
-### Task-009: WF Command Alias Conflict Resolution ✅ *(NEW)*
+### Task-009: WF Command Alias Conflict Resolution ✅ *(ARCHIVED 2025-10-11)*
 - **Status:** Completed 2025-10-11
 - **Grade:** A (98.3/100)
 - **Priority:** P1 (Critical / 关键)
@@ -205,25 +219,78 @@
 - **Task 1: Config-Driven Routing System (A+)** – YAML 路由体系已投产，决策 <5ms。详见 `archive/completed/task-001-config-driven-routing-v2/`
 - **Task 000 / 001 / 002 / 004 / 006 / 007 / 010** – 核心抓取与错误处理优化均已归档，参见 `archive/completed/`
 
+## 📊 Archive Summary / 归档摘要
+
+### Completed Work Statistics / 已完成工作统计
+- **Total Completed Tasks / 总完成任务:** 21+ tasks
+- **Success Rate / 成功率:** 95%+ completion
+- **Average Quality Grade / 平均质量等级:** A- (90-95 points)
+- **Total Archived Files / 总归档文件:** 49 task files + 27 documents = 76 files
+- **No Blocking Issues / 无阻塞问题:** System fully operational
+
+### Key Achievements / 主要成就
+- ✅ **Core System:** Config-driven routing, error handling, fetch optimization
+- ✅ **Parser System:** Template creator tools, multi-parser support, generic templates
+- ✅ **Testing Infrastructure:** Regression harness, dual-method testing, CI/CD integration
+- ✅ **Site Support:** Wikipedia, WeChat, CRI News, Rodong Sinmun all working
+- ✅ **Developer Tools:** ChromeDriver management, wf CLI, batch processing
+- ✅ **Documentation:** 2,500+ lines of bilingual documentation
+
 ## 📚 Archive Structure / 归档结构
 ```
 archive/
-├── completed/                 # 已完成任务
-├── documents/
+├── completed/                 # 已完成任务 (49 files)
+│   ├── task-000-manual-chrome-hybrid-integration/
+│   ├── task-001-config-driven-routing/
+│   ├── task-001-parser-template-creator/
+│   ├── task-002-regression-test-harness/
+│   ├── task-003-chromedriver-version-management/
+│   ├── task-003-core-module-pruning/
+│   ├── task-004-wikipedia-parser-optimization/
+│   ├── task-005-rodong-sinmun-empty-content-fix.md
+│   ├── task-006-cri-news-empty-content-fix/
+│   ├── task-007-dual-method-regression-testing/
+│   ├── task-009-wf-command-alias-conflict/     # NEW (2025-10-11)
+│   └── ... (17 more task directories)
+├── documents/                 # 非任务文档 (27 files)
 │   ├── reports/
 │   │   ├── cebbank/           # 光大银行调查原始材料
 │   │   └── general/           # 综合报告
 │   └── specs/                 # 技术规范
-└── deferred/                  # 延期任务
+└── deferred/                  # 延期任务 (1 file)
 ```
 
+## 📝 Reorganization Notes / 重组说明
+*2025-10-11: Comprehensive task reorganization completed*
+- Renamed active tasks with priority numbering (task-001-xxx format)
+- Archived completed Task-009 to archive/completed/
+- Removed empty sessions directory
+- All 21+ completed tasks properly archived
+- Single active task (formerly Task-008, now Task-001) remains in root
+
 ## 🧭 Next Steps / 下一步计划
-1. ✅ ~~完成 Task-1 Parser Template Creator Tools，交付模板工具链。~~ (COMPLETED 2025-10-09)
-2. ✅ ~~完成 Task-2 Regression Test Harness，为后续精简与回归提供保障。~~ (COMPLETED 2025-10-10)
-3. ✅ ~~完成 Task-3 ChromeDriver Version Management，锁定兜底稳定性。~~ (COMPLETED 2025-10-10)
-4. ✅ ~~完成 Task-3 Core Module Pruning (Stages 1-2)，删除19个文件。~~ (COMPLETED 2025-10-10)
-5. ✅ ~~完成 Task-4 Wikipedia Parser Optimization，4.75x质量提升。~~ (COMPLETED 2025-10-10)
-6. 🔮 **战略规划：下阶段功能规划** / Strategic planning: Next phase feature planning
+
+### Current Strategy: Wait for User Feedback / 当前策略：等待用户反馈
+The system is currently **stable and production-ready**. All critical functionality is working without blocking issues.
+系统目前**稳定且可用于生产**。所有关键功能正常运行，无阻塞性问题。
+
+### When to Resume Development / 何时恢复开发
+Resume Task-001 Phases 3-5 when:
+在以下情况恢复Task-001第3-5阶段：
+1. **User requests specific features** (e.g., "I need JSON output format")
+   **用户请求特定功能**（例如："我需要JSON输出格式"）
+2. **Real usage patterns emerge** showing need for enhancements
+   **实际使用模式显现**表明需要增强功能
+3. **Performance issues arise** requiring optimization
+   **性能问题出现**需要优化
+4. **New use cases** demand additional capabilities
+   **新用例**需要额外能力
+
+### Available Enhancements (Ready When Needed) / 可用增强功能（随时可启动）
+- **Task-001 Phase 3:** Advanced crawling (robots.txt, URL patterns, rate limiting)
+- **Task-001 Phase 4:** Structured output (JSON, CSV, database export)
+- **Task-001 Phase 5:** Resume capability (checkpoint/restore for large sites)
+- **Task-005 Phases 3-4:** Advanced error system (if production data shows need)
 
 ## 📝 Maintenance Notes / 维护指引
 - 新增任务需中英双语描述，命名遵循 `task-[优先级编号]-[英文名称].md`。

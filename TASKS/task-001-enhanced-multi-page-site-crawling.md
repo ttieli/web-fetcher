@@ -1,8 +1,9 @@
-# Task-008: Enhanced Multi-Page and Whole-Site Crawling
-# Task-008：增强的多页面与整站爬取功能
+# Task-001: Enhanced Multi-Page and Whole-Site Crawling
+# Task-001：增强的多页面与整站爬取功能
+*(Originally Task-008, renamed during 2025-10-11 reorganization)*
 
 **Priority / 优先级:** P2 (Important / 重要)
-**Status / 状态:** IN PROGRESS - Phase 1 & 2 COMPLETED ✅ / 进行中 - Phase 1 & 2 已完成 ✅
+**Status / 状态:** DEFERRED - Phases 1-2 COMPLETED ✅, Phases 3-5 Awaiting User Feedback / 延期 - 第1-2阶段已完成 ✅，第3-5阶段等待用户反馈
 **Created / 创建日期:** 2025-10-10
 **Revised / 修订日期:** 2025-10-10 (Phase 2 Complete - Sitemap Support)
 **Phase 1 Completed / Phase 1 完成:** 2025-10-10 19:25 (Commit: 0db222b)
