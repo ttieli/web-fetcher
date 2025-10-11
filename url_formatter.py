@@ -1,0 +1,333 @@
+"""
+URL Formatter Module for Web_Fetcher
+
+Provides utilities for consistent URL formatting in markdown output.
+Handles URL detection, markdown link generation, and edge cases.
+
+Task-003 Phase 2: URL Formatter Module
+Author: Web_Fetcher Team
+Version: 1.0
+"""
+
+import re
+import logging
+from typing import Optional, List, Tuple
+from urllib.parse import urlparse
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# ================================================================================
+# URL Pattern Constants
+# ================================================================================
+
+# Comprehensive URL pattern matching
+URL_PATTERNS = {
+    # Full URLs with protocol (http/https)
+    'full_url': r'https?://[^\s\)\]\>\`\"\']+',
+
+    # Protocol-relative URLs (//example.com)
+    'protocol_relative': r'//[a-zA-Z0-9][^\s\)\]\>\`\"\']+',
+
+    # Bare domains (optional, less strict)
+    'bare_domain': r'\b(?:www\.)?[a-z0-9-]+(?:\.[a-z]{2,})+(?:/[^\s\)\]\>\`\"\']*)?',
+
+    # Email addresses (for mailto: links)
+    'email': r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+}
+
+# Code block patterns for preservation
+CODE_BLOCK_PATTERNS = {
+    # Inline code: `code`
+    'inline': r'`[^`\n]+`',
+
+    # Fenced code blocks: ```code```
+    'fenced': r'```[\s\S]*?```',
+
+    # Indented code (4 spaces or tab at line start)
+    'indented': r'^(?:    |\t).+$'
+}
+
+# Markdown link pattern to avoid double-formatting
+MARKDOWN_LINK_PATTERN = r'\[([^\]]+)\]\(([^\)]+)\)'
+
+
+# ================================================================================
+# Core URL Formatting Functions
+# ================================================================================
+
+def format_url_as_markdown(url: str, text: Optional[str] = None) -> str:
+    """
+    Convert URL to markdown link format.
+
+    Args:
+        url: The URL to format
+        text: Optional link text (uses URL if not provided)
+
+    Returns:
+        Markdown formatted link: [text](url)
+
+    Examples:
+        >>> format_url_as_markdown("https://example.com")
+        '[https://example.com](https://example.com)'
+
+        >>> format_url_as_markdown("https://example.com", "Example Site")
+        '[Example Site](https://example.com)'
+    """
+    # Validate URL first
+    if not is_valid_url(url):
+        logger.warning(f"Task-003 Phase 2: Invalid URL format, returning as-is: {url}")
+        return url  # Return as-is if invalid
+
+    # Use URL as text if not provided
+    display_text = text if text else url
+
+    # Return markdown format
+    return f"[{display_text}]({url})"
+
+
+def is_valid_url(url: str) -> bool:
+    """
+    Validate URL format.
+
+    Args:
+        url: URL string to validate
+
+    Returns:
+        True if URL is valid, False otherwise
+    """
+    if not url or not isinstance(url, str):
+        return False
+
+    # Basic validation: should have a scheme or be a valid domain
+    try:
+        result = urlparse(url)
+        # Has scheme (http/https) and netloc (domain)
+        if result.scheme in ('http', 'https') and result.netloc:
+            return True
+        # Protocol-relative URL
+        if url.startswith('//') and len(url) > 3:
+            return True
+        # For other cases, check if it looks like a domain
+        if '.' in url and len(url) > 4:
+            return True
+        return False
+    except Exception as e:
+        logger.debug(f"Task-003 Phase 2: URL validation error for '{url}': {e}")
+        return False
+
+
+def normalize_url_for_display(url: str) -> str:
+    """
+    Normalize URL for display (add protocol if missing, etc.)
+
+    Args:
+        url: URL to normalize
+
+    Returns:
+        Normalized URL string
+    """
+    if not url:
+        return url
+
+    url = url.strip()
+
+    # Already has protocol
+    if url.startswith(('http://', 'https://', '//', 'mailto:', 'ftp://')):
+        return url
+
+    # Add https:// for bare domains
+    if '.' in url:
+        return f"https://{url}"
+
+    return url
+
+
+# ================================================================================
+# URL Detection Functions
+# ================================================================================
+
+# Compile pattern once for performance
+_URL_PATTERN_COMPILED = None
+
+def _compile_url_pattern() -> re.Pattern:
+    """Compile comprehensive URL pattern for detection."""
+    global _URL_PATTERN_COMPILED
+    if _URL_PATTERN_COMPILED is None:
+        # Combine patterns (prioritize full URLs)
+        pattern = '|'.join([
+            URL_PATTERNS['full_url'],
+            URL_PATTERNS['protocol_relative'],
+            # Uncomment if you want to match bare domains:
+            # URL_PATTERNS['bare_domain'],
+        ])
+        _URL_PATTERN_COMPILED = re.compile(pattern)
+    return _URL_PATTERN_COMPILED
+
+
+def detect_urls_in_text(text: str) -> List[Tuple[str, int, int]]:
+    """
+    Find all URLs in text with their positions.
+
+    Args:
+        text: Input text to search for URLs
+
+    Returns:
+        List of (url, start_pos, end_pos) tuples
+
+    Example:
+        >>> text = "Visit https://example.com for info"
+        >>> urls = detect_urls_in_text(text)
+        >>> urls[0]
+        ('https://example.com', 6, 25)
+    """
+    pattern = _compile_url_pattern()
+    urls = []
+
+    for match in pattern.finditer(text):
+        url = match.group(0)
+        start = match.start()
+        end = match.end()
+
+        # Clean up URL (remove trailing punctuation that might be sentence end)
+        while url and url[-1] in '.,;:!?)':
+            url = url[:-1]
+            end -= 1
+
+        if is_valid_url(url):
+            urls.append((url, start, end))
+            logger.debug(f"Task-003 Phase 2: Detected URL '{url}' at position {start}-{end}")
+
+    return urls
+
+
+# ================================================================================
+# Code Block Protection Functions
+# ================================================================================
+
+def _is_in_code_block(text: str, position: int) -> bool:
+    """
+    Check if a position in text is inside a code block.
+
+    Args:
+        text: Full text
+        position: Character position to check
+
+    Returns:
+        True if position is within a code block, False otherwise
+    """
+    # Check inline code blocks
+    inline_pattern = re.compile(CODE_BLOCK_PATTERNS['inline'])
+    for match in inline_pattern.finditer(text):
+        if match.start() <= position < match.end():
+            logger.debug(f"Task-003 Phase 2: Position {position} is in inline code block")
+            return True
+
+    # Check fenced code blocks
+    fenced_pattern = re.compile(CODE_BLOCK_PATTERNS['fenced'], re.DOTALL)
+    for match in fenced_pattern.finditer(text):
+        if match.start() <= position < match.end():
+            logger.debug(f"Task-003 Phase 2: Position {position} is in fenced code block")
+            return True
+
+    # Check indented code blocks (per line basis)
+    lines = text.split('\n')
+    current_pos = 0
+    for line in lines:
+        line_end = current_pos + len(line)
+        if current_pos <= position < line_end:
+            # Check if this line is indented code
+            if re.match(CODE_BLOCK_PATTERNS['indented'], line):
+                logger.debug(f"Task-003 Phase 2: Position {position} is in indented code block")
+                return True
+            break
+        current_pos = line_end + 1  # +1 for newline
+
+    return False
+
+
+def _is_existing_markdown_link(text: str, url_start: int) -> bool:
+    """
+    Check if URL at given position is already part of a markdown link.
+
+    Args:
+        text: Full text
+        url_start: Start position of URL
+
+    Returns:
+        True if URL is already in a markdown link, False otherwise
+    """
+    # Look backwards for markdown link syntax: [text](url)
+    # Check if there's "](" before the URL
+    search_start = max(0, url_start - 100)  # Look back up to 100 chars
+    substring = text[search_start:url_start + 10]
+
+    # Pattern: Check if URL is inside (...)  after ](
+    if '](' in substring:
+        # Find position of ](
+        bracket_pos = substring.rfind('](')
+        if bracket_pos >= 0:
+            # URL should be right after ](
+            if search_start + bracket_pos + 2 == url_start or \
+               search_start + bracket_pos + 2 == url_start - 1:
+                logger.debug(f"Task-003 Phase 2: URL at {url_start} is already a markdown link")
+                return True
+
+    return False
+
+
+# ================================================================================
+# Main URL Replacement Function
+# ================================================================================
+
+def replace_urls_with_markdown(text: str, preserve_code_blocks: bool = True) -> str:
+    """
+    Replace plain URLs in text with markdown links.
+
+    This is the main function that combines all the utilities to convert
+    plain text URLs into properly formatted markdown links.
+
+    Args:
+        text: Input text with plain URLs
+        preserve_code_blocks: Don't format URLs in code blocks (default True)
+
+    Returns:
+        Text with URLs converted to markdown links
+
+    Example:
+        >>> text = "Visit https://example.com for more info"
+        >>> result = replace_urls_with_markdown(text)
+        >>> result
+        'Visit [https://example.com](https://example.com) for more info'
+    """
+    if not text:
+        return text
+
+    # Detect all URLs in text
+    urls = detect_urls_in_text(text)
+
+    if not urls:
+        logger.debug("Task-003 Phase 2: No URLs detected in text")
+        return text
+
+    logger.info(f"Task-003 Phase 2: Found {len(urls)} URL(s) to process")
+
+    # Process URLs in reverse order to maintain position accuracy
+    result = text
+    for url, start, end in reversed(urls):
+        # Skip if in code block
+        if preserve_code_blocks and _is_in_code_block(result, start):
+            logger.debug(f"Task-003 Phase 2: Skipping URL in code block: {url}")
+            continue
+
+        # Skip if already a markdown link
+        if _is_existing_markdown_link(result, start):
+            logger.debug(f"Task-003 Phase 2: Skipping existing markdown link: {url}")
+            continue
+
+        # Replace with markdown link
+        markdown_link = format_url_as_markdown(url)
+        result = result[:start] + markdown_link + result[end:]
+        logger.debug(f"Task-003 Phase 2: Replaced '{url}' with '{markdown_link}'")
+
+    return result
