@@ -8,6 +8,7 @@ chrome:
   debug_port: 9222               # Must match config/chrome-debug.sh port
   debug_host: "localhost"        # Debug session host
   user_data_dir: "~/.chrome-wf"  # Must match chrome-debug.sh PROFILE_DIR
+  health_check_timeout: 15       # Health check timeout in seconds (Task-002 Phase 1)
   
 # Connection Management
 connection:
