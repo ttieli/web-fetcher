@@ -14,11 +14,27 @@ Task-002 第一阶段成功完成。Chrome 超时问题通过三种有效解决�
 | Priority / 优先级 | Pending / 待办 | Completed / 已完成 | Deferred / 延期 |
 |-------------------|----------------|--------------------|------------------|
 | P1 (Critical) | 0 | 13 | 1 |
-| P2 (Important) | 0 | 8 | 1 |
+| P2 (Important) | 1 | 8 | 1 |
 | P3 (Stability) | 0 | 1 | 0 |
 | Deferred | 0 | 0 | 2 |
 
 ## 🚀 Active Tasks / 当前任务
+
+### Task-003: URL Format Consistency in Output
+- **Status:** Investigation Complete / 调查完成
+- **Priority:** P2 (Important - affects user experience / 重要 - 影响用户体验)
+- **File:** `task-003-url-format-consistency-in-output.md`
+- **Created:** 2025-10-11
+- **Problem:** Inconsistent URL formatting in output markdown files
+  - Some URLs are proper markdown links: `[text](url)`
+  - Some URLs are plain text: `(https://example.com)`
+- **Root Cause Identified:**
+  - WeChat parser appends URLs as plain text `(url)`
+  - Generic parser strips HTML tags losing URL structure
+  - Different parsers handle URLs differently
+- **Proposed Solution:** Parser-level fix with shared utility functions
+- **Estimated Effort:** 14 hours total
+- **Impact:** Improves readability and clickability of all output documents
 
 ### Task-002: Chrome Selenium Timeout Resolution
 - **Status:** Phase 1 COMPLETED ✅ / Phase 2-3 DEFERRED ⏸️
