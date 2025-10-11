@@ -158,6 +158,7 @@ class SeleniumMetrics:
     error_message: Optional[str] = None
     debug_port: int = 9222
     session_preserved: bool = True
+    final_url: Optional[str] = None  # Task-003 Phase 1: Capture URL after redirects/JS navigation
 
 
 class SeleniumFetcher:
@@ -641,12 +642,18 @@ class SeleniumFetcher:
             
             # Extract page content
             html_content = self.driver.page_source
+
+            # Task-003 Phase 1: Capture final URL after redirects/JS navigation
+            final_url = self.driver.current_url
+            logging.debug(f"Task-003 Selenium: Final URL = {final_url}")
+
             page_load_time = time.time() - page_load_start
             total_fetch_time = time.time() - fetch_start
-            
+
             # Update metrics
             metrics.page_load_time = page_load_time
             metrics.selenium_wait_time = total_fetch_time
+            metrics.final_url = final_url  # Task-003 Phase 1
             
             # Restore original timeout
             self.driver.set_page_load_timeout(original_timeout)

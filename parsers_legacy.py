@@ -717,7 +717,18 @@ class XHSImageExtractor:
 
 
 
-def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
+def xhs_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[str, str, dict]:
+    """
+    Convert Xiaohongshu (XHS) article HTML to Markdown.
+
+    Args:
+        html: HTML content
+        url: Article URL
+        url_metadata: Optional URL tracking metadata from fetch (Task-003 Phase 1)
+
+    Returns:
+        tuple[str, str, dict]: (date_only, markdown_content, metadata)
+    """
     def clean_title(t: str) -> str:
         t = t.strip()
         t = re.sub(r"\s*-\s*小红书\s*$", "", t)
@@ -890,7 +901,18 @@ def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     return date_only, "\n\n".join(lines).strip() + "\n", metadata
 
 
-def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
+def wechat_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[str, str, dict]:
+    """
+    Convert WeChat article HTML to Markdown.
+
+    Args:
+        html: HTML content
+        url: Article URL
+        url_metadata: Optional URL tracking metadata from fetch (Task-003 Phase 1)
+
+    Returns:
+        tuple[str, str, dict]: (date_only, markdown_content, metadata)
+    """
     title = extract_meta(html, 'og:title')
     if not title:
         m = re.search(r'<h1[^>]*class=["\'][^"\']*rich_media_title[^"\']*["\'][^>]*>(.*?)</h1>', html, re.I|re.S)
@@ -1182,9 +1204,19 @@ def format_list_page_markdown(page_title: str, list_items: List[ListItem], url: 
 
 
 
-def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_crawling: bool = False) -> tuple[str, str, dict]:
+def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_crawling: bool = False, url_metadata: dict = None) -> tuple[str, str, dict]:
     """
     Generic parser with page type detection - Phase 1 implementation
+
+    Args:
+        html: HTML content
+        url: Page URL
+        filter_level: Content filter level
+        is_crawling: Whether this is part of a crawl operation
+        url_metadata: Optional URL tracking metadata from fetch (Task-003 Phase 1)
+
+    Returns:
+        tuple[str, str, dict]: (date_only, markdown_content, metadata)
     """
     # 1. Page type detection
     page_type = detect_page_type(html, url, is_crawling)

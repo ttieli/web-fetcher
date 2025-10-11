@@ -724,7 +724,7 @@ class XHSImageExtractor:
 
 
 
-def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
+def xhs_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[str, str, dict]:
     """
     XiaoHongShu (小红书) parser - Routes to template-based implementation
 
@@ -734,15 +734,17 @@ def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     Args:
         html: HTML content of the page
         url: Source URL
+        url_metadata: Optional URL tracking metadata from fetch (Task-003 Phase 1)
 
     Returns:
         tuple: (date_only, markdown_content, metadata)
     """
     logger.info("Phase 3.5: Routing XiaoHongShu to template-based parser")
+    # Task-003 Phase 1: url_metadata accepted but not yet used (will be used in Phase 3)
     return xhs_to_markdown_migrated(html, url)
 
 
-def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
+def wechat_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[str, str, dict]:
     """
     WeChat (微信公众号) parser - Routes to template-based implementation
 
@@ -752,11 +754,13 @@ def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     Args:
         html: HTML content of the page
         url: Source URL
+        url_metadata: Optional URL tracking metadata from fetch (Task-003 Phase 1)
 
     Returns:
         tuple: (date_only, markdown_content, metadata)
     """
     logger.info("Phase 3.5: Routing WeChat to template-based parser")
+    # Task-003 Phase 1: url_metadata accepted but not yet used (will be used in Phase 3)
     return wechat_to_markdown_migrated(html, url)
 
 
@@ -956,7 +960,7 @@ def format_list_page_markdown(page_title: str, list_items: List[ListItem], url: 
 
 
 
-def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_crawling: bool = False) -> tuple[str, str, dict]:
+def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_crawling: bool = False, url_metadata: dict = None) -> tuple[str, str, dict]:
     """
     Generic parser - Routes to template-based implementation
 
@@ -968,9 +972,11 @@ def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_craw
         url: Source URL
         filter_level: Content filtering level
         is_crawling: Whether in crawling mode
+        url_metadata: Optional URL tracking metadata from fetch (Task-003 Phase 1)
 
     Returns:
         tuple: (date_only, markdown_content, metadata)
     """
     logger.info("Phase 3.5: Routing Generic parser to template-based implementation")
+    # Task-003 Phase 1: url_metadata accepted but not yet used (will be used in Phase 3)
     return generic_to_markdown_migrated(html, url, filter_level, is_crawling)
