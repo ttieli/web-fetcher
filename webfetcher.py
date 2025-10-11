@@ -903,18 +903,20 @@ def calculate_backoff_delay(attempt: int, base_delay: float = BASE_DELAY) -> flo
     return delay + jitter
 
 
-def ensure_chrome_debug(config: Optional[Dict[str, Any]] = None) -> tuple[bool, str]:
+def ensure_chrome_debug(config: Optional[Dict[str, Any]] = None, force_mode: bool = False) -> tuple[bool, str]:
     """
     Ensure Chrome debug session is running by calling ensure-chrome-debug.sh.
 
     Phase 1: Core Integration - Chrome auto-launch before Selenium initialization.
     Phase 2: Enhanced error handling with specific exceptions and user-friendly messages.
+    Task-002 Phase 1: Add force_mode parameter for quick Chrome port check.
 
     This function integrates the existing Chrome debug health check and launch scripts
     with enhanced error reporting.
 
     Args:
         config: Optional configuration dictionary (not used currently, reserved for future)
+        force_mode: If True, skip full health check and only verify port (default: False)
 
     Returns:
         tuple[bool, str]: (success, message)
@@ -937,6 +939,36 @@ def ensure_chrome_debug(config: Optional[Dict[str, Any]] = None) -> tuple[bool, 
     import subprocess
     import os
 
+    # Task-002 Phase 1: Read timeout from environment variable, config, or default
+    try:
+        timeout = int(os.environ.get('WF_CHROME_TIMEOUT',
+                                     config.get('chrome', {}).get('health_check_timeout', 15) if config else 15))
+        # Validate range: 5-300 seconds
+        if not (5 <= timeout <= 300):
+            logging.warning(f"Invalid timeout value {timeout}, using default 15 seconds")
+            timeout = 15
+        logging.info(f"Using Chrome health check timeout: {timeout} seconds")
+    except (ValueError, TypeError):
+        logging.warning("Invalid WF_CHROME_TIMEOUT value, using default 15 seconds")
+        timeout = 15
+
+    # Task-002 Phase 1: Force mode - quick port check only
+    if force_mode:
+        logging.info("Force mode enabled - skipping full health check")
+        # Quick port check only
+        try:
+            import urllib.request
+            chrome_port = config.get('chrome', {}).get('debug_port', 9222) if config else 9222
+            url = f"http://localhost:{chrome_port}/json/version"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=2) as response:
+                if response.status == 200:
+                    logging.info("Chrome debug port is responsive (force mode)")
+                    return (True, "Chrome session verified (force mode)")
+        except Exception as e:
+            logging.warning(f"Force mode port check failed: {e}, will attempt normal startup")
+            # Fall through to normal startup if port check fails
+
     # Get script directory (where webfetcher.py is located)
     script_dir = os.path.dirname(os.path.abspath(__file__))
     ensure_script = os.path.join(script_dir, 'config', 'ensure-chrome-debug.sh')
@@ -951,6 +983,33 @@ def ensure_chrome_debug(config: Optional[Dict[str, Any]] = None) -> tuple[bool, 
             guidance=ChromeErrorMessages.get_message('launch_failed', error_details=error_msg)
         )
 
+    # Task-002 Phase 1 Stage 1.3: Quick session reuse - check for existing Chrome session
+    def quick_chrome_check(port=9222):
+        """
+        Quick check if Chrome debug session is already running and healthy.
+        Returns True if Chrome is responding, False otherwise.
+        """
+        try:
+            import urllib.request
+            import json
+            url = f"http://localhost:{port}/json/version"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=2) as response:
+                if response.status == 200:
+                    data = json.loads(response.read().decode('utf-8'))
+                    if 'Browser' in data and 'Chrome' in data['Browser']:
+                        return True
+            return False
+        except Exception:
+            return False
+
+    # Quick check for existing session before running full health check
+    logging.info("Checking for existing Chrome debug session...")
+    chrome_port = config.get('chrome', {}).get('debug_port', 9222) if config else 9222
+    if quick_chrome_check(chrome_port):
+        logging.info("Existing Chrome session detected and healthy - skipping full health check")
+        return (True, "Chrome session reused (quick check)")
+
     try:
         # Run the ensure-chrome-debug.sh script
         logging.debug(f"Calling Chrome debug health check: {ensure_script}")
@@ -958,7 +1017,7 @@ def ensure_chrome_debug(config: Optional[Dict[str, Any]] = None) -> tuple[bool, 
             [ensure_script],
             capture_output=True,
             text=True,
-            timeout=15  # 15 second timeout for health check + potential recovery
+            timeout=timeout  # Task-002 Phase 1: Use dynamic timeout from environment/config
         )
 
         # Parse return code and raise specific exceptions
@@ -1008,10 +1067,9 @@ def ensure_chrome_debug(config: Optional[Dict[str, Any]] = None) -> tuple[bool, 
 
         elif result.returncode == 4:
             # Timeout error from script
-            timeout_value = 15
-            guidance = ChromeErrorMessages.get_message('timeout', timeout=timeout_value)
+            guidance = ChromeErrorMessages.get_message('timeout', timeout=timeout)
             raise ChromeTimeoutError(
-                f"Chrome failed to start within {timeout_value} seconds",
+                f"Chrome failed to start within {timeout} seconds",
                 error_code=4,
                 guidance=guidance
             )
@@ -1040,10 +1098,9 @@ def ensure_chrome_debug(config: Optional[Dict[str, Any]] = None) -> tuple[bool, 
 
     except subprocess.TimeoutExpired:
         # Timeout during subprocess execution
-        timeout_value = 15
-        guidance = ChromeErrorMessages.get_message('timeout', timeout=timeout_value)
+        guidance = ChromeErrorMessages.get_message('timeout', timeout=timeout)
         raise ChromeTimeoutError(
-            f"Chrome debug health check timed out after {timeout_value} seconds",
+            f"Chrome debug health check timed out after {timeout} seconds",
             error_code=124,  # Standard timeout exit code
             guidance=guidance
         )
@@ -1096,7 +1153,7 @@ def _determine_fetcher_via_routing(url: str) -> Optional[str]:
 
 
 def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
-                         fetch_mode: str = 'auto') -> tuple[str, FetchMetrics]:
+                         fetch_mode: str = 'auto', force_chrome: bool = False) -> tuple[str, FetchMetrics]:
     """
     Fetch HTML with exponential backoff retry logic and optional Selenium fallback.
     
@@ -1131,7 +1188,7 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
             metrics.primary_method = "selenium_direct"
 
             try:
-                return _try_selenium_fetch(url, ua, timeout, metrics, start_time)
+                return _try_selenium_fetch(url, ua, timeout, metrics, start_time, force_chrome)
             except Exception as e:
                 logging.warning(f"Selenium fetch failed for {url}, falling back to urllib: {e}")
                 metrics.primary_method = "urllib"
@@ -1151,7 +1208,7 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
     # Phase 2: Handle selenium-only mode first
     if fetch_mode == 'selenium':
         metrics.primary_method = "selenium"
-        return _try_selenium_fetch(url, ua, timeout, metrics, start_time)
+        return _try_selenium_fetch(url, ua, timeout, metrics, start_time, force_chrome)
     
     # Try urllib first (fetch_mode: 'auto' or 'urllib')
     for attempt in range(MAX_RETRIES + 1):  # 0, 1, 2, 3 (4 total attempts)
@@ -1277,7 +1334,7 @@ def _create_empty_metrics_with_guidance() -> FetchMetrics:
     return metrics
 
 
-def _try_selenium_fetch(url: str, ua: Optional[str], timeout: int, metrics: FetchMetrics, start_time: float) -> tuple[str, FetchMetrics]:
+def _try_selenium_fetch(url: str, ua: Optional[str], timeout: int, metrics: FetchMetrics, start_time: float, force_chrome: bool = False) -> tuple[str, FetchMetrics]:
     """
     Try Selenium fetch as primary method (selenium-only mode).
 
@@ -1323,9 +1380,10 @@ def _try_selenium_fetch(url: str, ua: Optional[str], timeout: int, metrics: Fetc
             raise SeleniumNotAvailableError(error_msg)
 
         # Phase 1 & 2: Ensure Chrome debug session is running with enhanced error handling
+        # Task-002 Phase 1: Pass force_chrome flag to skip full health check
         logging.info("Checking Chrome debug session health...")
         try:
-            chrome_ok, chrome_message = ensure_chrome_debug(config._config)
+            chrome_ok, chrome_message = ensure_chrome_debug(config._config, force_mode=force_chrome)
             metrics.chrome_auto_launched = chrome_ok
             metrics.chrome_launch_message = chrome_message
         except ChromePortConflictError as e:
@@ -1548,9 +1606,10 @@ def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], tim
             return _try_manual_chrome_fallback(url, metrics, start_time, error_msg)
 
         # Phase 1 & 2: Ensure Chrome debug session is running with enhanced error handling
+        # Task-002 Phase 1: Pass force_chrome flag to skip full health check
         logging.info("Checking Chrome debug session health for fallback...")
         try:
-            chrome_ok, chrome_message = ensure_chrome_debug(config._config)
+            chrome_ok, chrome_message = ensure_chrome_debug(config._config, force_mode=force_chrome)
             metrics.chrome_auto_launched = chrome_ok
             metrics.chrome_launch_message = chrome_message
         except (ChromePortConflictError, ChromePermissionError, ChromeTimeoutError, ChromeLaunchError) as e:
@@ -4316,6 +4375,9 @@ def main():
                     help='Shortcut for --fetch-mode urllib (force urllib without Selenium fallback)')
     ap.add_argument('--selenium-timeout', type=int, default=30,
                     help='Selenium page load timeout in seconds (default: 30)')
+    # Task-002 Phase 1: Force Chrome mode flag
+    ap.add_argument('--force-chrome', action='store_true',
+                    help='Skip Chrome health check (use when Chrome is known to be running)')
     
     args = ap.parse_args()
     
@@ -4521,8 +4583,9 @@ def main():
             fetch_timeout = args.selenium_timeout if args.fetch_mode == 'selenium' else args.timeout
 
             # Phase 2 Enhancement: Catch Selenium exceptions and exit with non-zero code
+            # Task-002 Phase 1: Pass force_chrome flag to fetch function
             try:
-                html, fetch_metrics = fetch_html(url, ua=ua, timeout=fetch_timeout, fetch_mode=args.fetch_mode)
+                html, fetch_metrics = fetch_html(url, ua=ua, timeout=fetch_timeout, fetch_mode=args.fetch_mode, force_chrome=args.force_chrome)
                 logging.info("Static fetch completed")
 
                 # Phase 2: Check if fetch failed
