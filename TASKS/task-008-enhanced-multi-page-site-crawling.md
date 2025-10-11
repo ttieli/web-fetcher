@@ -6,7 +6,7 @@
 **Created / 创建日期:** 2025-10-10
 **Revised / 修订日期:** 2025-10-10 (Phase 2 Complete - Sitemap Support)
 **Phase 1 Completed / Phase 1 完成:** 2025-10-10 19:25 (Commit: 0db222b)
-**Phase 2 Completed / Phase 2 完成:** 2025-10-10 (Commit: [To be added])
+**Phase 2 Completed / Phase 2 完成:** 2025-10-10 (Commit: 2ec139d)
 **Estimated Effort / 预计工时:** 14-19 hours total / Phase 1: 4-6h ✅ / Phase 2: 3-4h ✅
 
 ---
