@@ -8,20 +8,20 @@
 ### 🎯 Project State: STABLE - PARTIAL TASKS PENDING
 ### 🎯 项目状态: 稳定 - 部分任务待续
 
-**Latest Update / 最新更新:** Task-010 Solution E completed - Browser notification page helps users identify correct Chrome instance.
-Task-010 方案E已完成 - 浏览器通知页面帮助用户识别正确的Chrome实例。
+**Latest Update / 最新更新:** Task-011 completed - Selenium mode execution flow fixed with Phase 1-2 implemented. No more 405 errors and clear fetch mode messaging.
+Task-011已完成 - Selenium模式执行流程修复，实施了阶段1-2。不再有405错误，获取模式消息清晰。
 
 | Priority / 优先级 | Active Tasks / 活动任务 | Partial Complete / 部分完成 | Archived / 已归档 |
 |-------------------|------------------------|----------------------------|-------------------|
-| P0 (Critical) | 1 | 1 | 0 |
-| P1 (Critical) | 1 | 1 | 16 |
+| P0 (Critical) | 0 | 0 | 1 |
+| P1 (Critical) | 1 | 0 | 18 |
 | P2 (Important) | 2 | 2 | 10 |
-| Total | 4 | 4 | 26+ |
+| Total | 3 | 2 | 29+ |
 
 ## 🚀 Active Tasks / 当前任务
 
-*Four partially completed tasks pending continuation. All have initial implementations complete and functional.*
-*四个部分完成的任务待续。所有任务的初始实现已完成并可用。*
+*Three partially completed tasks pending continuation. All have initial implementations complete and functional.*
+*三个部分完成的任务待续。所有任务的初始实现已完成并可用。*
 
 ### Task-003: URL Format Consistency + Dual URL Tracking
 - **Status:** Phase 1-2 Complete, Phase 3-6 Deferred / 阶段1-2完成，阶段3-6延期
@@ -119,25 +119,50 @@ Task-010 方案E已完成 - 浏览器通知页面帮助用户识别正确的Chro
   - Phases 3-5 ready to resume when user needs arise
 - **Note:** No robots.txt compliance (personal use tool)
 
-### Task-010: Selenium Login State Preservation (Solution E Complete)
-- **Status:** Solution E Complete / 方案E已完成 ✅
-- **Priority:** P0 (Critical)
-- **File:** `task-010-selenium-login-state-preservation.md`
-- **Completed:** 2025-10-13 (Solution E only)
-- **Quality Score:** 9.2/10
-- **Problem:** Selenium cannot preserve user login state; users confused about which Chrome to use
-- **Solution E Implemented:** Browser Notification Page
-  - ✅ Displays notification when -s flag used
-  - ✅ Shows bilingual content (Chinese/English)
-  - ✅ Displays session info (port, time, profile)
-  - ✅ Non-intrusive, configurable feature
-- **Remaining Solutions:** A/B/C/D deferred pending user needs
-- **User Impact:** Users now know exactly which Chrome to login in
 
 ### Deferred / 延期
 - `deferred/task-005-error-system-phase3-4.md`：错误系统高级特性，待收集生产数据后再评估。
 
 ## ✅ Recently Completed / 最近完成
+
+### Task-011: Selenium Mode Execution Flow Issues ✅ *(2025-10-13)*
+- **Status:** Phases 1-2 Completed, Phase 3 Skipped (Unnecessary)
+- **Grade:** A+ (9.5/10)
+- **Priority:** P1 (High / 重要)
+- **File:** `task-011-selenium-mode-execution-flow-issues.md`
+- **Actual Effort:** ~4 hours (vs 6h estimated - Phase 3 skipped)
+- **Key Results:**
+  - Phase 1: URL resolution skip for Selenium mode + accurate messaging
+  - Phase 2: ChromeDriver version management with 3-tier compatibility
+  - Eliminated 405 errors from sites blocking HEAD requests
+  - Clear, mode-specific logging (no more "static fetch only" confusion)
+  - Proactive version mismatch warnings with bilingual messages
+  - Phase 3 skipped: Already optimized through Phase 1-2
+- **Impact:**
+  - Selenium mode now works seamlessly without premature HEAD requests
+  - Users get clear, accurate messages about fetch method
+  - ChromeDriver compatibility issues proactively detected
+  - Better performance by skipping unnecessary operations
+  - Zero regressions, full backward compatibility
+- **Production Status:** Ready for deployment
+
+### Task-010 Solution E: Selenium Login State Preservation ✅ *(2025-10-13)*
+- **Status:** Solution E Completed (Solutions A-D Deferred)
+- **Grade:** A (9.2/10)
+- **Priority:** P0 (Critical)
+- **File:** `task-010-selenium-login-state-preservation.md`
+- **Actual Effort:** ~2 hours (as estimated)
+- **Solution E Implemented:** Browser Notification Page
+  - Displays notification when -s flag used
+  - Shows bilingual content (Chinese/English)
+  - Displays session info (port, time, profile)
+  - Non-intrusive, configurable feature
+- **Impact:**
+  - Users now know exactly which Chrome instance to login in
+  - Eliminates confusion when multiple Chrome instances are running
+  - Clear visual indication of Web_Fetcher connection
+  - Reduced user frustration and trial-and-error
+- **Production Status:** Ready for deployment
 
 ### Task-003 Phase 1-2: URL Format Consistency + Dual URL Tracking ✅ *(2025-10-11)*
 - **Status:** Phase 1-2 Completed, Phase 3-6 Deferred
@@ -333,11 +358,11 @@ Task-010 方案E已完成 - 浏览器通知页面帮助用户识别正确的Chro
 ## 📊 Archive Summary / 归档摘要
 
 ### Completed Work Statistics / 已完成工作统计
-- **Total Completed Tasks / 总完成任务:** 25+ tasks (including Task-009, Task-002 Phase 1, and Task-003 Phase 1-2)
+- **Total Completed Tasks / 总完成任务:** 27+ tasks (including Task-011, Task-010, Task-009, Task-002 Phase 1, and Task-003 Phase 1-2)
 - **Success Rate / 成功率:** 96%+ completion
 - **Average Quality Grade / 平均质量等级:** A (92-97 points)
-- **Total Archived Files / 总归档文件:** 50 task files + 27 documents = 77 files
-- **Active Development Hours / 活跃开发时数:** 12 hours today (Task-002: 2h, Task-003: 7h, Task-009: 3h)
+- **Total Archived Files / 总归档文件:** 52 task files + 27 documents = 79 files
+- **Active Development Hours / 活跃开发时数:** 18 hours today (Task-002: 2h, Task-003: 7h, Task-009: 3h, Task-010: 2h, Task-011: 4h)
 - **No Blocking Issues / 无阻塞问题:** System fully operational and production-ready
 
 ### Key Achievements / 主要成就
