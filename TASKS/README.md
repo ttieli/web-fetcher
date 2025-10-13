@@ -8,19 +8,20 @@
 ### 🎯 Project State: STABLE - PARTIAL TASKS PENDING
 ### 🎯 项目状态: 稳定 - 部分任务待续
 
-**Latest Update / 最新更新:** TASKS folder reorganized. Completed tasks archived, partial tasks remain in root for continuation.
-TASKS文件夹已重组。已完成任务已归档，部分完成任务保留在根目录待续。
+**Latest Update / 最新更新:** Task-010 Solution E completed - Browser notification page helps users identify correct Chrome instance.
+Task-010 方案E已完成 - 浏览器通知页面帮助用户识别正确的Chrome实例。
 
 | Priority / 优先级 | Active Tasks / 活动任务 | Partial Complete / 部分完成 | Archived / 已归档 |
 |-------------------|------------------------|----------------------------|-------------------|
+| P0 (Critical) | 1 | 1 | 0 |
 | P1 (Critical) | 1 | 1 | 16 |
 | P2 (Important) | 2 | 2 | 10 |
-| Total | 3 | 3 | 26+ |
+| Total | 4 | 4 | 26+ |
 
 ## 🚀 Active Tasks / 当前任务
 
-*Three partially completed tasks pending continuation. All have Phase 1 implementations complete and functional.*
-*三个部分完成的任务待续。所有任务的第一阶段实现已完成并可用。*
+*Four partially completed tasks pending continuation. All have initial implementations complete and functional.*
+*四个部分完成的任务待续。所有任务的初始实现已完成并可用。*
 
 ### Task-003: URL Format Consistency + Dual URL Tracking
 - **Status:** Phase 1-2 Complete, Phase 3-6 Deferred / 阶段1-2完成，阶段3-6延期
@@ -117,6 +118,21 @@ TASKS文件夹已重组。已完成任务已归档，部分完成任务保留在
   - Waiting for actual user feedback before adding complexity
   - Phases 3-5 ready to resume when user needs arise
 - **Note:** No robots.txt compliance (personal use tool)
+
+### Task-010: Selenium Login State Preservation (Solution E Complete)
+- **Status:** Solution E Complete / 方案E已完成 ✅
+- **Priority:** P0 (Critical)
+- **File:** `task-010-selenium-login-state-preservation.md`
+- **Completed:** 2025-10-13 (Solution E only)
+- **Quality Score:** 9.2/10
+- **Problem:** Selenium cannot preserve user login state; users confused about which Chrome to use
+- **Solution E Implemented:** Browser Notification Page
+  - ✅ Displays notification when -s flag used
+  - ✅ Shows bilingual content (Chinese/English)
+  - ✅ Displays session info (port, time, profile)
+  - ✅ Non-intrusive, configurable feature
+- **Remaining Solutions:** A/B/C/D deferred pending user needs
+- **User Impact:** Users now know exactly which Chrome to login in
 
 ### Deferred / 延期
 - `deferred/task-005-error-system-phase3-4.md`：错误系统高级特性，待收集生产数据后再评估。

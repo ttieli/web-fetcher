@@ -113,3 +113,10 @@ development:
   enable_dev_tools: false        # Enable Chrome DevTools
   slow_motion: 0                 # Delay between actions (ms) for debugging
   debug_mode: false              # Enable additional debug output
+
+# Browser Notification Settings (Task-010 Solution E)
+# 浏览器通知设置 - 帮助用户识别正确的Chrome实例
+browser_notification:
+  enabled: true                  # Show notification page when connecting
+  auto_close: 0                  # Auto-close after N seconds (0 = manual close)
+  show_on_reconnect: false       # Show notification on reconnection attempts

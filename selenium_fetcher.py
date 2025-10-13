@@ -36,6 +36,8 @@ import json
 import urllib.request
 import urllib.error
 import sys
+import base64
+import datetime
 from typing import Optional, Tuple, Dict, Any, List
 from dataclasses import dataclass
 
@@ -444,7 +446,207 @@ class SeleniumFetcher:
         except Exception as e:
             logging.debug(f"Error getting Chrome tabs: {e}")
             return None
-    
+
+    def show_browser_notification(self) -> None:
+        """
+        Display browser notification page to help users identify the correct Chrome instance.
+
+        Task-010 Solution E: Opens a new tab with bilingual information about the debug session,
+        helping users distinguish Web_Fetcher's Chrome from other instances.
+
+        Features:
+        - Bilingual content (Chinese/English)
+        - Session information (port, timestamp, profile)
+        - Gradient purple background design
+        - Non-blocking (errors don't fail main operation)
+        - Proper window handle management
+
+        Configuration: Controlled by browser_notification.enabled in selenium_defaults.yaml
+        """
+        if not self.driver:
+            logging.warning("Cannot show browser notification: driver not initialized")
+            return
+
+        try:
+            # Save current window handle to restore later
+            original_window = self.driver.current_window_handle
+
+            # Prepare session information
+            current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            profile_path = self.config.get('chrome', {}).get('user_data_dir', '~/.chrome-wf')
+
+            # Create HTML content with bilingual information
+            html_content = """
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web_Fetcher Browser Notification | 浏览器通知</title>
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: white;
+            padding: 20px;
+        }}
+        .container {{
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 700px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }}
+        h1 {{
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-align: center;
+        }}
+        h2 {{
+            font-size: 1.8em;
+            margin-bottom: 30px;
+            text-align: center;
+            opacity: 0.9;
+        }}
+        .info-section {{
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 25px;
+            margin: 20px 0;
+        }}
+        .info-item {{
+            margin: 15px 0;
+            font-size: 1.1em;
+        }}
+        .info-label {{
+            font-weight: bold;
+            color: #fff;
+            display: inline-block;
+            width: 120px;
+        }}
+        .info-value {{
+            color: #ffd700;
+            font-family: "Monaco", "Consolas", monospace;
+        }}
+        .instruction {{
+            background: rgba(255, 255, 255, 0.15);
+            border-left: 4px solid #ffd700;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }}
+        .instruction-title {{
+            font-weight: bold;
+            font-size: 1.2em;
+            margin-bottom: 10px;
+        }}
+        .instruction-text {{
+            line-height: 1.8;
+            opacity: 0.95;
+        }}
+        .footer {{
+            text-align: center;
+            margin-top: 30px;
+            opacity: 0.8;
+            font-size: 0.9em;
+        }}
+        .emoji {{
+            font-size: 1.3em;
+            margin-right: 8px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Web_Fetcher</h1>
+        <h2>浏览器连接通知 | Browser Notification</h2>
+
+        <div class="info-section">
+            <div class="info-item">
+                <span class="info-label">调试端口 Port:</span>
+                <span class="info-value">{debug_port}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">连接时间 Time:</span>
+                <span class="info-value">{timestamp}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">配置目录 Profile:</span>
+                <span class="info-value">{profile_path}</span>
+            </div>
+        </div>
+
+        <div class="instruction">
+            <div class="instruction-title">
+                <span class="emoji">🎯</span>这是 Web_Fetcher 使用的 Chrome 浏览器
+            </div>
+            <div class="instruction-text">
+                Web_Fetcher 正在使用这个浏览器窗口进行网页抓取。如果您需要手动登录或处理验证码，请在此浏览器中操作。
+            </div>
+        </div>
+
+        <div class="instruction">
+            <div class="instruction-title">
+                <span class="emoji">🎯</span>This is the Chrome browser used by Web_Fetcher
+            </div>
+            <div class="instruction-text">
+                Web_Fetcher is using this browser window for web scraping. If you need to manually log in or handle CAPTCHAs, please do so in this browser.
+            </div>
+        </div>
+
+        <div class="footer">
+            Task-010 Solution E | Web_Fetcher Browser Identification
+        </div>
+    </div>
+</body>
+</html>
+""".format(
+                debug_port=self.debug_port,
+                timestamp=current_time,
+                profile_path=profile_path
+            )
+
+            # Encode HTML as base64 data URL
+            html_bytes = html_content.encode('utf-8')
+            html_base64 = base64.b64encode(html_bytes).decode('ascii')
+            data_url = f"data:text/html;charset=utf-8;base64,{html_base64}"
+
+            # Open notification in new tab
+            self.driver.execute_script("window.open('');")
+
+            # Switch to the new tab
+            self.driver.switch_to.window(self.driver.window_handles[-1])
+
+            # Load the notification page
+            self.driver.get(data_url)
+
+            # Switch back to original window
+            self.driver.switch_to.window(original_window)
+
+            logging.info("Browser notification page displayed successfully")
+
+        except Exception as e:
+            # Non-critical error: log warning but don't fail
+            logging.warning(f"Failed to display browser notification: {e}")
+
+            # Try to restore original window if possible
+            try:
+                if original_window:
+                    self.driver.switch_to.window(original_window)
+            except:
+                pass  # Ignore restore errors
+
     def connect_to_chrome(self) -> Tuple[bool, str]:
         """
         Connect ONLY to existing Chrome debug instance - NEVER start new instance.
@@ -516,6 +718,12 @@ class SeleniumFetcher:
                 self._connection_established = True
 
                 logging.info(f"✓ Connected to Chrome debug session on {debugger_address} in {connection_time:.2f}s")
+
+                # Solution E: Show browser notification if enabled
+                if self.config.get('browser_notification', {}).get('enabled', True):
+                    self.show_browser_notification()
+                    logging.info("Browser notification displayed to guide user")
+
                 return True, f"Connected to Chrome debug session (port {self.debug_port})"
 
             except WebDriverException as e:
