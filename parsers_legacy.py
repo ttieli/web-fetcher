@@ -24,6 +24,9 @@ from html.parser import HTMLParser
 import signal
 import time
 
+# Task-003 Phase 4: Import URL formatter utilities for consistent URL formatting
+from url_formatter import format_url_as_markdown, replace_urls_with_markdown
+
 # BeautifulSoup import and availability flag
 try:
     from bs4 import BeautifulSoup
@@ -308,34 +311,70 @@ def extract_from_modern_selectors(html: str) -> str:
 
 
 def extract_text_from_html_fragment(html_fragment: str) -> str:
-    """Extract clean text from HTML fragment, preserving paragraph structure"""
+    """
+    Extract clean text from HTML fragment, preserving paragraph structure.
+
+    Task-003 Phase 4: Enhanced to preserve and format URLs consistently as markdown links.
+    """
     import re
     import html as ihtml
-    
+
+    # Task-003 Phase 4: Extract and format <a> tags BEFORE stripping HTML
+    # Find all <a> tags with href and replace with markdown links
+    def replace_link_tag(match):
+        """Replace <a href="url">text</a> with markdown [text](url)"""
+        full_tag = match.group(0)
+        # Extract href
+        href_match = re.search(r'href=["\']([^"\']+)["\']', full_tag, re.I)
+        if not href_match:
+            return full_tag  # No href found, keep as-is
+
+        href = href_match.group(1)
+
+        # Extract link text (content between > and </a>)
+        text_match = re.search(r'>([^<]*)</a>', full_tag, re.I)
+        link_text = text_match.group(1).strip() if text_match else ''
+
+        # Remove any nested HTML tags from link text
+        link_text = re.sub(r'<[^>]+>', '', link_text)
+
+        # Use url_formatter to create markdown link
+        if link_text:
+            return format_url_as_markdown(href, link_text)
+        else:
+            return format_url_as_markdown(href)
+
+    # Replace all <a> tags with markdown links
+    html_fragment = re.sub(r'<a[^>]*>.*?</a>', replace_link_tag, html_fragment, flags=re.I | re.S)
+
     # Replace common block elements with double newlines for paragraph separation
     html_fragment = re.sub(r'</(?:p|div|section|article|h[1-6]|li)>', '\n\n', html_fragment, flags=re.I)
     html_fragment = re.sub(r'<(?:br|hr)[^>]*/?>', '\n', html_fragment, flags=re.I)
-    
+
     # Replace list items and other elements with single newlines
     html_fragment = re.sub(r'</(?:li|dd|dt)>', '\n', html_fragment, flags=re.I)
-    
+
     # Remove all remaining HTML tags
     html_fragment = re.sub(r'<[^>]+>', '', html_fragment)
-    
+
     # Decode HTML entities
     text = ihtml.unescape(html_fragment)
-    
+
+    # Task-003 Phase 4: Convert any remaining plain text URLs to markdown
+    # This catches URLs that weren't in <a> tags
+    text = replace_urls_with_markdown(text, preserve_code_blocks=True)
+
     # Clean up whitespace
     lines = []
     for line in text.split('\n'):
         line = line.strip()
         if line and not line.startswith('var ') and not line.startswith('function'):
             lines.append(line)
-    
+
     # Join paragraphs with double newlines, remove excessive spacing
     result = '\n\n'.join(lines)
     result = re.sub(r'\n{3,}', '\n\n', result)
-    
+
     return result.strip()
 
 
@@ -946,6 +985,9 @@ def wechat_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[
             self.images: list[str] = []
             self.in_script = False
             self.in_style = False
+            # Task-003 Phase 4: Track link text for markdown formatting
+            self.link_text_parts = []
+            self.in_link = False
         def handle_starttag(self, tag, attrs):
             a = dict(attrs)
             if not self.capture and a.get('id') == 'js_content':
@@ -971,12 +1013,25 @@ def wechat_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[
                 elif tag == 'style':
                     self.in_style = True
                 elif tag == 'a':
+                    # Task-003 Phase 4: Start tracking link text
                     self.link = a.get('href')
+                    self.in_link = True
+                    self.link_text_parts = []
         def handle_endtag(self, tag):
             if self.capture:
                 if tag == 'a' and self.link:
-                    self.parts.append(f" ({self.link})")
+                    # Task-003 Phase 4: Format as markdown link with captured text
+                    link_text = ''.join(self.link_text_parts).strip()
+                    if link_text:
+                        # Use captured link text
+                        formatted_link = format_url_as_markdown(self.link, link_text)
+                    else:
+                        # Fallback to URL as text
+                        formatted_link = format_url_as_markdown(self.link)
+                    self.parts.append(f" {formatted_link}")
                     self.link = None
+                    self.in_link = False
+                    self.link_text_parts = []
                 elif tag == 'script':
                     self.in_script = False
                 elif tag == 'style':
@@ -987,12 +1042,22 @@ def wechat_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[
         def handle_data(self, data):
             if self.capture and not self.in_script and not self.in_style:
                 t = data.strip('\n')
-                if t.strip(): self.parts.append(ihtml.unescape(t))
+                if t.strip():
+                    unescaped_text = ihtml.unescape(t)
+                    # Task-003 Phase 4: Capture link text separately
+                    if self.in_link:
+                        self.link_text_parts.append(unescaped_text)
+                    else:
+                        self.parts.append(unescaped_text)
 
     p = WxParser()
     p.feed(html)
     body = ''.join(p.parts)
     body = re.sub(r'\n{3,}', '\n\n', body).strip() or '(未能提取正文)'
+
+    # Task-003 Phase 4: Convert any remaining plain text URLs to markdown
+    # This catches URLs that weren't in <a> tags
+    body = replace_urls_with_markdown(body, preserve_code_blocks=True)
 
     lines = [f"# {title}"]
     meta = [f"- 标题: {title}"]
