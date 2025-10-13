@@ -132,6 +132,9 @@ from parsers import (
     generic_to_markdown
 )
 
+# Task-003 Phase 3: URL Formatter Module
+from url_formatter import insert_dual_url_section
+
 # Error handler integration (Task 1 Phase 2)
 try:
     from error_handler import ErrorClassifier, ErrorReporter, ErrorCategory
@@ -4594,7 +4597,17 @@ def main():
             
             # Determine output formats needed
             output_markdown, output_html = determine_output_format(args, url)
-            
+
+            # Task-003 Phase 3: Create url_metadata for crawl mode
+            crawl_url_metadata = create_url_metadata(
+                input_url=input_url,
+                final_url=url,  # For crawl mode, final URL is typically the starting URL
+                fetch_mode='crawl'
+            )
+
+            # Task-003 Phase 3: Enhance markdown with dual URL section
+            md = insert_dual_url_section(md, crawl_url_metadata)
+
             # Write markdown file if requested
             if output_markdown:
                 path.write_text(md, encoding='utf-8')
@@ -4823,10 +4836,14 @@ def main():
     # Add fetch metrics to markdown content if available
     if fetch_metrics:
         md = add_metrics_to_markdown(md, fetch_metrics)
-    
+
+    # Task-003 Phase 3: Enhance markdown with dual URL section
+    # url_metadata should be available from fetch_html() call
+    md = insert_dual_url_section(md, url_metadata)
+
     # Determine output formats needed
     output_markdown, output_html = determine_output_format(args, url)
-    
+
     # Write markdown file if requested
     if output_markdown:
         path.write_text(md, encoding='utf-8')

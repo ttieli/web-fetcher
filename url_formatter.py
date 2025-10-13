@@ -331,3 +331,176 @@ def replace_urls_with_markdown(text: str, preserve_code_blocks: bool = True) -> 
         logger.debug(f"Task-003 Phase 2: Replaced '{url}' with '{markdown_link}'")
 
     return result
+
+
+# ================================================================================
+# Task-003 Phase 3: Dual URL Metadata Section Functions
+# ================================================================================
+
+def format_dual_url_section(url_metadata: dict) -> str:
+    """
+    Format the dual URL metadata section with bilingual labels.
+
+    This function creates a professional, bilingual metadata section that displays
+    both the original input URL and the final fetched URL, along with fetch timestamp.
+
+    Args:
+        url_metadata: Dictionary containing URL tracking information with keys:
+                     - input_url: Original URL from command line
+                     - final_url: Final URL after redirects
+                     - fetch_date: ISO formatted timestamp (optional)
+                     - fetch_mode: Fetch method used (optional)
+
+    Returns:
+        Formatted markdown string with dual URL section
+        Returns empty string if url_metadata is None/empty
+
+    Example:
+        >>> metadata = {
+        ...     'input_url': 'example.com',
+        ...     'final_url': 'https://www.example.com/page',
+        ...     'fetch_date': '2025-10-13 12:00:00'
+        ... }
+        >>> section = format_dual_url_section(metadata)
+        >>> print(section)
+
+        **Fetch Information / 采集信息:**
+        - Original Request / 原始请求: [example.com](https://example.com)
+        - Final Location / 最终地址: [https://www.example.com/page](https://www.example.com/page)
+        - Fetch Date / 采集时间: 2025-10-13 12:00:00
+
+        ---
+    """
+    # Graceful degradation - return empty if no metadata
+    if not url_metadata:
+        logger.debug("Task-003 Phase 3: No url_metadata provided, skipping dual URL section")
+        return ""
+
+    # Extract URL fields
+    input_url = url_metadata.get('input_url', '')
+    final_url = url_metadata.get('final_url', '')
+    fetch_date = url_metadata.get('fetch_date', '')
+
+    # If both URLs are empty, skip section
+    if not input_url and not final_url:
+        logger.warning("Task-003 Phase 3: Both input_url and final_url are empty")
+        return ""
+
+    # Format URLs as markdown links (with normalization)
+    if input_url:
+        normalized_input = normalize_url_for_display(input_url)
+        input_link = format_url_as_markdown(normalized_input, input_url)
+    else:
+        input_link = "N/A"
+
+    if final_url:
+        normalized_final = normalize_url_for_display(final_url)
+        final_link = format_url_as_markdown(normalized_final, final_url)
+    else:
+        final_link = "N/A"
+
+    # Generate current timestamp if fetch_date is missing
+    if not fetch_date:
+        from datetime import datetime
+        fetch_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        logger.debug(f"Task-003 Phase 3: Generated fetch_date: {fetch_date}")
+
+    # Build the dual URL section with bilingual labels
+    section = f"""
+**Fetch Information / 采集信息:**
+- Original Request / 原始请求: {input_link}
+- Final Location / 最终地址: {final_link}
+- Fetch Date / 采集时间: {fetch_date}
+
+---
+"""
+
+    logger.info("Task-003 Phase 3: Created dual URL section successfully")
+    return section
+
+
+def insert_dual_url_section(markdown: str, url_metadata: dict) -> str:
+    """
+    Insert dual URL section after the title in markdown content.
+
+    This function intelligently inserts the dual URL metadata section after
+    the first H1 heading (#) and before any existing metadata lines (- 标题:, etc.).
+
+    Args:
+        markdown: Original markdown content
+        url_metadata: URL metadata dictionary (from create_url_metadata)
+
+    Returns:
+        Enhanced markdown with dual URL section inserted
+        Returns original markdown if url_metadata is None (graceful degradation)
+
+    Edge Cases Handled:
+        - No H1 title: Insert at beginning of document
+        - Multiple H1 titles: Insert after first one only
+        - Missing url_metadata: Return original markdown unchanged
+        - Empty markdown: Still insert section with proper formatting
+
+    Example:
+        >>> markdown = '''# Test Article
+        ...
+        ... - 标题: Test
+        ... - 作者: Author
+        ...
+        ... Content here...
+        ... '''
+        >>> metadata = {'input_url': 'example.com', 'final_url': 'https://example.com'}
+        >>> result = insert_dual_url_section(markdown, metadata)
+        # Result will have dual URL section after "# Test Article"
+    """
+    # Graceful degradation - return original if no metadata
+    if not url_metadata:
+        logger.debug("Task-003 Phase 3: No url_metadata, returning original markdown")
+        return markdown
+
+    # Generate the dual URL section
+    dual_url_section = format_dual_url_section(url_metadata)
+
+    # If section is empty (e.g., empty URLs), return original
+    if not dual_url_section:
+        logger.debug("Task-003 Phase 3: Dual URL section is empty, returning original markdown")
+        return markdown
+
+    # Split markdown into lines for processing
+    lines = markdown.splitlines() if markdown else []
+
+    # Find the first H1 heading (# Title)
+    title_index = -1
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith('# ') and len(stripped) > 2:
+            title_index = i
+            logger.debug(f"Task-003 Phase 3: Found title at line {i}: {stripped[:50]}")
+            break
+
+    # Build enhanced markdown
+    if title_index == -1:
+        # No title found - insert section at beginning
+        logger.info("Task-003 Phase 3: No H1 title found, inserting at beginning")
+        result_lines = [dual_url_section.strip(), ''] + lines
+    else:
+        # Insert after title (with proper spacing)
+        logger.info(f"Task-003 Phase 3: Inserting dual URL section after title at line {title_index}")
+        result_lines = (
+            lines[:title_index + 1] +     # Include title line
+            [''] +                         # Blank line after title
+            [dual_url_section.strip()] +   # Dual URL section
+            ['']                           # Blank line before rest
+        )
+
+        # Add remaining lines (skip blank line immediately after title if exists)
+        remaining_start = title_index + 1
+        if remaining_start < len(lines) and not lines[remaining_start].strip():
+            remaining_start += 1  # Skip existing blank line
+
+        result_lines.extend(lines[remaining_start:])
+
+    # Join lines back together
+    enhanced_markdown = '\n'.join(result_lines)
+
+    logger.info("Task-003 Phase 3: Successfully inserted dual URL section")
+    return enhanced_markdown
