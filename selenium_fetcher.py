@@ -25,9 +25,20 @@ Phase 2.4 Enhancements (Enhanced Error Reporting):
 - User-friendly error messages for connection failures
 - Specific troubleshooting steps for common Chrome issues
 
+Task-011 Phase 2 Enhancements (Version Management):
+- Proactive ChromeDriver version detection before connection attempts
+- Automatic Chrome/ChromeDriver version compatibility checking
+- Bilingual warning/error messages (Chinese/English)
+- Smart version mismatch handling:
+  * Compatible: Major versions match → Continue
+  * Minor mismatch: Differ by 1 version → WARN but continue
+  * Major mismatch: Differ by 2+ versions → FAIL with upgrade instructions
+- Actionable upgrade guidance for macOS users (brew commands)
+- Graceful handling of version detection failures
+
 Author: Cody (Claude Code)
-Date: 2025-10-04
-Version: 3.1 (Phase 2.4 - Enhanced Error Reporting)
+Date: 2025-10-13
+Version: 3.2 (Task-011 Phase 2 - ChromeDriver Version Management)
 """
 
 import logging
@@ -126,6 +137,219 @@ SOLUTION: Install Selenium requirements:
 3. Ensure ChromeDriver is installed and in PATH
 4. Restart application after installation
 """
+
+
+# Task-011 Phase 2: ChromeDriver Version Compatibility Check
+# 任务-011 阶段2：ChromeDriver 版本兼容性检查
+def check_chromedriver_compatibility() -> Tuple[bool, str, str, str]:
+    """
+    检测 ChromeDriver 版本兼容性并提供解决方案 / Detect ChromeDriver version compatibility and provide solutions.
+
+    Checks for version mismatches between Chrome and ChromeDriver by:
+    1. Detecting ChromeDriver version from executable
+    2. Comparing major versions (e.g., 140 vs 141)
+    3. Generating actionable guidance for mismatches
+
+    Version Compatibility Rules:
+    - Compatible: Major versions match (e.g., both 141.x.x)
+    - Minor mismatch: Major versions differ by 1 (e.g., 140 vs 141) - WARN but continue
+    - Major mismatch: Major versions differ by 2+ - FAIL with clear error
+
+    Returns:
+        Tuple of (is_compatible: bool, message: str, chrome_version: str, driver_version: str)
+        - is_compatible: True if versions are compatible or close enough (differ by 1 or less)
+        - message: Empty string if compatible, warning/error message if not
+        - chrome_version: Detected Chrome version (e.g., "141.0.7390.76") or "unknown"
+        - driver_version: Detected ChromeDriver version (e.g., "140.0.7339.207") or "unknown"
+
+    Author: Cody (Claude Code)
+    Date: 2025-10-13
+    Task: Task-011 Phase 2
+    """
+    import subprocess
+    import re
+
+    chrome_version = "unknown"
+    driver_version = "unknown"
+
+    # Step 1: Detect ChromeDriver version
+    try:
+        result = subprocess.run(
+            ['chromedriver', '--version'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+
+        if result.returncode == 0:
+            # Parse output like "ChromeDriver 140.0.7339.207 (...)"
+            version_output = result.stdout.strip()
+            match = re.search(r'ChromeDriver\s+(\d+\.\d+\.\d+\.?\d*)', version_output)
+            if match:
+                driver_version = match.group(1)
+                logging.debug(f"Task-011: ChromeDriver version detected: {driver_version}")
+            else:
+                logging.warning(f"Task-011: Could not parse ChromeDriver version from: {version_output}")
+        else:
+            logging.warning(f"Task-011: ChromeDriver version check failed with code {result.returncode}")
+
+    except FileNotFoundError:
+        logging.warning("Task-011: ChromeDriver executable not found in PATH")
+        driver_version = "not_found"
+    except subprocess.TimeoutExpired:
+        logging.warning("Task-011: ChromeDriver version check timed out")
+    except Exception as e:
+        logging.warning(f"Task-011: Error detecting ChromeDriver version: {e}")
+
+    # Step 2: Chrome version will be detected later by is_chrome_debug_available()
+    # For now, we return "pending" as a placeholder
+    # The actual comparison will happen after Chrome debug session is available
+    chrome_version = "pending"
+
+    # Step 3: Generate compatibility status
+    # If we can't detect driver version, we warn but allow continuation
+    if driver_version == "not_found":
+        message = """
+警告：未找到 ChromeDriver 可执行文件 / Warning: ChromeDriver executable not found
+
+可能的原因 / Possible reasons:
+1. ChromeDriver 未安装 / ChromeDriver not installed
+2. ChromeDriver 不在 PATH 环境变量中 / ChromeDriver not in PATH
+
+解决方案 / Solutions:
+1. macOS 用户 / macOS users:
+   brew install chromedriver
+
+2. 手动下载 / Manual download:
+   https://googlechromelabs.github.io/chrome-for-testing/
+
+3. 验证安装 / Verify installation:
+   which chromedriver
+   chromedriver --version
+
+注意：如果 ChromeDriver 已安装但不在 PATH 中，请将其添加到 PATH 或移至 /usr/local/bin/
+Note: If ChromeDriver is installed but not in PATH, add it to PATH or move to /usr/local/bin/
+"""
+        # Still allow continuation - the actual error will occur at connection time
+        return True, message.strip(), chrome_version, driver_version
+
+    elif driver_version == "unknown":
+        message = """
+警告：无法检测 ChromeDriver 版本 / Warning: Unable to detect ChromeDriver version
+
+这可能导致版本不匹配问题 / This may cause version mismatch issues
+建议：确保 ChromeDriver 版本与 Chrome 浏览器版本匹配 / Recommendation: Ensure ChromeDriver matches Chrome browser version
+"""
+        return True, message.strip(), chrome_version, driver_version
+
+    # If we got here, ChromeDriver version is detected
+    # Actual version comparison will happen after Chrome version is known
+    # For now, return compatible with empty message
+    return True, "", chrome_version, driver_version
+
+
+def check_version_compatibility_with_chrome(chrome_version: str, driver_version: str) -> Tuple[bool, str]:
+    """
+    比较 Chrome 和 ChromeDriver 版本并生成兼容性报告 / Compare Chrome and ChromeDriver versions and generate compatibility report.
+
+    This function is called after both versions are known to perform the actual comparison.
+
+    Args:
+        chrome_version: Chrome version string (e.g., "141.0.7390.76")
+        driver_version: ChromeDriver version string (e.g., "140.0.7339.207")
+
+    Returns:
+        Tuple of (is_compatible: bool, message: str)
+        - is_compatible: True if compatible or minor mismatch (differ by 1)
+        - message: Warning or error message with upgrade instructions
+
+    Author: Cody (Claude Code)
+    Date: 2025-10-13
+    Task: Task-011 Phase 2
+    """
+    try:
+        # Parse major versions
+        chrome_major = int(chrome_version.split('.')[0])
+        driver_major = int(driver_version.split('.')[0])
+
+        version_diff = abs(chrome_major - driver_major)
+
+        # Compatible: versions match
+        if version_diff == 0:
+            logging.info(f"Task-011: Version check PASS - Chrome {chrome_version} and ChromeDriver {driver_version} are compatible")
+            return True, ""
+
+        # Minor mismatch: versions differ by 1 (WARN but continue)
+        elif version_diff == 1:
+            message = f"""
+警告：Chrome 和 ChromeDriver 版本轻微不匹配 / Warning: Minor Chrome/ChromeDriver version mismatch
+
+当前版本 / Current versions:
+- Chrome 浏览器 / Chrome browser: {chrome_version}
+- ChromeDriver: {driver_version}
+- 版本差异 / Version difference: {version_diff} (可接受 / acceptable)
+
+建议 / Recommendation:
+建议更新 ChromeDriver 以匹配 Chrome 版本，但当前配置可以继续使用。
+It's recommended to update ChromeDriver to match Chrome version, but current setup should work.
+
+更新方法 / Update methods:
+1. macOS 用户 / macOS users:
+   brew upgrade chromedriver
+
+2. 手动下载 / Manual download:
+   https://googlechromelabs.github.io/chrome-for-testing/
+
+3. 验证更新 / Verify update:
+   chromedriver --version
+
+状态 / Status: ⚠️  警告但继续执行 / WARNING but continuing
+"""
+            logging.warning(f"Task-011: Minor version mismatch - Chrome {chrome_major} vs ChromeDriver {driver_major} (diff: {version_diff})")
+            return True, message.strip()
+
+        # Major mismatch: versions differ by 2+ (FAIL with error)
+        else:
+            message = f"""
+错误：Chrome 和 ChromeDriver 版本严重不匹配 / Error: Major Chrome/ChromeDriver version mismatch
+
+当前版本 / Current versions:
+- Chrome 浏览器 / Chrome browser: {chrome_version}
+- ChromeDriver: {driver_version}
+- 版本差异 / Version difference: {version_diff} (不兼容 / incompatible)
+
+此版本差异过大，可能导致 Selenium 连接失败。
+This version difference is too large and may cause Selenium connection failures.
+
+解决方案 / Solutions:
+1. macOS 用户 - 更新 ChromeDriver / macOS users - Update ChromeDriver:
+   brew upgrade chromedriver
+
+2. 手动下载匹配版本 / Manual download matching version:
+   https://googlechromelabs.github.io/chrome-for-testing/
+   下载 Chrome {chrome_major}.x.x.x 对应的 ChromeDriver / Download ChromeDriver for Chrome {chrome_major}.x.x.x
+
+3. 验证更新 / Verify update:
+   chromedriver --version
+   应显示版本 {chrome_major}.x.x.x / Should show version {chrome_major}.x.x.x
+
+状态 / Status: ❌ 版本不兼容，需要更新 / INCOMPATIBLE, update required
+"""
+            logging.error(f"Task-011: Major version mismatch - Chrome {chrome_major} vs ChromeDriver {driver_major} (diff: {version_diff})")
+            return False, message.strip()
+
+    except Exception as e:
+        logging.error(f"Task-011: Error comparing versions: {e}")
+        message = f"""
+警告：无法比较版本 / Warning: Unable to compare versions
+
+Chrome: {chrome_version}
+ChromeDriver: {driver_version}
+错误 / Error: {e}
+
+建议手动验证版本兼容性 / Please manually verify version compatibility
+"""
+        return True, message.strip()
 
 
 class ChromeConnectionError(Exception):
@@ -679,6 +903,61 @@ class SeleniumFetcher:
             print(f"\n{guidance}\n", file=sys.stderr)
 
             return False, error_msg
+
+        # Task-011 Phase 2: Check ChromeDriver compatibility before connection
+        # 任务-011 阶段2：连接前检查 ChromeDriver 兼容性
+        logging.info("Task-011: Checking ChromeDriver version compatibility...")
+
+        # Step 1: Get ChromeDriver version from executable
+        is_compatible_initial, message_initial, chrome_ver_pending, driver_ver = check_chromedriver_compatibility()
+
+        # Log ChromeDriver detection results
+        if driver_ver not in ["unknown", "not_found", "pending"]:
+            logging.info(f"Task-011: ChromeDriver version: {driver_ver}")
+        else:
+            logging.warning(f"Task-011: ChromeDriver version: {driver_ver}")
+
+        # Display any initial warnings (e.g., driver not found)
+        if message_initial:
+            logging.warning(f"Task-011: {message_initial}")
+
+        # Step 2: Compare with Chrome version (already detected by is_chrome_debug_available)
+        if self.chrome_version and driver_ver not in ["unknown", "not_found", "pending"]:
+            logging.info(f"Task-011: Chrome version: {self.chrome_version}")
+
+            # Perform actual version compatibility check
+            is_version_compatible, version_message = check_version_compatibility_with_chrome(
+                self.chrome_version,
+                driver_ver
+            )
+
+            # Store driver version for error reporting
+            self.chromedriver_version = driver_ver
+
+            # Handle compatibility results
+            if not is_version_compatible:
+                # Major version mismatch (2+ versions apart) - FAIL
+                logging.error(f"Task-011: Version compatibility check FAILED")
+                logging.error(version_message)
+                print(f"\n{version_message}\n", file=sys.stderr)
+                return False, version_message
+
+            elif version_message:
+                # Minor version mismatch (1 version apart) - WARN but continue
+                logging.warning(f"Task-011: Version compatibility check WARNING")
+                print(f"\n{version_message}\n", file=sys.stderr)
+                # Continue with connection attempt
+
+            else:
+                # Versions match - continue
+                logging.info(f"Task-011: Version compatibility check PASSED")
+
+        else:
+            # Could not determine Chrome or ChromeDriver version
+            if not self.chrome_version:
+                logging.warning("Task-011: Chrome version unknown, skipping compatibility check")
+            if driver_ver in ["unknown", "not_found"]:
+                logging.warning("Task-011: ChromeDriver version detection failed, skipping compatibility check")
 
         connection_start = time.time()
 
