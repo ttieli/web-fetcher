@@ -4489,9 +4489,22 @@ def main():
     if url != args.url:
         logging.info(f"URL encoded from: {args.url}")
 
-    # Resolve redirects to get effective host for parser selection
-    host = get_effective_host(url, ua=None)  # UA will be determined after this
-    original_host = urllib.parse.urlparse(url).hostname or ''
+    # Task-011 Phase 1: Skip URL resolution for explicit Selenium/manual Chrome modes
+    # Task-011 阶段1：跳过显式 Selenium/手动 Chrome 模式的 URL 解析
+    # Reason: Avoid premature HEAD requests that may fail with 405 errors
+    # 原因：避免可能失败并返回 405 错误的过早 HEAD 请求
+    if hasattr(args, 'fetch_mode') and args.fetch_mode in ('selenium', 'manual_chrome'):
+        # For explicit Selenium/manual Chrome modes, extract hostname directly without network resolution
+        # 对于显式 Selenium/手动 Chrome 模式，直接从 URL 提取主机名，不进行网络解析
+        host = urllib.parse.urlparse(url).hostname or ''
+        original_host = host
+        logging.info(f"Selenium/manual Chrome mode: Skipping URL resolution to avoid premature network requests")
+    else:
+        # For auto/urllib modes, resolve redirects to get effective host for parser selection
+        # 对于 auto/urllib 模式，解析重定向以获取用于解析器选择的有效主机
+        host = get_effective_host(url, ua=None)  # UA will be determined after this
+        original_host = urllib.parse.urlparse(url).hostname or ''
+
     ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0 Safari/537.36"
     # Use a mobile WeChat UA for WeChat pages; desktop Chrome UA for XHS
     if 'mp.weixin.qq.com' in host or 'weixin.qq.com' in host:
@@ -4635,9 +4648,27 @@ def main():
     else:
         html = None
         fetch_metrics = None
-        should_render = (args.render == 'always') or (args.render == 'auto' and ('xiaohongshu.com' in host or 'xhslink.com' in original_host or 'dianping.com' in host))
-        logging.info(f"Render decision: {'will render' if should_render else 'static fetch only'}")
-        
+
+        # Task-011 Phase 1: Separate Selenium mode detection from Playwright rendering
+        # Task-011 阶段1：将 Selenium 模式检测与 Playwright 渲染分离
+        # Show accurate fetch method based on actual mode
+        # 根据实际模式显示准确的获取方法
+        if hasattr(args, 'fetch_mode') and args.fetch_mode == 'selenium':
+            # Explicit Selenium mode - will use Chrome automation
+            # 显式 Selenium 模式 - 将使用 Chrome 自动化
+            logging.info("Fetch decision: Selenium mode (Chrome automation)")
+            should_render = False  # Skip Playwright rendering in Selenium mode
+        elif hasattr(args, 'fetch_mode') and args.fetch_mode == 'manual_chrome':
+            # Manual Chrome mode - interactive Chrome control
+            # 手动 Chrome 模式 - 交互式 Chrome 控制
+            logging.info("Fetch decision: Manual Chrome mode")
+            should_render = False  # Skip Playwright rendering in manual Chrome mode
+        else:
+            # Auto or urllib mode - use Playwright rendering logic
+            # Auto 或 urllib 模式 - 使用 Playwright 渲染逻辑
+            should_render = (args.render == 'always') or (args.render == 'auto' and ('xiaohongshu.com' in host or 'xhslink.com' in original_host or 'dianping.com' in host))
+            logging.info(f"Render decision: {'will render' if should_render else 'static fetch only'}")
+
         if should_render:
             logging.info("Attempting headless rendering with Playwright")
             rendered_html, render_metrics = try_render_with_metrics(url, ua=ua, timeout_ms=max(1000, args.render_timeout*1000))
