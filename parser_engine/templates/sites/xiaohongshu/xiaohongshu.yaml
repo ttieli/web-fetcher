@@ -64,7 +64,96 @@ selectors:
       strategy: "css"
 
   # ---------------------------------------------------------------------------
-  # AUTHOR EXTRACTION
+  # METADATA EXTRACTION
+  # Extract structured metadata fields (description, author, date, etc.)
+  # ---------------------------------------------------------------------------
+  metadata:
+    # Description field (from meta description)
+    description:
+      - selector: "meta[name='description']"
+        strategy: "css"
+        attribute: "content"
+        post_process:
+          - type: "replace"
+            old: '\t'
+            new: '\n\n'
+
+      - selector: "meta[property='og:description']"
+        strategy: "css"
+        attribute: "content"
+        post_process:
+          - type: "replace"
+            old: '\t'
+            new: '\n\n'
+
+      - selector: ".note-content"
+        strategy: "css"
+
+    # Author field
+    author:
+      # JSON-LD author extraction (highest priority)
+      - selector: "script[type='application/ld+json']"
+        strategy: "text_pattern"
+        pattern: '"author"\s*:\s*\{\s*"name"\s*:\s*"([^"]+)"'
+        extract_group: 1
+
+      # Alternative JSON-LD pattern
+      - selector: "script[type='application/ld+json']"
+        strategy: "text_pattern"
+        pattern: '"author"\s*:\s*"([^"]+)"'
+        extract_group: 1
+
+      # Meta tag author
+      - selector: "meta[name='author']"
+        strategy: "css"
+        attribute: "content"
+
+      # XiaoHongShu-specific author container
+      - selector: ".author-name"
+        strategy: "css"
+
+      # User nickname
+      - selector: ".user-nickname"
+        strategy: "css"
+
+      # Profile name
+      - selector: ".profile-name"
+        strategy: "css"
+
+    # Date field
+    date:
+      # JSON-LD datePublished (highest priority)
+      - selector: "script[type='application/ld+json']"
+        strategy: "text_pattern"
+        pattern: '"datePublished"\s*:\s*"([^"]+)"'
+        extract_group: 1
+
+      # JSON-LD uploadDate
+      - selector: "script[type='application/ld+json']"
+        strategy: "text_pattern"
+        pattern: '"uploadDate"\s*:\s*"([^"]+)"'
+        extract_group: 1
+
+      # Open Graph published time meta tag
+      - selector: "meta[property='article:published_time']"
+        strategy: "css"
+        attribute: "content"
+
+      # XiaoHongShu-specific date container
+      - selector: ".publish-time"
+        strategy: "css"
+
+      # Time element
+      - selector: "time"
+        strategy: "css"
+        attribute: "datetime"
+
+      # Alternative time element (text content)
+      - selector: "time"
+        strategy: "css"
+
+  # ---------------------------------------------------------------------------
+  # AUTHOR EXTRACTION (kept for backward compatibility)
   # Priority: JSON-LD author -> meta tag -> CSS selector
   # XiaoHongShu uses JSON-LD structured data extensively
   # ---------------------------------------------------------------------------
@@ -197,8 +286,21 @@ selectors:
   # XiaoHongShu-specific: Images from various sources including JSON data
   # Domain patterns: ci.xiaohongshu.com, sns-img, xhscdn.com
   # Processing params: imageMogr2, imageView2, nd_dft, nd_prv
+  # IMPORTANT: XiaoHongShu uses <meta name="og:image"> (not property="og:image")
   # ---------------------------------------------------------------------------
   images:
+    # Open Graph images in meta tags (XiaoHongShu uses name attribute, not property)
+    - selector: "meta[name='og:image']"
+      strategy: "css"
+      attribute: "content"
+      extract_all: true
+
+    # Fallback: property attribute (standard OG)
+    - selector: "meta[property='og:image']"
+      strategy: "css"
+      attribute: "content"
+      extract_all: true
+
     # Standard img tags with src
     - selector: "img"
       strategy: "css"
