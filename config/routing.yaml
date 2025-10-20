@@ -33,7 +33,7 @@ rules:
       domain_list:
         - "xiaohongshu.com"
         - "xhs.com"
-      url_pattern: ".*/(explore|user|note)/.*"
+      url_pattern: ".*/(explore|user|note|discovery)/.*"
     action:
       fetcher: "selenium"
       config:

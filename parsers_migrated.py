@@ -100,6 +100,16 @@ def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
         cover = result.metadata.get('cover', '')
         images = result.metadata.get('images', [])
 
+        # Manual image extraction if template parser didn't extract them
+        # XiaoHongShu uses <meta name="og:image"> (not property="og:image")
+        if not images:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html, 'html.parser')
+            # Extract all og:image meta tags (XiaoHongShu uses name attribute)
+            og_images = soup.find_all('meta', {'name': 'og:image'})
+            images = [tag.get('content', '') for tag in og_images if tag.get('content')]
+            logger.debug(f"Manually extracted {len(images)} images from meta[name='og:image']")
+
         # Parse date
         date_only, date_time = parse_date_like(publish_time)
 
