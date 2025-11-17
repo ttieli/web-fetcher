@@ -54,6 +54,28 @@ except ImportError as e:
     class SeleniumTimeoutError(Exception): pass
     class SeleniumNotAvailableError(Exception): pass
 
+# CDP integration - graceful degradation when not available
+try:
+    from webfetcher.fetchers.cdp_scraper import (
+        CDPScraper, CDPMetrics,
+        CDPNotAvailableError, CDPConnectionError,
+        CDPFetchError, CDPTimeoutError,
+        is_cdp_available, check_chrome_debug_running
+    )
+    CDP_INTEGRATION_AVAILABLE = True
+except ImportError as e:
+    logging.debug(f"CDP integration not available: {e}")
+    CDP_INTEGRATION_AVAILABLE = False
+    # Create dummy classes to prevent import errors
+    class CDPScraper: pass
+    class CDPMetrics: pass
+    class CDPNotAvailableError(Exception): pass
+    class CDPConnectionError(Exception): pass
+    class CDPFetchError(Exception): pass
+    class CDPTimeoutError(Exception): pass
+    def is_cdp_available(): return False
+    def check_chrome_debug_running(): return False
+
 # Chrome error handling (Phase 2.3) - enhanced error messages
 from webfetcher.errors.handler import (
     ChromeDebugError, ChromePortConflictError,
@@ -1285,6 +1307,11 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
     if fetch_mode == 'selenium':
         metrics.primary_method = "selenium"
         return _try_selenium_fetch(url, ua, timeout, metrics, start_time, force_chrome, input_url)
+
+    # Handle CDP-only mode
+    if fetch_mode == 'cdp':
+        metrics.primary_method = "cdp"
+        return _try_cdp_fetch(url, timeout, metrics, start_time, input_url)
     
     # Try urllib first (fetch_mode: 'auto' or 'urllib')
     for attempt in range(MAX_RETRIES + 1):  # 0, 1, 2, 3 (4 total attempts)
@@ -1693,9 +1720,9 @@ def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], tim
     
     if not SELENIUM_INTEGRATION_AVAILABLE:
         logging.warning("Selenium fallback requested but integration not available")
-        # Try manual Chrome as last resort
+        # Try CDP as next fallback option before manual Chrome
         error_msg = f"urllib failed: {urllib_error}. Selenium fallback not available - install requirements-selenium.txt"
-        return _try_manual_chrome_fallback(url, metrics, start_time, error_msg, input_url)
+        return _try_cdp_fallback(url, timeout, metrics, start_time, error_msg, input_url)
     
     try:
         # Load Selenium configuration
@@ -1705,9 +1732,9 @@ def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], tim
         from webfetcher.fetchers.selenium import SELENIUM_AVAILABLE
         if not SELENIUM_AVAILABLE:
             logging.warning("Selenium package not installed, cannot use as fallback")
-            # Try manual Chrome as last resort
+            # Try CDP as next fallback option before manual Chrome
             error_msg = f"urllib failed: {urllib_error}. Selenium package not installed. Run: pip install selenium PyYAML lxml"
-            return _try_manual_chrome_fallback(url, metrics, start_time, error_msg, input_url)
+            return _try_cdp_fallback(url, timeout, metrics, start_time, error_msg, input_url)
 
         # Phase 1 & 2: Ensure Chrome debug session is running with enhanced error handling
         # Task-002 Phase 1: Pass force_chrome flag to skip full health check
@@ -1722,9 +1749,9 @@ def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], tim
             logging.warning(f"Chrome unavailable for fallback: {e.message}")
             print(f"\nChrome debug session unavailable for fallback: {e.message}", file=sys.stderr)
             print("Suggestion: Try running './config/ensure-chrome-debug.sh' manually to diagnose.", file=sys.stderr)
-            # Try manual Chrome as last resort
+            # Try CDP as next fallback option before manual Chrome
             error_msg = f"urllib failed: {urllib_error}. Chrome unavailable: {e.message}"
-            return _try_manual_chrome_fallback(url, metrics, start_time, error_msg, input_url)
+            return _try_cdp_fallback(url, timeout, metrics, start_time, error_msg, input_url)
 
         # Create Selenium fetcher after Chrome health check passed
         fetcher = SeleniumFetcher(config._config)
@@ -1734,9 +1761,9 @@ def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], tim
             success, message = fetcher.connect_to_chrome()
             if not success:
                 logging.warning(f"Failed to connect to Chrome debug session: {message}")
-                # Try manual Chrome as last resort
+                # Try CDP as next fallback option before manual Chrome
                 error_msg = f"urllib failed: {urllib_error}. Chrome connection failed: {message}"
-                return _try_manual_chrome_fallback(url, metrics, start_time, error_msg, input_url)
+                return _try_cdp_fallback(url, timeout, metrics, start_time, error_msg, input_url)
             
             # Attempt Selenium fetch
             html_content, selenium_metrics = fetcher.fetch_html_selenium(url, ua, timeout)
@@ -1762,15 +1789,187 @@ def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], tim
             
     except (ChromeConnectionError, SeleniumFetchError, SeleniumTimeoutError) as e:
         logging.error(f"Selenium fallback failed for {url}: {e}")
-        # Try manual Chrome as last resort
+        # Try CDP as next fallback option before manual Chrome
         error_msg = f"urllib failed: {urllib_error}. Selenium fallback failed: {e}"
-        return _try_manual_chrome_fallback(url, metrics, start_time, error_msg, input_url)
+        return _try_cdp_fallback(url, timeout, metrics, start_time, error_msg, input_url)
 
     except Exception as e:
         logging.error(f"Unexpected error in Selenium fallback for {url}: {e}")
-        # Try manual Chrome as last resort
+        # Try CDP as next fallback option before manual Chrome
         error_msg = f"urllib failed: {urllib_error}. Unexpected Selenium error: {e}"
-        return _try_manual_chrome_fallback(url, metrics, start_time, error_msg, input_url)
+        return _try_cdp_fallback(url, timeout, metrics, start_time, error_msg, input_url)
+
+
+def _try_cdp_fetch(url: str, timeout: int, metrics: FetchMetrics,
+                  start_time: float, input_url: str = None) -> tuple[str, FetchMetrics, dict]:
+    """
+    Try CDP fetch as primary method (cdp-only mode).
+
+    Args:
+        url: Target URL
+        timeout: Timeout in seconds
+        metrics: FetchMetrics object to update
+        start_time: Start time for duration calculation
+        input_url: Original URL as provided by user (for metadata tracking)
+
+    Returns:
+        tuple[str, FetchMetrics, dict]: (html_content, updated_metrics, url_metadata)
+
+    Raises:
+        CDPNotAvailableError: When CDP integration is not available
+        CDPConnectionError: When Chrome connection fails
+        CDPFetchError: When CDP fetch fails
+    """
+    if not CDP_INTEGRATION_AVAILABLE:
+        error_msg = "CDP integration not available - install pychrome: pip install webfetcher[cdp]"
+        logging.error(f"CDP mode requested but CDP integration not available")
+        metrics.fetch_duration = time.time() - start_time
+        metrics.final_status = "failed"
+        metrics.error_message = error_msg
+        raise CDPNotAvailableError(error_msg)
+
+    # Check if CDP is available (pychrome installed)
+    if not is_cdp_available():
+        error_msg = "CDP package (pychrome) not installed. Run: pip install pychrome"
+        logging.error("CDP package not installed")
+        metrics.fetch_duration = time.time() - start_time
+        metrics.final_status = "failed"
+        metrics.error_message = error_msg
+        raise CDPNotAvailableError(error_msg)
+
+    # Check if Chrome debug instance is running
+    if not check_chrome_debug_running():
+        error_msg = "Chrome debug instance not running. Run: ./scripts/start_chrome.sh"
+        logging.error("Chrome debug instance not running")
+        print("\n⚠️  CDP requires Chrome in debug mode", file=sys.stderr)
+        print("   Run: ./scripts/start_chrome.sh\n", file=sys.stderr)
+        metrics.fetch_duration = time.time() - start_time
+        metrics.final_status = "failed"
+        metrics.error_message = error_msg
+        raise CDPConnectionError(error_msg)
+
+    try:
+        # Create CDP scraper
+        scraper = CDPScraper(timeout=timeout)
+
+        # Attempt to fetch the page
+        html_content, cdp_metrics = scraper.fetch_page(
+            url,
+            wait_load=2.0,
+            scroll_bottom=False,
+            enable_network_watch=False
+        )
+
+        # Update metrics
+        metrics.fetch_duration = time.time() - start_time
+        metrics.final_status = "success"
+
+        # Create URL metadata
+        url_metadata = create_url_metadata(
+            input_url=input_url or url,
+            final_url=url,  # CDP doesn't track final URL yet
+            fetch_mode='cdp'
+        )
+
+        logging.info(f"✓ CDP fetch successful for {url}")
+        print(f"✓ Successfully fetched using CDP (Chrome DevTools Protocol)", file=sys.stderr)
+
+        return html_content, metrics, url_metadata
+
+    except (CDPConnectionError, CDPFetchError, CDPTimeoutError) as e:
+        logging.error(f"CDP fetch failed for {url}: {e}")
+        metrics.fetch_duration = time.time() - start_time
+        metrics.final_status = "failed"
+        metrics.error_message = str(e)
+        raise
+
+    except Exception as e:
+        logging.error(f"Unexpected error in CDP fetch for {url}: {e}")
+        metrics.fetch_duration = time.time() - start_time
+        metrics.final_status = "failed"
+        metrics.error_message = str(e)
+        raise CDPFetchError(f"Unexpected CDP error: {e}")
+
+
+def _try_cdp_fallback(url: str, timeout: int, metrics: FetchMetrics,
+                     start_time: float, error_msg: str,
+                     input_url: str = None) -> tuple[str, FetchMetrics, dict]:
+    """
+    Try CDP fallback after urllib/selenium failures.
+
+    CDP (Chrome DevTools Protocol) provides direct browser automation capabilities
+    when other methods fail. This requires Chrome to be running in debug mode.
+
+    Args:
+        url: Target URL
+        timeout: Timeout in seconds
+        metrics: FetchMetrics object to update
+        start_time: Start time for duration calculation
+        error_msg: Error message from previous failure
+        input_url: Original URL as provided by user (for metadata tracking)
+
+    Returns:
+        tuple[str, FetchMetrics, dict]: (html_content, updated_metrics, url_metadata)
+    """
+    logging.info(f"Attempting CDP fallback for {url}...")
+
+    if not CDP_INTEGRATION_AVAILABLE:
+        logging.warning("CDP fallback requested but integration not available")
+        error_msg_full = f"{error_msg}. CDP fallback not available - install pychrome: pip install webfetcher[cdp]"
+        return _try_manual_chrome_fallback(url, metrics, start_time, error_msg_full, input_url)
+
+    # Check if CDP is available (pychrome installed)
+    if not is_cdp_available():
+        logging.warning("CDP package (pychrome) not installed, cannot use as fallback")
+        error_msg_full = f"{error_msg}. CDP package not installed. Run: pip install pychrome"
+        return _try_manual_chrome_fallback(url, metrics, start_time, error_msg_full, input_url)
+
+    # Check if Chrome debug instance is running
+    if not check_chrome_debug_running():
+        logging.warning("Chrome debug instance not running, cannot use CDP fallback")
+        print("\n⚠️  CDP fallback requires Chrome in debug mode", file=sys.stderr)
+        print("   Run: ./scripts/start_chrome.sh\n", file=sys.stderr)
+        error_msg_full = f"{error_msg}. Chrome debug session not running."
+        return _try_manual_chrome_fallback(url, metrics, start_time, error_msg_full, input_url)
+
+    try:
+        # Create CDP scraper
+        scraper = CDPScraper(timeout=timeout)
+
+        # Attempt to fetch the page
+        html_content, cdp_metrics = scraper.fetch_page(
+            url,
+            wait_load=2.0,
+            scroll_bottom=False,
+            enable_network_watch=False
+        )
+
+        # Update metrics - previous methods failed, CDP succeeded
+        metrics.fallback_method = "cdp"
+        metrics.fetch_duration = time.time() - start_time
+        metrics.final_status = "success"
+
+        # Create URL metadata for successful CDP fallback
+        url_metadata = create_url_metadata(
+            input_url=input_url or url,
+            final_url=url,  # CDP doesn't track final URL yet
+            fetch_mode='cdp'
+        )
+
+        logging.info(f"✓ CDP fallback successful for {url} after previous failures")
+        print(f"✓ Successfully fetched using CDP (Chrome DevTools Protocol)", file=sys.stderr)
+
+        return html_content, metrics, url_metadata
+
+    except (CDPConnectionError, CDPFetchError, CDPTimeoutError) as e:
+        logging.error(f"CDP fallback failed for {url}: {e}")
+        error_msg_full = f"{error_msg}. CDP fallback failed: {e}"
+        return _try_manual_chrome_fallback(url, metrics, start_time, error_msg_full, input_url)
+
+    except Exception as e:
+        logging.error(f"Unexpected error in CDP fallback for {url}: {e}")
+        error_msg_full = f"{error_msg}. Unexpected CDP error: {e}"
+        return _try_manual_chrome_fallback(url, metrics, start_time, error_msg_full, input_url)
 
 
 def extract_charset_from_headers(response) -> Optional[str]:
@@ -4485,14 +4684,18 @@ def main():
                     help='Output format: markdown (default), html, or both')
     
     # Phase 2: Selenium integration arguments
-    ap.add_argument('--fetch-mode', choices=['auto', 'urllib', 'selenium'], default='auto',
-                    help='Fetch method: auto (urllib->selenium fallback), urllib (urllib only), selenium (selenium only) (default: auto)')
+    ap.add_argument('--fetch-mode', choices=['auto', 'urllib', 'selenium', 'cdp'], default='auto',
+                    help='Fetch method: auto (urllib->selenium->cdp fallback), urllib (urllib only), selenium (selenium only), cdp (CDP only) (default: auto)')
     ap.add_argument('-s', '--selenium', action='store_true',
                     help='Shortcut for --fetch-mode selenium (force Selenium for JavaScript rendering)')
     ap.add_argument('-u', '--urllib', action='store_true',
-                    help='Shortcut for --fetch-mode urllib (force urllib without Selenium fallback)')
+                    help='Shortcut for --fetch-mode urllib (force urllib without fallback)')
+    ap.add_argument('--use-cdp', action='store_true',
+                    help='Shortcut for --fetch-mode cdp (use Chrome DevTools Protocol directly)')
     ap.add_argument('--selenium-timeout', type=int, default=30,
                     help='Selenium page load timeout in seconds (default: 30)')
+    ap.add_argument('--cdp-timeout', type=int, default=30,
+                    help='CDP connection timeout in seconds (default: 30)')
     # Task-002 Phase 1: Force Chrome mode flag
     ap.add_argument('--force-chrome', action='store_true',
                     help='Skip Chrome health check (use when Chrome is known to be running)')
@@ -4504,6 +4707,8 @@ def main():
         args.fetch_mode = 'selenium'
     elif args.urllib:
         args.fetch_mode = 'urllib'
+    elif args.use_cdp:
+        args.fetch_mode = 'cdp'
     
     # Check for legacy mode environment variable
     if os.environ.get('WF_LEGACY_IMAGE_MODE'):
