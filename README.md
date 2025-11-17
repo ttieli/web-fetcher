@@ -4,14 +4,59 @@
 
 ## 快速开始
 
-### 安装依赖
+### 安装方式
+
+#### 方式1：pipx 安装（推荐）
 
 ```bash
-# 基础依赖
-pip install -r requirements-selenium.txt
+# 安装 pipx（如果还没有）
+brew install pipx
+pipx ensurepath
 
-# 启动Chrome调试会话（可选，用于动态网页）
-./config/chrome-debug.sh
+# 安装 webfetcher（自动安装/升级到最新版本）
+pipx install --force 'git+https://github.com/ttieli/web-fetcher.git#egg=webfetcher[selenium]'
+
+# 验证安装
+wf --help
+```
+
+#### 方式2：克隆仓库 + 一键部署
+
+```bash
+# 克隆仓库
+git clone https://github.com/ttieli/web-fetcher.git
+cd web-fetcher
+
+# 一键部署（macOS/Linux）
+./bootstrap.sh
+
+# 激活环境并使用
+source .venv/bin/activate
+wf https://mp.weixin.qq.com/s/xxxxx
+```
+
+#### 方式3：pip 安装（虚拟环境）
+
+```bash
+# 创建虚拟环境
+python3 -m venv ~/webfetcher-env
+source ~/webfetcher-env/bin/activate
+
+# 从 GitHub 安装
+pip install 'git+https://github.com/ttieli/web-fetcher.git#egg=webfetcher[selenium]'
+```
+
+### 更新到最新版本
+
+```bash
+# pipx 方式
+pipx upgrade webfetcher
+
+# 或强制重新安装最新版
+pipx install --force 'git+https://github.com/ttieli/web-fetcher.git#egg=webfetcher[selenium]'
+
+# pip 方式
+pip install -U 'git+https://github.com/ttieli/web-fetcher.git#egg=webfetcher[selenium]'
 ```
 
 ### 基本用法
@@ -46,17 +91,22 @@ wf diagnose
 
 ```
 Web_Fetcher/
-├── wf.py                    # CLI入口
-├── webfetcher.py            # 核心引擎
-├── webfetcher/              # 核心包
-│   ├── errors/              # 错误处理
-│   ├── parsing/             # 解析器
-│   ├── fetchers/            # 获取器（Selenium等）
-│   ├── routing/             # 智能路由
-│   ├── utils/               # 工具函数
-│   ├── manual/              # 手动Chrome集成
-│   └── drivers/             # ChromeDriver管理
+├── src/
+│   └── webfetcher/          # 核心包
+│       ├── cli.py           # CLI 入口
+│       ├── core.py          # 核心引擎
+│       ├── errors/          # 错误处理
+│       ├── parsing/         # 解析器（含模板引擎）
+│       ├── fetchers/        # 获取器（Selenium等）
+│       ├── routing/         # 智能路由
+│       ├── utils/           # 工具函数
+│       ├── manual/          # 手动Chrome集成
+│       └── drivers/         # ChromeDriver管理
 ├── config/                  # 配置文件
+├── tests/                   # 测试文件
+├── bootstrap.sh             # 一键部署脚本（macOS/Linux）
+├── bootstrap.ps1            # 一键部署脚本（Windows）
+├── pyproject.toml           # 项目配置
 └── output/                  # 默认输出目录
 ```
 
