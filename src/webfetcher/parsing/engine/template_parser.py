@@ -344,6 +344,9 @@ class TemplateParser(BaseParser):
             TemplateNotFoundError: If no template is found
         """
         try:
+            # Save URL for media URL normalization
+            self.current_url = url
+
             # Get template for this URL
             self.current_template = self.get_template_for_url(url)
 
@@ -450,6 +453,15 @@ class TemplateParser(BaseParser):
                 if data_src and not img.get('src'):
                     # Copy data-src to src so html2text can pick it up
                     img['src'] = data_src
+
+            # Normalize all image src URLs to absolute URLs
+            from webfetcher.core import normalize_media_url
+            for img in soup.find_all('img'):
+                src = img.get('src')
+                if src:
+                    # Normalize URL using base URL from self.current_url
+                    normalized_src = normalize_media_url(src, url)
+                    img['src'] = normalized_src
 
             # Update html_content with processed version
             html_content = str(soup)
@@ -622,6 +634,11 @@ class TemplateParser(BaseParser):
             except Exception as e:
                 self.logger.debug(f"List extraction with selector '{selector}' failed: {e}")
                 continue
+
+        # Normalize media URLs if we have a current URL
+        if hasattr(self, 'current_url') and self.current_url:
+            from webfetcher.core import normalize_media_url
+            results = [normalize_media_url(url, self.current_url) for url in results]
 
         return results
 
