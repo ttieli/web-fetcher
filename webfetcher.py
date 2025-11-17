@@ -39,8 +39,8 @@ import gzip  # Task-008 Phase 2: Gzipped sitemap support
 
 # Selenium integration (Phase 2) - graceful degradation when not available
 try:
-    from selenium_config import SeleniumConfig
-    from selenium_fetcher import SeleniumFetcher, SeleniumMetrics, ChromeConnectionError, SeleniumFetchError, SeleniumTimeoutError, SeleniumNotAvailableError
+    from webfetcher.fetchers.config import SeleniumConfig
+    from webfetcher.fetchers.selenium import SeleniumFetcher, SeleniumMetrics, ChromeConnectionError, SeleniumFetchError, SeleniumTimeoutError, SeleniumNotAvailableError
     SELENIUM_INTEGRATION_AVAILABLE = True
 except ImportError as e:
     logging.debug(f"Selenium integration not available: {e}")
@@ -55,7 +55,7 @@ except ImportError as e:
     class SeleniumNotAvailableError(Exception): pass
 
 # Chrome error handling (Phase 2.3) - enhanced error messages
-from error_handler import (
+from webfetcher.errors.handler import (
     ChromeDebugError, ChromePortConflictError,
     ChromePermissionError, ChromeTimeoutError,
     ChromeLaunchError, ChromeErrorMessages
@@ -125,19 +125,19 @@ except ImportError as e:
     class ManualChromeTimeoutError(Exception): pass
 
 # Parser modules
-import parsers
-from parsers import (
+import webfetcher.parsing.parser as parsers
+from webfetcher.parsing.parser import (
     wechat_to_markdown,
     xhs_to_markdown,
     generic_to_markdown
 )
 
 # Task-003 Phase 3: URL Formatter Module
-from url_formatter import insert_dual_url_section
+from webfetcher.utils.url_formatter import insert_dual_url_section
 
 # Error handler integration (Task 1 Phase 2)
 try:
-    from error_handler import ErrorClassifier, ErrorReporter, ErrorCategory
+    from webfetcher.errors.handler import ErrorClassifier, ErrorReporter, ErrorCategory
     ERROR_HANDLER_AVAILABLE = True
 except ImportError as e:
     logging.debug(f"Error handler not available: {e}")
@@ -149,8 +149,8 @@ except ImportError as e:
 
 # Error classification system (Task 7 Phase 1)
 try:
-    from error_classifier import UnifiedErrorClassifier
-    from error_types import ErrorType, ErrorClassification
+    from webfetcher.errors.classifier import UnifiedErrorClassifier
+    from webfetcher.errors.types import ErrorType, ErrorClassification
     ERROR_CLASSIFIER_AVAILABLE = True
 except ImportError as e:
     logging.debug(f"Error classifier not available: {e}")
@@ -1411,7 +1411,7 @@ def _try_selenium_fetch(url: str, ua: Optional[str], timeout: int, metrics: Fetc
         config = SeleniumConfig()
 
         # Check if actual Selenium package is available before creating fetcher
-        from selenium_fetcher import SELENIUM_AVAILABLE
+        from webfetcher.fetchers.selenium import SELENIUM_AVAILABLE
         if not SELENIUM_AVAILABLE:
             error_msg = "Selenium package not installed. Run: pip install selenium PyYAML lxml"
             logging.error(f"Selenium package not installed (selenium library missing)")
@@ -1657,7 +1657,7 @@ def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], tim
         config = SeleniumConfig()
 
         # Check if actual Selenium package is available
-        from selenium_fetcher import SELENIUM_AVAILABLE
+        from webfetcher.fetchers.selenium import SELENIUM_AVAILABLE
         if not SELENIUM_AVAILABLE:
             logging.warning("Selenium package not installed, cannot use as fallback")
             # Try manual Chrome as last resort
@@ -2260,7 +2260,7 @@ def ensure_unique_path(outdir: Path, base: str) -> Path:
 
 
 # WeChat parser moved to parsers module
-# Import above: from parsers import wechat_to_markdown
+# Import above: from webfetcher.parsing.parser import wechat_to_markdown
 
 class PageType(Enum):
     """页面类型枚举"""
@@ -2269,7 +2269,7 @@ class PageType(Enum):
 
 
 # XiaoHongShu parser moved to parsers module
-# Import above: from parsers import xhs_to_markdown
+# Import above: from webfetcher.parsing.parser import xhs_to_markdown
 
 def detect_page_type(html: str, url: Optional[str] = None, is_crawling: bool = False) -> PageType:
     """
@@ -2762,7 +2762,7 @@ def format_list_page_markdown(page_title: str, list_items: List[ListItem], url: 
 
 
 # Generic parser moved to parsers module
-# Import above: from parsers import generic_to_markdown
+# Import above: from webfetcher.parsing.parser import generic_to_markdown
 
 
 def find_next_url(html: str, current_url: str, parser_name: str) -> Optional[str]:

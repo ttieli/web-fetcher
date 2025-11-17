@@ -3,7 +3,7 @@ import yaml
 from pathlib import Path
 from typing import Dict, Optional, List
 from urllib.parse import urlparse
-from parser_engine.utils.validators import TemplateValidator
+from .utils.validators import TemplateValidator
 
 
 class TemplateLoader:

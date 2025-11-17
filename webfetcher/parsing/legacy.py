@@ -25,7 +25,7 @@ import signal
 import time
 
 # Task-003 Phase 4: Import URL formatter utilities for consistent URL formatting
-from url_formatter import format_url_as_markdown, replace_urls_with_markdown
+from webfetcher.utils.url_formatter import format_url_as_markdown, replace_urls_with_markdown
 
 # BeautifulSoup import and availability flag
 try:
