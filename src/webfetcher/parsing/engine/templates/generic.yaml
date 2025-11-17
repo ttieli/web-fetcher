@@ -186,6 +186,12 @@ selectors:
     - selector: ".readme"
       strategy: "css"
 
+    # Generic container patterns (added for broader compatibility)
+    - selector: ".container"
+      strategy: "css"
+    - selector: "body"
+      strategy: "css"
+
   # ---------------------------------------------------------------------------
   # METADATA EXTRACTION (20+ metadata fields)
   # ---------------------------------------------------------------------------
