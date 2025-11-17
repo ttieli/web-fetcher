@@ -59,7 +59,7 @@ logger = logging.getLogger(__name__)
 # MIGRATION ADAPTER LAYER
 # ============================================================================
 
-def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
+def xhs_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[str, str, dict]:
     """
     XiaoHongShu (小红书) parser - Template-based implementation
 
@@ -68,6 +68,7 @@ def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     Args:
         html: HTML content of the page
         url: Source URL
+        url_metadata: Optional URL metadata containing input_url and final_url
 
     Returns:
         tuple: (date_only, markdown_content, metadata)
@@ -99,6 +100,13 @@ def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
         description = result.metadata.get('description', '(未能从页面提取正文摘要)')
         cover = result.metadata.get('cover', '')
         images = result.metadata.get('images', [])
+        videos = result.metadata.get('videos', [])
+
+        # Detect if this is a video post
+        # Use final_url from url_metadata if available (contains redirect params like type=video)
+        detection_url = url_metadata.get('final_url', url) if url_metadata else url
+        is_video_post = 'type=video' in detection_url.lower()
+        logger.info(f"XHS: Video detection - url_metadata={bool(url_metadata)}, detection_url={detection_url[:100]}, is_video_post={is_video_post}")
 
         # Manual image extraction if template parser didn't extract them
         # XiaoHongShu uses <meta name="og:image"> (not property="og:image")
@@ -135,6 +143,23 @@ def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
         body = description or result.content or '(未能从页面提取正文摘要)'
         lines += ["", body]
 
+        # Add videos section - either with URLs or notification
+        if videos:
+            # Successfully extracted video URLs
+            lines += ["", "## 视频"]
+            for video_url in videos:
+                lines.append(f"- 视频链接: {normalize_media_url(video_url)}")
+        elif is_video_post:
+            # Detected video post but couldn't extract URL (urllib limitation)
+            lines += [
+                "",
+                "## 视频",
+                "",
+                "⚠️ **检测到视频内容，但无法通过静态采集获取视频链接**",
+                "",
+                "说明：小红书视频链接通过JavaScript动态加载，urllib方式无法提取。如需获取视频，请直接访问原网页。"
+            ]
+
         # Add images section if images exist
         if images:
             lines += ["", "## 图片", ""] + [f"![]({normalize_media_url(u)})" for u in images]
@@ -142,10 +167,22 @@ def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
         # Combine into markdown
         markdown_content = "\n\n".join(lines).strip() + "\n"
 
+        # DEBUG: Log markdown generation
+        if is_video_post:
+            logger.info(f"XHS: Generated markdown for video post (length={len(markdown_content)})")
+            logger.info(f"XHS: Lines count={len(lines)}, videos={len(videos)}, is_video_post={is_video_post}")
+            # Check if '## 视频' is in the content
+            if '## 视频' in markdown_content:
+                logger.info("XHS: Video section confirmed in markdown")
+            else:
+                logger.warning("XHS: Video section NOT found in markdown despite being video post!")
+                logger.info(f"XHS: Lines preview: {lines[-10:]}")  # Last 10 lines
+
         # Build metadata dictionary
         metadata = {
             'author': author,
             'images': [normalize_media_url(u) for u in images],
+            'videos': [normalize_media_url(u) for u in videos],
             'cover': normalize_media_url(cover) if cover else '',
             'description': description,
             'publish_time': publish_time
@@ -161,7 +198,7 @@ def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
         return legacy_xhs_parser(html, url)
 
 
-def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
+def wechat_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[str, str, dict]:
     """
     WeChat (微信公众号) parser - Template-based implementation
 
@@ -170,6 +207,7 @@ def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     Args:
         html: HTML content of the page
         url: Source URL
+        url_metadata: Optional URL metadata containing input_url and final_url
 
     Returns:
         tuple: (date_only, markdown_content, metadata)
@@ -235,7 +273,7 @@ def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
         return legacy_wechat_parser(html, url)
 
 
-def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_crawling: bool = False) -> tuple[str, str, dict]:
+def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_crawling: bool = False, url_metadata: dict = None) -> tuple[str, str, dict]:
     """
     Generic parser - Template-based implementation
 
@@ -248,6 +286,7 @@ def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_craw
         url: Source URL
         filter_level: Content filtering level
         is_crawling: Whether in crawling mode
+        url_metadata: Optional URL metadata containing input_url and final_url
 
     Returns:
         tuple: (date_only, markdown_content, metadata)

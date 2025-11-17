@@ -725,8 +725,8 @@ class TemplateParser(BaseParser):
                         continue
 
             # Also extract top-level selector fields for compatibility
-            # (author, date, images, etc.)
-            top_level_fields = ['author', 'date', 'images']
+            # (author, date, images, videos, etc.)
+            top_level_fields = ['author', 'date', 'images', 'videos']
             for field_name in top_level_fields:
                 if field_name in selectors:
                     try:
@@ -735,6 +735,11 @@ class TemplateParser(BaseParser):
                             images = self._extract_list(content, selectors['images'])
                             if images:
                                 metadata['images'] = images
+                        elif field_name == 'videos':
+                            # Videos need to extract all matching elements
+                            videos = self._extract_list(content, selectors['videos'])
+                            if videos:
+                                metadata['videos'] = videos
                         else:
                             # Single value fields
                             value = self._extract_field(content, selectors[field_name])
