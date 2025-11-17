@@ -24,6 +24,12 @@ import urllib.request
 import urllib.error
 import ssl
 import sys
+
+# 添加项目根目录到 sys.path，以便导入 config 和其他根目录模块
+from pathlib import Path
+_project_root = Path(__file__).resolve().parent.parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
 from typing import Optional, List, Dict, Set, Any
 from dataclasses import dataclass
 from enum import Enum
@@ -66,7 +72,7 @@ from config.ssl_problematic_domains import should_use_selenium_directly
 
 # Config-Driven Routing System (Task-1) - intelligently route URLs to appropriate fetcher
 try:
-    from routing import RoutingEngine, RoutingDecision
+    from webfetcher.routing import RoutingEngine, RoutingDecision
     routing_engine = RoutingEngine()
     ROUTING_ENGINE_AVAILABLE = True
     logging.info("Config-driven routing system initialized")
