@@ -1,0 +1,96 @@
+# Web Fetcher Routing Configuration
+# 网页获取器路由配置
+version: "1.0"
+
+# Global Settings / 全局设置
+global:
+  default_fetcher: urllib
+  cache_ttl: 3600
+  enable_logging: true
+
+# Routing Rules / 路由规则
+# Rules are evaluated in priority order (higher number = higher priority)
+# 规则按优先级顺序评估（数字越大优先级越高）
+rules:
+  # High Priority: Known problematic sites / 高优先级：已知问题网站
+  - name: "CEB Bank Anti-Bot Protection"
+    name_zh: "光大银行反爬虫保护"
+    priority: 100
+    enabled: true
+    conditions:
+      domain: "cebbank.com.cn"
+      url_pattern: ".*/(site|zhpd)/.*"
+    action:
+      fetcher: "manual_chrome"
+      reason: "Known anti-bot protection requiring manual navigation"
+      reason_zh: "已知反爬虫保护，需要手动导航"
+
+  - name: "JavaScript-Heavy Sites"
+    name_zh: "JavaScript重度网站"
+    priority: 50
+    enabled: true
+    conditions:
+      domain_list:
+        - "xiaohongshu.com"
+        - "xhs.com"
+      url_pattern: ".*/(explore|user|note|discovery)/.*"
+    action:
+      fetcher: "selenium"
+      config:
+        wait_time: 5
+        scroll: true
+      reason: "Requires JavaScript rendering"
+      reason_zh: "需要JavaScript渲染"
+
+  # Rodong Sinmun: Static content with template-based parsing / 劳动新闻：使用模板解析的静态内容
+  - name: "Rodong Sinmun - Static Content"
+    name_zh: "劳动新闻 - 静态内容"
+    priority: 90
+    enabled: true
+    conditions:
+      domain: "rodong.rep.kp"
+    action:
+      fetcher: "urllib"
+      reason: "Static content, template-based parsing"
+      reason_zh: "静态内容，使用模板解析"
+
+  # News.cn: Template-based parsing for Xinhua News Agency / 新华网：新华社新闻模板解析
+  - name: "News.cn - Template Parser"
+    name_zh: "新华网 - 模板解析器"
+    priority: 85
+    enabled: true
+    conditions:
+      domain_list:
+        - "news.cn"
+        - "www.news.cn"
+      domain_pattern: "^.*\\.news\\.cn$"
+    action:
+      fetcher: "urllib"
+      parser: "template"
+      template: "News.cn Articles"
+      reason: "Static content with custom HTML structure requiring specialized template"
+      reason_zh: "具有自定义HTML结构的静态内容，需要专用模板"
+
+  # Wikipedia: Static content with template-based parsing / 维基百科：使用模板解析的静态内容
+  - name: "Wikipedia - Static Content"
+    name_zh: "维基百科 - 静态内容"
+    priority: 90
+    enabled: true
+    conditions:
+      domain: "zh.wikipedia.org"
+    action:
+      fetcher: "urllib"
+      reason: "Static MediaWiki content, template-based parsing"
+      reason_zh: "静态MediaWiki内容，使用模板解析"
+
+  # Default fallback (lowest priority) / 默认回退（最低优先级）
+  - name: "Default - Static Sites"
+    name_zh: "默认 - 静态网站"
+    priority: 1
+    enabled: true
+    conditions:
+      always: true
+    action:
+      fetcher: "urllib"
+      reason: "Standard static content"
+      reason_zh: "标准静态内容"
