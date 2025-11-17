@@ -42,12 +42,16 @@ dependencies = [
 selenium = [
     "selenium>=4.15.0,<5.0.0",
 ]
+cdp = [
+    "pychrome>=0.2.3",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
 ]
 all = [
     "selenium>=4.15.0,<5.0.0",
+    "pychrome>=0.2.3",
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
 ]
