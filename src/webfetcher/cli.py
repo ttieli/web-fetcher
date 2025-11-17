@@ -383,9 +383,15 @@ def main():
             extracted_url = cmd
 
     # Quick grab mode - detect URL (modified condition)
-    if extracted_url or 'http://' in cmd or 'https://' in cmd or ('.' in cmd and cmd not in ['help', '-h', '--help']):
+    if extracted_url or 'http://' in cmd or 'https://' in cmd or 'file://' in cmd or ('.' in cmd and cmd not in ['help', '-h', '--help']):
         # Use extracted URL if available, otherwise process normally
-        url = extracted_url if extracted_url else (cmd if cmd.startswith('http') else f'https://{cmd}')
+        # Support file:// protocol for local files
+        if extracted_url:
+            url = extracted_url
+        elif cmd.startswith(('http://', 'https://', 'file://')):
+            url = cmd
+        else:
+            url = f'https://{cmd}'
         # Clean WeChat URLs (remove poc_token that causes errors)
         url = clean_wechat_url(url)
         # Parse output directory

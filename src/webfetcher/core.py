@@ -386,37 +386,49 @@ def is_url_encoded(text: str) -> bool:
 def validate_and_encode_url(url: str) -> str:
     """
     Validate URL and ensure safe encoding for HTTP requests.
-    
+
     Properly handles Unicode characters (e.g., Chinese), spaces, and already-encoded URLs.
     Converts IRI (Internationalized Resource Identifier) to proper URI format.
-    
+    Supports file:// URLs for local file access.
+
     Args:
         url: URL to validate and encode (can contain Unicode or spaces)
-        
+
     Returns:
-        str: Safely encoded URL ready for HTTP requests
-        
+        str: Safely encoded URL ready for HTTP requests, or file:// URL for local files
+
     Raises:
         ValueError: If URL is invalid or contains unsafe patterns
-        
+
     Examples:
         >>> validate_and_encode_url('https://zh.wikipedia.org/wiki/中文')
         'https://zh.wikipedia.org/wiki/%E4%B8%AD%E6%96%87'
         >>> validate_and_encode_url('https://example.com/path with spaces')
         'https://example.com/path%20with%20spaces'
+        >>> validate_and_encode_url('file:///Users/name/file.html')
+        'file:///Users/name/file.html'
     """
     if not url or not isinstance(url, str):
         raise ValueError("URL must be a non-empty string")
-    
+
     url = url.strip()
     if not url:
         raise ValueError("URL cannot be empty after stripping whitespace")
-    
+
     try:
         # Parse URL to validate structure
         parsed = urllib.parse.urlparse(url)
-        
-        # Basic validation
+
+        # Support file:// protocol for local file access
+        if parsed.scheme == 'file':
+            # file:// URLs don't need netloc, just a valid path
+            if not parsed.path:
+                raise ValueError(f"file:// URL missing path: {url}")
+            # Return file:// URL as-is (will be handled specially in main)
+            logging.info(f"Detected file:// URL for local file: {parsed.path}")
+            return url
+
+        # Basic validation for http/https URLs
         if not parsed.scheme:
             raise ValueError(f"URL missing scheme: {url}")
         if not parsed.netloc:
@@ -4487,16 +4499,41 @@ def main():
     url = validate_and_encode_url(args.url)
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    
+
+    # Detect file:// URLs and convert to --html mode
+    is_file_url = url.startswith('file://')
+    if is_file_url:
+        # Extract file path from file:// URL
+        parsed_file_url = urllib.parse.urlparse(url)
+        file_path = urllib.parse.unquote(parsed_file_url.path)
+
+        # Convert file:// URL to local HTML mode
+        logging.info(f"Detected file:// URL, converting to local HTML mode")
+        logging.info(f"Local file path: {file_path}")
+
+        # Set args.html to the file path
+        args.html = file_path
+
+        # Use the file name (without directory path) as URL for display purposes
+        file_name = parsed_file_url.path.split('/')[-1] if '/' in parsed_file_url.path else 'file'
+        url = f"http://localhost/{file_name}"
+        logging.info(f"Using display URL: {url}")
+
     logging.info(f"Starting webfetcher for URL: {url}")
-    if url != args.url:
+    if url != args.url and not is_file_url:
         logging.info(f"URL encoded from: {args.url}")
 
     # Task-011 Phase 1: Skip URL resolution for explicit Selenium/manual Chrome modes
     # Task-011 阶段1：跳过显式 Selenium/手动 Chrome 模式的 URL 解析
     # Reason: Avoid premature HEAD requests that may fail with 405 errors
     # 原因：避免可能失败并返回 405 错误的过早 HEAD 请求
-    if hasattr(args, 'fetch_mode') and args.fetch_mode in ('selenium', 'manual_chrome'):
+    if is_file_url:
+        # For file:// URLs, no network resolution needed
+        # 对于 file:// URL，不需要网络解析
+        host = 'localhost'
+        original_host = 'localhost'
+        logging.info(f"Local file mode: Skipping URL resolution")
+    elif hasattr(args, 'fetch_mode') and args.fetch_mode in ('selenium', 'manual_chrome'):
         # For explicit Selenium/manual Chrome modes, extract hostname directly without network resolution
         # 对于显式 Selenium/手动 Chrome 模式，直接从 URL 提取主机名，不进行网络解析
         host = urllib.parse.urlparse(url).hostname or ''
