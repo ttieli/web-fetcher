@@ -24,12 +24,6 @@ import urllib.request
 import urllib.error
 import ssl
 import sys
-
-# 添加项目根目录到 sys.path，以便导入 config 和其他根目录模块
-from pathlib import Path
-_project_root = Path(__file__).resolve().parent.parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
 from typing import Optional, List, Dict, Set, Any
 from dataclasses import dataclass
 from enum import Enum
@@ -68,7 +62,7 @@ from webfetcher.errors.handler import (
 )
 
 # Smart routing for SSL problematic domains (Phase 3.5)
-from config.ssl_problematic_domains import should_use_selenium_directly
+from webfetcher.config.ssl_problematic_domains import should_use_selenium_directly
 
 # Config-Driven Routing System (Task-1) - intelligently route URLs to appropriate fetcher
 try:
@@ -2043,7 +2037,7 @@ def resolve_final_url_with_fallback(url: str, ua: Optional[str] = None, timeout:
 
     # === IMMEDIATE ROUTING: Skip redirect resolution for SSL problematic domains ===
     # === 即刻路由：跳过SSL问题域名的重定向解析 ===
-    from config.ssl_problematic_domains import should_use_selenium_directly
+    from webfetcher.config.ssl_problematic_domains import should_use_selenium_directly
     if should_use_selenium_directly(url):
         print(f"🚀 Skipping redirect resolution for known problematic domain: {url}", file=sys.stderr)
         logging.info(f"🚀 Skipping redirect resolution for known problematic domain: {url}")
@@ -2172,7 +2166,7 @@ def get_effective_host(url: str, ua: Optional[str] = None) -> str:
     """
     # === IMMEDIATE ROUTING: Skip resolution for SSL problematic domains ===
     # === 即刻路由：跳过SSL问题域名的解析 ===
-    from config.ssl_problematic_domains import should_use_selenium_directly
+    from webfetcher.config.ssl_problematic_domains import should_use_selenium_directly
     if should_use_selenium_directly(url):
         print(f"🚀 Using original hostname for known problematic domain: {url}", file=sys.stderr)
         logging.info(f"🚀 Using original hostname for known problematic domain: {url}")
