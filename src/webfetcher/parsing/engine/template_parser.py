@@ -463,6 +463,32 @@ class TemplateParser(BaseParser):
                     normalized_src = normalize_media_url(src, url)
                     img['src'] = normalized_src
 
+            # Enhanced table handling for better markdown conversion
+            tables_found = soup.find_all('table')
+            for table in tables_found:
+                # Fix 1: Replace <br> in table headers with space
+                # This prevents headers from splitting across multiple lines
+                for th in table.find_all('th'):
+                    for br in th.find_all('br'):
+                        br.replace_with(' ')
+
+                for td in table.find_all('td'):
+                    # Fix 2: Replace <br> in table cells
+                    for br in td.find_all('br'):
+                        br.replace_with(' ')
+
+                    # Fix 3: Replace empty cells with radio/checkbox inputs with placeholder
+                    # Check if cell contains only form inputs and whitespace
+                    inputs = td.find_all('input', type=['radio', 'checkbox'])
+                    if inputs:
+                        # Get cell text without the input tags
+                        cell_text = td.get_text(strip=True)
+                        # If cell is essentially empty (only whitespace/nbsp), add placeholder
+                        if not cell_text or cell_text.replace('\xa0', '').strip() == '':
+                            # Clear the cell and add a simple placeholder
+                            td.clear()
+                            td.string = '[ ]'
+
             # Update html_content with processed version
             html_content = str(soup)
         except Exception as e:
