@@ -53,7 +53,7 @@ from typing import Optional, Tuple, Dict, Any, List
 from dataclasses import dataclass
 
 # Import Chrome error handling utilities
-from error_handler import ChromeErrorMessages
+from webfetcher.errors.handler import ChromeErrorMessages
 
 # Conditional import for requests with urllib fallback
 try:

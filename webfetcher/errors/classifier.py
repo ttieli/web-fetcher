@@ -13,11 +13,11 @@ from typing import Dict, List, Tuple, Optional
 from urllib.error import HTTPError, URLError
 import ssl
 
-from error_types import ErrorType, ErrorClassification
+from webfetcher.errors.types import ErrorType, ErrorClassification
 
 # Phase 2: Import error cache
 try:
-    from error_cache import ErrorCache
+    from webfetcher.errors.cache import ErrorCache
     CACHE_AVAILABLE = True
 except ImportError:
     CACHE_AVAILABLE = False

@@ -35,7 +35,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Import template-based parsers from parsers_migrated
-from parsers_migrated import (
+from webfetcher.parsing.templates import (
     xhs_to_markdown as xhs_to_markdown_migrated,
     wechat_to_markdown as wechat_to_markdown_migrated,
     generic_to_markdown as generic_to_markdown_migrated

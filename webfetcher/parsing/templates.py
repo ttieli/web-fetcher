@@ -24,7 +24,7 @@ from enum import Enum
 
 # Import existing utilities and classes from parsers_legacy
 # These will be reused during migration
-from parsers_legacy import (
+from webfetcher.parsing.legacy import (
     # Enums and data classes
     PageType,
     ListItem,
@@ -48,8 +48,8 @@ from parsers_legacy import (
 )
 
 # TODO Phase 3.2: Import template-based parsing engine
-# from parser_engine.template_parser import TemplateParser
-# from parser_engine.engine.template_loader import TemplateLoader
+# from .engine.template_parser import TemplateParser
+# from .engine.template_loader import TemplateLoader
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -74,14 +74,14 @@ def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     """
     try:
         # Import template-based parsing engine
-        from parser_engine.template_parser import TemplateParser
-        from parser_engine.engine.template_loader import TemplateLoader
+        from .engine.template_parser import TemplateParser
+        from .engine.template_loader import TemplateLoader
         import os
 
         # Initialize template parser with XiaoHongShu template directory
         template_dir = os.path.join(
             os.path.dirname(__file__),
-            'parser_engine', 'templates'
+            'engine', 'templates'
         )
         parser = TemplateParser(template_dir=template_dir)
 
@@ -157,7 +157,7 @@ def xhs_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     except Exception as e:
         # Fallback to legacy implementation if template parsing fails
         logger.warning(f"Template-based XHS parser failed: {e}, using legacy parser")
-        from parsers_legacy import xhs_to_markdown as legacy_xhs_parser
+        from webfetcher.parsing.legacy import xhs_to_markdown as legacy_xhs_parser
         return legacy_xhs_parser(html, url)
 
 
@@ -176,14 +176,14 @@ def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     """
     try:
         # Import template-based parsing engine
-        from parser_engine.template_parser import TemplateParser
-        from parser_engine.engine.template_loader import TemplateLoader
+        from .engine.template_parser import TemplateParser
+        from .engine.template_loader import TemplateLoader
         import os
 
         # Initialize template parser with WeChat template directory
         template_dir = os.path.join(
             os.path.dirname(__file__),
-            'parser_engine', 'templates'
+            'engine', 'templates'
         )
         parser = TemplateParser(template_dir=template_dir)
 
@@ -231,7 +231,7 @@ def wechat_to_markdown(html: str, url: str) -> tuple[str, str, dict]:
     except Exception as e:
         # Fallback to legacy implementation if template parsing fails
         logger.warning(f"Template-based WeChat parser failed: {e}, using legacy parser")
-        from parsers_legacy import wechat_to_markdown as legacy_wechat_parser
+        from webfetcher.parsing.legacy import wechat_to_markdown as legacy_wechat_parser
         return legacy_wechat_parser(html, url)
 
 
@@ -254,14 +254,14 @@ def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_craw
     """
     try:
         # Phase 3.5: Try template-based parsing first
-        from parser_engine.template_parser import TemplateParser
-        from parser_engine.engine.template_loader import TemplateLoader
+        from .engine.template_parser import TemplateParser
+        from .engine.template_loader import TemplateLoader
         import os
 
         # Initialize template parser
         template_dir = os.path.join(
             os.path.dirname(__file__),
-            'parser_engine', 'templates'
+            'engine', 'templates'
         )
         parser = TemplateParser(template_dir=template_dir)
         parser.reload_templates()  # Force reload to get updated generic.yaml v2.1.0
@@ -325,7 +325,7 @@ def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_craw
     except Exception as e:
         # Fallback to legacy implementation if template parsing fails
         logger.info(f"Phase 3.5: No template found or template parsing failed for {url}, using legacy parser")
-        from parsers_legacy import generic_to_markdown as legacy_generic_parser
+        from webfetcher.parsing.legacy import generic_to_markdown as legacy_generic_parser
         return legacy_generic_parser(html, url, filter_level, is_crawling)
 
 
@@ -348,7 +348,7 @@ def extract_list_content(html: str, base_url: str) -> tuple[str, List[ListItem]]
         tuple: (page_title, list_items)
     """
     # TODO Phase 3.4: Consider template-based list extraction
-    from parsers_legacy import extract_list_content as legacy_extract_list
+    from webfetcher.parsing.legacy import extract_list_content as legacy_extract_list
     return legacy_extract_list(html, base_url)
 
 
@@ -368,7 +368,7 @@ def detect_page_type(html: str, url: Optional[str] = None, is_crawling: bool = F
         PageType: Detected page type
     """
     # TODO Phase 3.4: Consider ML-based page type detection
-    from parsers_legacy import detect_page_type as legacy_detect_page_type
+    from webfetcher.parsing.legacy import detect_page_type as legacy_detect_page_type
     return legacy_detect_page_type(html, url, is_crawling)
 
 
@@ -386,7 +386,7 @@ def format_list_page_markdown(page_title: str, list_items: List[ListItem], url: 
     Returns:
         tuple: (date_only, markdown_content, metadata)
     """
-    from parsers_legacy import format_list_page_markdown as legacy_format_list
+    from webfetcher.parsing.legacy import format_list_page_markdown as legacy_format_list
     return legacy_format_list(page_title, list_items, url)
 
 
@@ -404,7 +404,7 @@ class XHSImageExtractor:
 
     def __init__(self, html: str, url: str = "", debug: bool = False):
         # TODO Phase 3.2: Implement template-based image extraction
-        from parsers_legacy import XHSImageExtractor as LegacyExtractor
+        from webfetcher.parsing.legacy import XHSImageExtractor as LegacyExtractor
         self._legacy_extractor = LegacyExtractor(html, url, debug)
 
     def extract_all(self) -> List[str]:

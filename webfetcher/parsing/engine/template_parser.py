@@ -8,15 +8,15 @@ and extract structured data based on template rules.
 from typing import Dict, Any, Optional
 import html2text
 from lxml import etree
-from parser_engine.base_parser import (
+from .base_parser import (
     BaseParser,
     ParseResult,
     ParserError,
     ExtractionError,
     TemplateNotFoundError
 )
-from parser_engine.engine.template_loader import TemplateLoader
-from parser_engine.strategies import CSSStrategy, XPathStrategy, TextPatternStrategy
+from .template_loader import TemplateLoader
+from .strategies import CSSStrategy, XPathStrategy, TextPatternStrategy
 
 
 class TemplateParser(BaseParser):

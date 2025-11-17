@@ -1,0 +1,18 @@
+[project]
+name = "webfetcher"
+version = "1.0.0"
+description = "Web content fetcher with intelligent routing"
+requires-python = ">=3.7"
+authors = [
+    {name = "WebFetcher Team"}
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"

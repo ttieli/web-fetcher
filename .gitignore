@@ -1,76 +1,32 @@
-# Python cache
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# OS files
-.DS_Store
-Thumbs.db
-*.swp
-.vscode/
-.idea/
-
-# Downloaded content and outputs
-*.html
-downloaded_*/
-output_*/
-output/*
-!output/README.md
-fetched/*
-!fetched/README.md
-raw_output/
-assets/
-
-# Test directories and files
-perf_test*/
-*.test.md
-*.test.json
-test_*_validation.py
-test_error.md/
-validate_phase*.py
-
-# Temporary architecture review documents
-architecture_review_*.md
-
-# Temporary files
-temp.*
-tmp/
-*.tmp
-*.temp
-*.bak
-*.backup
-*.log
-
-# Date-prefixed downloads and failed test outputs (pattern: YYYY-MM-DD-HHMMSS - *)
-20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9]* - *
-FAILED_*
-
-# Archive and cleanup
-archive_cleanup/
-*.tar.gz
-*.zip
-
-# IDE and editor
-.claude/
-.cursor/
-*.sublime-*
-
-# Local environment
-.env
-.env.local
+*.so
+.Python
+*.egg-info/
+dist/
+build/
 venv/
 env/
 
-# Documentation build outputs
-docs/_build/
-site/
+# Runtime
+var/
+*.log
 
-# ChromeDriver binaries (platform-specific)
-chromedriver-mac-arm64/
-chromedriver-mac-x64/
-chromedriver-linux64/
-chromedriver-win64/
-chromedriver
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# Home directory artifact
-~
+# OS
+.DS_Store
+Thumbs.db
+
+# Archive
+archive/
+
+# Output (keep structure but ignore content)
+output/*
+!output/.gitkeep

@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 import logging
 
-from error_types import ErrorClassification
+from webfetcher.errors.types import ErrorClassification
 
 @dataclass
 class CacheEntry:
