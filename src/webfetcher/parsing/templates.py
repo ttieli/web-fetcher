@@ -344,8 +344,13 @@ def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_craw
         if content:
             lines += ["", content]
 
-        # Add images section if images exist
-        if images:
+        # Add images section if images exist AND not already in content
+        # Check if content already contains images (news articles with inline images)
+        content_has_images = content and '![' in content if content else False
+
+        if images and not content_has_images:
+            # Only add separate image section for posts where images are separate from content
+            # (e.g., XiaoHongShu posts, not news articles with inline images)
             lines += ["", "## 图片", ""] + [f"![]({normalize_media_url(u, url)})" for u in images]
 
         # Combine into markdown
