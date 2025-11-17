@@ -350,6 +350,13 @@ def diagnose_system():
     sys.exit(exit_code)
 
 def main():
+    # Check for updates (async, non-blocking)
+    try:
+        from webfetcher.version_checker import check_for_updates
+        check_for_updates()
+    except Exception:
+        pass  # Never let version check crash the program
+
     if len(sys.argv) < 2:
         print_help()
         return
