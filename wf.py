@@ -13,6 +13,10 @@ import os
 from pathlib import Path
 import logging
 import re
+import warnings
+
+# Suppress SyntaxWarning from parser_engine docstrings
+warnings.filterwarnings('ignore', category=SyntaxWarning)
 
 # Import ChromeDriver version management
 try:
