@@ -54,6 +54,10 @@ class TemplateParser(BaseParser):
         """
         super().__init__()
 
+        # Initialize logger
+        import logging
+        self.logger = logging.getLogger(__name__)
+
         # Initialize template loader
         try:
             self.template_loader = TemplateLoader(template_dir)
@@ -176,7 +180,7 @@ class TemplateParser(BaseParser):
 
         Supports multiple selector formats:
         - String: "#id, .class"
-        - List of dicts: [{"selector": "#id", "strategy": "css"}]
+        - List of dicts: [{"selector": "#id", "strategy": "css", "post_process": [...]}]
         - Single dict: {"selector": "#id", "strategy": "css"}
 
         Args:
@@ -184,37 +188,139 @@ class TemplateParser(BaseParser):
             field_config: Field configuration in any supported format
 
         Returns:
-            Optional[str]: Extracted value or None if not found
+            Optional[str]: Extracted value or None if not found (with post-processing applied)
         """
-        # Normalize configuration to list of (selector, strategy) tuples
-        selectors = self._normalize_selector_config(field_config)
+        # Process list of dicts with full config (including post_process)
+        if isinstance(field_config, list):
+            for item in field_config:
+                if isinstance(item, dict):
+                    selector = item.get('selector', '').strip()
+                    strategy_type = item.get('strategy', 'css')
+                    attribute = item.get('attribute')
+                    post_process = item.get('post_process', [])
 
-        if not selectors:
-            return None
+                    if not selector:
+                        continue
 
-        # Try each selector in order until one succeeds
-        for selector, strategy_type in selectors:
-            try:
-                # Auto-append @content for meta tags if not specified
-                if selector.startswith('meta[') and '@' not in selector:
-                    selector = selector + '@content'
+                    try:
+                        # Build full selector with attribute if needed
+                        if attribute and selector.startswith('meta['):
+                            full_selector = f"{selector}@{attribute}"
+                        elif selector.startswith('meta[') and '@' not in selector:
+                            full_selector = selector + '@content'
+                        else:
+                            full_selector = selector
 
-                # Get strategy
-                strategy = self.strategies.get(strategy_type, self.strategies['css'])
+                        # Get strategy
+                        strategy = self.strategies.get(strategy_type, self.strategies['css'])
 
-                # Extract using strategy
-                result = strategy.extract(content, selector)
+                        # Extract using strategy
+                        result = strategy.extract(content, full_selector)
 
-                # Return first non-empty result
-                if result and result.strip():
-                    return result.strip()
+                        # Apply post-processing if result found
+                        if result and result.strip():
+                            result = self._apply_post_process(result, post_process)
+                            if result and result.strip():
+                                return result.strip()
 
-            except Exception as e:
-                # Log and continue to next selector
-                self.logger.debug(f"Selector '{selector}' (strategy: {strategy_type}) failed: {e}")
-                continue
+                    except Exception as e:
+                        self.logger.debug(f"Selector '{selector}' (strategy: {strategy_type}) failed: {e}")
+                        continue
+
+        # Fallback to original normalization for simple configs
+        else:
+            selectors = self._normalize_selector_config(field_config)
+
+            if not selectors:
+                return None
+
+            # Try each selector in order until one succeeds
+            for selector, strategy_type in selectors:
+                try:
+                    # Auto-append @content for meta tags if not specified
+                    if selector.startswith('meta[') and '@' not in selector:
+                        selector = selector + '@content'
+
+                    # Get strategy
+                    strategy = self.strategies.get(strategy_type, self.strategies['css'])
+
+                    # Extract using strategy
+                    result = strategy.extract(content, selector)
+
+                    # Return first non-empty result
+                    if result and result.strip():
+                        return result.strip()
+
+                except Exception as e:
+                    # Log and continue to next selector
+                    self.logger.debug(f"Selector '{selector}' (strategy: {strategy_type}) failed: {e}")
+                    continue
 
         return None
+
+    def _apply_post_process(self, value: str, post_process: list) -> str:
+        """
+        Apply post-processing rules to extracted value.
+
+        Args:
+            value: Extracted value to process
+            post_process: List of post-processing rules
+
+        Returns:
+            str: Processed value
+        """
+        import re
+
+        if not post_process or not value:
+            return value
+
+        result = value
+
+        for rule in post_process:
+            if not isinstance(rule, dict):
+                continue
+
+            rule_type = rule.get('type')
+
+            if rule_type == 'regex_replace':
+                # Regex replacement
+                pattern = rule.get('pattern', '')
+                replacement = rule.get('replacement', '')
+                flags_str = rule.get('flags', '')
+
+                # Convert flags string to re flags
+                flags = 0
+                if 'i' in flags_str.lower():
+                    flags |= re.IGNORECASE
+                if 'm' in flags_str.lower():
+                    flags |= re.MULTILINE
+                if 's' in flags_str.lower():
+                    flags |= re.DOTALL
+
+                try:
+                    result = re.sub(pattern, replacement, result, flags=flags)
+                except Exception as e:
+                    self.logger.debug(f"Regex post-process failed: {e}")
+
+            elif rule_type == 'replace':
+                # Simple string replacement
+                old = rule.get('old', '')
+                new = rule.get('new', '')
+                result = result.replace(old, new)
+
+            elif rule_type == 'strip':
+                # Strip whitespace
+                result = result.strip()
+
+            elif rule_type == 'lower':
+                # Convert to lowercase
+                result = result.lower()
+
+            elif rule_type == 'upper':
+                # Convert to uppercase
+                result = result.upper()
+
+        return result
 
     def parse(self, content: str, url: str) -> ParseResult:
         """
@@ -328,11 +434,15 @@ class TemplateParser(BaseParser):
         if not html_content:
             return ""
 
-        # Pre-process HTML to handle lazy-loaded images (data-src -> src)
+        # Pre-process HTML to handle lazy-loaded images and remove unwanted elements
         # This is needed for WeChat and other sites that use lazy loading
         try:
             from bs4 import BeautifulSoup
             soup = BeautifulSoup(html_content, 'html.parser')
+
+            # Remove script, style, and noscript tags (especially important for XHS)
+            for tag in soup.find_all(['script', 'style', 'noscript']):
+                tag.decompose()
 
             # Find all img tags with data-src attribute
             for img in soup.find_all('img'):
@@ -344,7 +454,7 @@ class TemplateParser(BaseParser):
             # Update html_content with processed version
             html_content = str(soup)
         except Exception as e:
-            self.logger.debug(f"Image pre-processing failed: {e}, continuing with original HTML")
+            self.logger.debug(f"HTML pre-processing failed: {e}, continuing with original HTML")
 
         # Convert HTML to Markdown
         try:
@@ -417,9 +527,10 @@ class TemplateParser(BaseParser):
             field_config: Field configuration in any supported format
 
         Returns:
-            List[str]: List of extracted values
+            List[str]: List of extracted values (validated URLs or text)
         """
         from bs4 import BeautifulSoup
+        import re
 
         results = []
 
@@ -427,61 +538,155 @@ class TemplateParser(BaseParser):
         config_items = []
 
         if isinstance(field_config, list):
-            # List of dicts (WeChat images format)
+            # List of dicts (WeChat/XHS images format)
             for item in field_config:
                 if isinstance(item, dict):
                     config_items.append({
                         'selector': item.get('selector', '').strip(),
                         'strategy': item.get('strategy', 'css'),
-                        'attribute': item.get('attribute')
+                        'attribute': item.get('attribute'),
+                        'validation': item.get('validation', {})
                     })
         elif isinstance(field_config, dict):
             # Single dict
             config_items.append({
                 'selector': field_config.get('selector', '').strip(),
                 'strategy': field_config.get('strategy', 'css'),
-                'attribute': field_config.get('attribute')
+                'attribute': field_config.get('attribute'),
+                'validation': field_config.get('validation', {})
             })
         elif isinstance(field_config, str):
             # Simple string selector
             config_items.append({
                 'selector': field_config.strip(),
                 'strategy': 'css',
-                'attribute': None
+                'attribute': None,
+                'validation': {}
             })
+
+        # Preprocess HTML once before all extractions
+        try:
+            soup = BeautifulSoup(content, 'html.parser')
+
+            # Remove script, style, and noscript tags (prevent JS code extraction)
+            for tag in soup.find_all(['script', 'style', 'noscript']):
+                tag.decompose()
+
+            # Convert data-src to src for lazy-loaded images
+            for img in soup.find_all('img'):
+                data_src = img.get('data-src')
+                if data_src and not img.get('src'):
+                    img['src'] = data_src
+
+            preprocessed_content = str(soup)
+        except Exception as e:
+            self.logger.debug(f"HTML preprocessing failed in _extract_list: {e}")
+            preprocessed_content = content
 
         # Process each configuration item
         for config in config_items:
             selector = config.get('selector')
             attribute = config.get('attribute')
+            validation = config.get('validation', {})
 
             if not selector:
                 continue
 
             try:
-                # Parse HTML
-                soup = BeautifulSoup(content, 'html.parser')
+                # Parse preprocessed HTML
+                soup = BeautifulSoup(preprocessed_content, 'html.parser')
 
                 # Find all matching elements
                 elements = soup.select(selector)
 
                 for element in elements:
+                    value = None
+
                     if attribute:
                         # Extract attribute value
                         value = element.get(attribute)
-                        if value and value not in results:  # Avoid duplicates
-                            results.append(value)
                     else:
                         # Extract text content
-                        text = element.get_text(strip=True)
-                        if text and text not in results:  # Avoid duplicates
-                            results.append(text)
+                        value = element.get_text(strip=True)
+
+                    if not value or value in results:
+                        continue
+
+                    # Validate URLs (for images, links, etc.)
+                    if self._should_validate_url(value):
+                        if not self._validate_url(value, validation):
+                            continue
+
+                    results.append(value)
 
             except Exception as e:
                 self.logger.debug(f"List extraction with selector '{selector}' failed: {e}")
                 continue
 
         return results
+
+    def _should_validate_url(self, value: str) -> bool:
+        """Check if value looks like a URL that needs validation."""
+        if not value:
+            return False
+        return value.startswith('http://') or value.startswith('https://') or value.startswith('//') or value.startswith('data:')
+
+    def _validate_url(self, url: str, validation: Dict[str, Any]) -> bool:
+        """
+        Validate URL against validation rules.
+
+        Args:
+            url: URL to validate
+            validation: Validation rules dict
+
+        Returns:
+            bool: True if URL passes validation, False otherwise
+        """
+        import re
+
+        # Filter out JavaScript code disguised as URLs
+        # JavaScript keywords that shouldn't appear in image URLs
+        js_keywords = [
+            'function', 'window', 'document', 'var ', 'let ', 'const ',
+            '=>', 'localStorage', 'JSON.', '.push(', '.forEach(',
+            'return ', 'if(', 'for(', '!function', 'void 0'
+        ]
+
+        for keyword in js_keywords:
+            if keyword in url:
+                self.logger.debug(f"Filtered JavaScript code as URL: {url[:100]}")
+                return False
+
+        # Filter out data URLs (base64 images can be kept, but very long ones filtered)
+        if url.startswith('data:'):
+            # Allow small data URLs (like icons), filter large ones
+            if len(url) > 500:
+                self.logger.debug(f"Filtered large data URL: {len(url)} bytes")
+                return False
+
+        # Domain validation
+        domain_contains = validation.get('domain_contains', [])
+        if domain_contains:
+            # Check if URL contains any of the required domains
+            if not any(domain in url for domain in domain_contains):
+                self.logger.debug(f"URL failed domain validation: {url[:100]}")
+                return False
+
+        # Exclude patterns
+        exclude_patterns = validation.get('exclude_patterns', [])
+        for pattern in exclude_patterns:
+            if pattern in url.lower():
+                self.logger.debug(f"URL matches exclude pattern '{pattern}': {url[:100]}")
+                return False
+
+        # URL patterns (must match at least one if specified)
+        url_patterns = validation.get('url_patterns', [])
+        if url_patterns:
+            if not any(re.search(pattern, url) for pattern in url_patterns):
+                self.logger.debug(f"URL failed pattern validation: {url[:100]}")
+                return False
+
+        return True
 
     def _extract_metadata(self, content: str, url: str) -> Dict[str, Any]:
         """
