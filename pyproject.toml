@@ -1,18 +1,74 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "webfetcher"
 version = "1.0.0"
-description = "Web content fetcher with intelligent routing"
+description = "智能网页内容抓取工具，支持微信公众号、小红书等多种网站的内容提取和Markdown转换"
+readme = "README.md"
 requires-python = ">=3.7"
+license = {text = "MIT"}
 authors = [
-    {name = "WebFetcher Team"}
+    {name = "WebFetcher Team", email = "noreply@example.com"}
+]
+keywords = ["web", "scraping", "markdown", "wechat", "xiaohongshu", "fetcher"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Text Processing :: Markup :: Markdown",
 ]
 
+# 核心依赖（不包含 Selenium）
+dependencies = [
+    "requests>=2.28.0",
+    "pyyaml>=6.0.0",
+    "html2text>=2020.1.16",
+    "jsonschema>=4.0.0",
+    "lxml>=4.9.0",
+]
+
+# 可选依赖
+[project.optional-dependencies]
+selenium = [
+    "selenium>=4.15.0,<5.0.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+all = [
+    "selenium>=4.15.0,<5.0.0",
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+# CLI 脚本注册
+[project.scripts]
+wf = "webfetcher.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/ttieli/web-fetcher"
+Documentation = "https://github.com/ttieli/web-fetcher#readme"
+Repository = "https://github.com/ttieli/web-fetcher"
+Issues = "https://github.com/ttieli/web-fetcher/issues"
+
+# Hatchling 配置
+[tool.hatchling.build.targets.wheel]
+packages = ["src/webfetcher"]
+
+# pytest 配置
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-
-[build-system]
-requires = ["setuptools>=45", "wheel"]
-build-backend = "setuptools.build_meta"
+addopts = "-v --tb=short"
