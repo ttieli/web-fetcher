@@ -5,7 +5,7 @@ from web pages. It integrates with the TemplateLoader to match URLs to templates
 and extract structured data based on template rules.
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import html2text
 from lxml import etree
 from .base_parser import (
@@ -328,6 +328,24 @@ class TemplateParser(BaseParser):
         if not html_content:
             return ""
 
+        # Pre-process HTML to handle lazy-loaded images (data-src -> src)
+        # This is needed for WeChat and other sites that use lazy loading
+        try:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html_content, 'html.parser')
+
+            # Find all img tags with data-src attribute
+            for img in soup.find_all('img'):
+                data_src = img.get('data-src')
+                if data_src and not img.get('src'):
+                    # Copy data-src to src so html2text can pick it up
+                    img['src'] = data_src
+
+            # Update html_content with processed version
+            html_content = str(soup)
+        except Exception as e:
+            self.logger.debug(f"Image pre-processing failed: {e}, continuing with original HTML")
+
         # Convert HTML to Markdown
         try:
             markdown = self.html_converter.handle(html_content)
@@ -390,11 +408,87 @@ class TemplateParser(BaseParser):
 
         return None
 
+    def _extract_list(self, content: str, field_config: Any) -> List[str]:
+        """
+        Extract multiple values (e.g., images, links) using configured selectors.
+
+        Args:
+            content: HTML content to extract from
+            field_config: Field configuration in any supported format
+
+        Returns:
+            List[str]: List of extracted values
+        """
+        from bs4 import BeautifulSoup
+
+        results = []
+
+        # Parse field_config directly to preserve attribute information
+        config_items = []
+
+        if isinstance(field_config, list):
+            # List of dicts (WeChat images format)
+            for item in field_config:
+                if isinstance(item, dict):
+                    config_items.append({
+                        'selector': item.get('selector', '').strip(),
+                        'strategy': item.get('strategy', 'css'),
+                        'attribute': item.get('attribute')
+                    })
+        elif isinstance(field_config, dict):
+            # Single dict
+            config_items.append({
+                'selector': field_config.get('selector', '').strip(),
+                'strategy': field_config.get('strategy', 'css'),
+                'attribute': field_config.get('attribute')
+            })
+        elif isinstance(field_config, str):
+            # Simple string selector
+            config_items.append({
+                'selector': field_config.strip(),
+                'strategy': 'css',
+                'attribute': None
+            })
+
+        # Process each configuration item
+        for config in config_items:
+            selector = config.get('selector')
+            attribute = config.get('attribute')
+
+            if not selector:
+                continue
+
+            try:
+                # Parse HTML
+                soup = BeautifulSoup(content, 'html.parser')
+
+                # Find all matching elements
+                elements = soup.select(selector)
+
+                for element in elements:
+                    if attribute:
+                        # Extract attribute value
+                        value = element.get(attribute)
+                        if value and value not in results:  # Avoid duplicates
+                            results.append(value)
+                    else:
+                        # Extract text content
+                        text = element.get_text(strip=True)
+                        if text and text not in results:  # Avoid duplicates
+                            results.append(text)
+
+            except Exception as e:
+                self.logger.debug(f"List extraction with selector '{selector}' failed: {e}")
+                continue
+
+        return results
+
     def _extract_metadata(self, content: str, url: str) -> Dict[str, Any]:
         """
         Extract metadata using template rules.
 
         Extracts structured metadata fields like description, author, date, etc.
+        Also extracts top-level selector fields (author, date, images) for compatibility.
 
         Args:
             content: HTML content
@@ -412,6 +506,8 @@ class TemplateParser(BaseParser):
         # Extract metadata fields from template
         if self.current_template and 'selectors' in self.current_template:
             selectors = self.current_template['selectors']
+
+            # Extract from selectors.metadata dict if exists
             if 'metadata' in selectors and isinstance(selectors['metadata'], dict):
                 # Extract each metadata field
                 for field_name, field_selector in selectors['metadata'].items():
@@ -421,6 +517,26 @@ class TemplateParser(BaseParser):
                             metadata[field_name] = value
                     except Exception as e:
                         self.logger.debug(f"Failed to extract metadata field '{field_name}': {e}")
+                        continue
+
+            # Also extract top-level selector fields for compatibility
+            # (author, date, images, etc.)
+            top_level_fields = ['author', 'date', 'images']
+            for field_name in top_level_fields:
+                if field_name in selectors:
+                    try:
+                        if field_name == 'images':
+                            # Images need to extract all matching elements
+                            images = self._extract_list(content, selectors['images'])
+                            if images:
+                                metadata['images'] = images
+                        else:
+                            # Single value fields
+                            value = self._extract_field(content, selectors[field_name])
+                            if value:
+                                metadata[field_name] = value
+                    except Exception as e:
+                        self.logger.debug(f"Failed to extract top-level field '{field_name}': {e}")
                         continue
 
         return metadata
