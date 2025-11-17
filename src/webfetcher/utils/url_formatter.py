@@ -76,7 +76,8 @@ def format_url_as_markdown(url: str, text: Optional[str] = None) -> str:
     """
     # Validate URL first
     if not is_valid_url(url):
-        logger.warning(f"Task-003 Phase 2: Invalid URL format, returning as-is: {url}")
+        # Use debug level for JavaScript URLs and other expected invalid formats
+        logger.debug(f"Task-003 Phase 2: Invalid URL format, returning as-is: {url}")
         return url  # Return as-is if invalid
 
     # Use URL as text if not provided

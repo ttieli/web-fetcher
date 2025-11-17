@@ -34,6 +34,7 @@ dependencies = [
     "html2text>=2020.1.16",
     "jsonschema>=4.0.0",
     "lxml>=4.9.0",
+    "beautifulsoup4>=4.9.0",
 ]
 
 # 可选依赖
