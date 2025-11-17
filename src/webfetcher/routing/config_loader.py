@@ -45,14 +45,41 @@ class ConfigLoader:
             config_path: Path to routing.yaml (optional, uses default if not provided)
             schema_path: Path to routing_schema.json (optional)
         """
-        # Default paths
+        # Default paths - try multiple locations
         if config_path is None:
-            project_root = Path(__file__).parent.parent
-            config_path = project_root / "config" / "routing.yaml"
+            # Try multiple possible locations for config file
+            possible_paths = [
+                # 1. Project root (for development mode)
+                Path(__file__).parent.parent.parent / "config" / "routing.yaml",
+                # 2. User config directory
+                Path.home() / ".config" / "webfetcher" / "routing.yaml",
+                # 3. Package installation directory
+                Path(__file__).parent.parent / "config" / "routing.yaml",
+            ]
+
+            # Use first existing path
+            for path in possible_paths:
+                if path.exists():
+                    config_path = path
+                    break
+            else:
+                # Default to first option if none exist
+                config_path = possible_paths[0]
 
         if schema_path is None:
-            project_root = Path(__file__).parent.parent
-            schema_path = project_root / "config" / "routing_schema.json"
+            # Same strategy for schema
+            possible_paths = [
+                Path(__file__).parent.parent.parent / "config" / "routing_schema.json",
+                Path.home() / ".config" / "webfetcher" / "routing_schema.json",
+                Path(__file__).parent.parent / "config" / "routing_schema.json",
+            ]
+
+            for path in possible_paths:
+                if path.exists():
+                    schema_path = path
+                    break
+            else:
+                schema_path = possible_paths[0]
 
         self.config_path = Path(config_path)
         self.schema_path = Path(schema_path)
