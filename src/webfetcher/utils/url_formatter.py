@@ -500,8 +500,15 @@ def insert_dual_url_section(markdown: str, url_metadata: dict) -> str:
 
         result_lines.extend(lines[remaining_start:])
 
-    # Join lines back together
-    enhanced_markdown = '\n'.join(result_lines)
+    # Join lines back together - preserve original line break format
+    # Check if original markdown uses \n\n (paragraph breaks) or \n (line breaks)
+    if '\n\n' in markdown:
+        # Original uses paragraph breaks - preserve them by joining with single \n
+        # The split() has already separated at each line, including blank lines
+        enhanced_markdown = '\n'.join(result_lines)
+    else:
+        # Original uses single line breaks
+        enhanced_markdown = '\n'.join(result_lines)
 
     logger.info("Task-003 Phase 3: Successfully inserted dual URL section")
     return enhanced_markdown

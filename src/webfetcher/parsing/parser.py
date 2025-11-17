@@ -740,8 +740,8 @@ def xhs_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[str
         tuple: (date_only, markdown_content, metadata)
     """
     logger.info("Phase 3.5: Routing XiaoHongShu to template-based parser")
-    # Task-003 Phase 1: url_metadata accepted but not yet used (will be used in Phase 3)
-    return xhs_to_markdown_migrated(html, url)
+    # Task-003 Phase 1: Pass url_metadata to migrated template-based parser
+    return xhs_to_markdown_migrated(html, url, url_metadata)
 
 
 def wechat_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[str, str, dict]:
@@ -760,8 +760,8 @@ def wechat_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[
         tuple: (date_only, markdown_content, metadata)
     """
     logger.info("Phase 3.5: Routing WeChat to template-based parser")
-    # Task-003 Phase 1: url_metadata accepted but not yet used (will be used in Phase 3)
-    return wechat_to_markdown_migrated(html, url)
+    # Task-003 Phase 1: Pass url_metadata to migrated template-based parser
+    return wechat_to_markdown_migrated(html, url, url_metadata)
 
 
 def detect_page_type(html: str, url: Optional[str] = None, is_crawling: bool = False) -> PageType:
@@ -978,5 +978,5 @@ def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_craw
         tuple: (date_only, markdown_content, metadata)
     """
     logger.info("Phase 3.5: Routing Generic parser to template-based implementation")
-    # Task-003 Phase 1: url_metadata accepted but not yet used (will be used in Phase 3)
-    return generic_to_markdown_migrated(html, url, filter_level, is_crawling)
+    # Task-003 Phase 1: Pass url_metadata to migrated template-based parser
+    return generic_to_markdown_migrated(html, url, filter_level, is_crawling, url_metadata=url_metadata)

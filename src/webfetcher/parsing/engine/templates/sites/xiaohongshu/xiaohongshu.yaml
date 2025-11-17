@@ -1,10 +1,14 @@
-# XiaoHongShu (小红书) Template v1.0
+# XiaoHongShu (小红书) Template v1.1
 # Template for parsing XiaoHongShu posts and content
 # Domains: xiaohongshu.com, xhslink.com
 # Migrated from legacy xhs_to_markdown implementation
+#
+# Changelog:
+# v1.1.0 (2025-11-17): Added video URL extraction from JSON data
+# v1.0.0 (2025-10-10): Initial version with image/text extraction
 
 name: "XiaoHongShu Posts"
-version: "1.0.0"
+version: "1.1.0"
 domains:
   - "xiaohongshu.com"
   - "xhslink.com"
@@ -354,6 +358,74 @@ selectors:
           - "sns-img"
           - "xhscdn.com"
 
+  # ---------------------------------------------------------------------------
+  # VIDEO EXTRACTION
+  # XiaoHongShu-specific: Video URLs from JSON data in __INITIAL_STATE__
+  # Video data stored in window.__INITIAL_STATE__ JSON structure
+  # Domain patterns: sns-video-*.xhscdn.com
+  # ---------------------------------------------------------------------------
+  videos:
+    # Extract h264 video URLs from JSON data (highest priority)
+    - selector: "script"
+      strategy: "text_pattern"
+      pattern: '"h264":\s*\[\s*\{\s*"url":\s*"([^"]+)"'
+      extract_group: 1
+      extract_all: true
+      validation:
+        domain_contains:
+          - "sns-video"
+          - "xhscdn.com"
+        url_patterns:
+          - '\\.mp4(?:\\?|$)'
+          - 'sns-video'
+
+    # Alternative video URL pattern in JSON
+    - selector: "script"
+      strategy: "text_pattern"
+      pattern: '"video":\s*\{\s*[^}]*"url":\s*"([^"]+)"'
+      extract_group: 1
+      extract_all: true
+      validation:
+        domain_contains:
+          - "sns-video"
+          - "xhscdn.com"
+
+    # Video URLs from media array
+    - selector: "script"
+      strategy: "text_pattern"
+      pattern: '"media":\s*\{\s*[^}]*"videoUrl":\s*"([^"]+)"'
+      extract_group: 1
+      extract_all: true
+      validation:
+        domain_contains:
+          - "sns-video"
+          - "xhscdn.com"
+
+    # Generic video URL pattern
+    - selector: "script"
+      strategy: "text_pattern"
+      pattern: '"(https?://sns-video-[^"\\s]+\\.xhscdn\\.com/[^"\\s]+\\.mp4(?:\\?[^"\\s]*)?)"'
+      extract_group: 1
+      extract_all: true
+
+    # Video element source tags (fallback)
+    - selector: "video source"
+      strategy: "css"
+      attribute: "src"
+      validation:
+        domain_contains:
+          - "sns-video"
+          - "xhscdn.com"
+
+    # Video element src attribute (fallback)
+    - selector: "video"
+      strategy: "css"
+      attribute: "src"
+      validation:
+        domain_contains:
+          - "sns-video"
+          - "xhscdn.com"
+
 # ============================================================================
 # METADATA CONFIGURATION
 # ============================================================================
@@ -364,6 +436,7 @@ metadata:
     - author
     - publish_time
     - images
+    - videos
     - cover
     - description
     - title
@@ -426,6 +499,13 @@ output:
     content_section: |
 
       {content}
+
+    # Videos section (if videos exist)
+    videos_section: |
+
+      ## 视频
+
+      {videos}
 
     # Images section (if images exist beyond cover)
     images_section: |
