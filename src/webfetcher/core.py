@@ -4658,6 +4658,12 @@ def main():
         html = Path(args.html).read_text(encoding='utf-8', errors='ignore')
         fetch_metrics = FetchMetrics(primary_method="local_file", final_status="success")
         rendered = False
+        # Create url_metadata for local file mode
+        url_metadata = create_url_metadata(
+            input_url=input_url or url,
+            final_url=url,
+            fetch_mode='local_file'
+        )
     else:
         html = None
         fetch_metrics = None
