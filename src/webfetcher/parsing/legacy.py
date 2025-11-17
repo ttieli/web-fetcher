@@ -716,13 +716,48 @@ def extract_list_content(html: str, base_url: str) -> tuple[str, List[ListItem]]
         signal.alarm(0)
 
 
-def normalize_media_url(u: str) -> str:
+def normalize_media_url(u: str, base_url: str = None) -> str:
+    """
+    Normalize media URL to absolute URL.
+
+    Args:
+        u: Media URL (can be absolute, protocol-relative, or relative)
+        base_url: Base URL to resolve relative URLs against
+
+    Returns:
+        Normalized absolute URL
+    """
     if not u:
         return u
     u = u.strip()
+
+    # Already absolute URL (http:// or https://)
+    if u.startswith(('http://', 'https://')):
+        return u
+
+    # Protocol-relative URL (//example.com/image.jpg)
     if u.startswith('//'):
         return 'https:' + u
-    return u
+
+    # Absolute path (/path/to/image.jpg)
+    if u.startswith('/'):
+        if base_url:
+            # Extract domain from base_url
+            import urllib.parse
+            parsed = urllib.parse.urlparse(base_url)
+            return f"{parsed.scheme}://{parsed.netloc}{u}"
+        else:
+            # Fallback to https: prefix for protocol-relative
+            return 'https:' + u
+
+    # Relative path (image.jpg or path/image.jpg)
+    if base_url:
+        # Use urljoin to properly handle relative paths
+        import urllib.parse
+        return urllib.parse.urljoin(base_url, u)
+    else:
+        # No base URL provided, return as-is
+        return u
 
 
 # XHSImageExtractor class - simplified version for Phase 1

@@ -137,7 +137,7 @@ def xhs_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[str
 
         # Add cover image if exists
         if cover:
-            lines += ["", f"![]({normalize_media_url(cover)})"]
+            lines += ["", f"![]({normalize_media_url(cover, url)})"]
 
         # Add description/content
         body = description or result.content or '(未能从页面提取正文摘要)'
@@ -148,7 +148,7 @@ def xhs_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[str
             # Successfully extracted video URLs
             lines += ["", "## 视频"]
             for video_url in videos:
-                lines.append(f"- 视频链接: {normalize_media_url(video_url)}")
+                lines.append(f"- 视频链接: {normalize_media_url(video_url, url)}")
         elif is_video_post:
             # Detected video post but couldn't extract URL (urllib limitation)
             lines += [
@@ -162,7 +162,7 @@ def xhs_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[str
 
         # Add images section if images exist
         if images:
-            lines += ["", "## 图片", ""] + [f"![]({normalize_media_url(u)})" for u in images]
+            lines += ["", "## 图片", ""] + [f"![]({normalize_media_url(u, url)})" for u in images]
 
         # Combine into markdown
         markdown_content = "\n\n".join(lines).strip() + "\n"
@@ -181,9 +181,9 @@ def xhs_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[str
         # Build metadata dictionary
         metadata = {
             'author': author,
-            'images': [normalize_media_url(u) for u in images],
-            'videos': [normalize_media_url(u) for u in videos],
-            'cover': normalize_media_url(cover) if cover else '',
+            'images': [normalize_media_url(u, url) for u in images],
+            'videos': [normalize_media_url(u, url) for u in videos],
+            'cover': normalize_media_url(cover, url) if cover else '',
             'description': description,
             'publish_time': publish_time
         }
@@ -346,7 +346,7 @@ def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_craw
 
         # Add images section if images exist
         if images:
-            lines += ["", "## 图片", ""] + [f"![]({normalize_media_url(u)})" for u in images]
+            lines += ["", "## 图片", ""] + [f"![]({normalize_media_url(u, url)})" for u in images]
 
         # Combine into markdown
         markdown_content = "\n\n".join(lines).strip() + "\n"
@@ -354,7 +354,7 @@ def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_craw
         # Build metadata dictionary
         metadata = {
             'author': author,
-            'images': [normalize_media_url(u) for u in images],
+            'images': [normalize_media_url(u, url) for u in images],
             'publish_time': publish_time,
             'template_used': result.template_name
         }
