@@ -116,7 +116,7 @@ class CDPFetcher:
         # 使用PUT方法创建标签页（修复pychrome与新版Chrome的兼容性问题）
         # 新版Chrome要求使用PUT而不是GET来创建标签页
         try:
-            response = requests.put(f"{self.debug_url}/json/new")
+            response = requests.put(f"{self.url}/json/new")
             tab_info = response.json()
 
             # 使用返回的标签页ID来获取Tab对象
