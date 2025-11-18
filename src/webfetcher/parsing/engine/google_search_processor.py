@@ -168,8 +168,15 @@ class GoogleSearchProcessor:
                 result['url'] = url
 
             # 尝试在h3附近找到描述文本和来源
-            # 获取h3所在的最近几层父级容器
+            # 获取h3所在的父级容器（通常需要往上找几层）
             parent_div = h3.find_parent('div')
+
+            # 尝试多层父级容器以找到完整的搜索结果块
+            for _ in range(3):  # 最多向上3层
+                if parent_div and parent_div.find_parent('div'):
+                    parent_div = parent_div.find_parent('div')
+                else:
+                    break
 
             if parent_div:
                 # 提取cite（来源URL显示）
@@ -177,35 +184,72 @@ class GoogleSearchProcessor:
                 if cite:
                     result['source'] = cite.get_text(strip=True)
 
-                # 提取snippet - 使用更简单的方法
-                # 获取父容器的所有文本，然后移除已知的部分
-                full_text = parent_div.get_text(separator=' ', strip=True)
+                # 提取snippet - 尝试多种方法
+                snippet_text = None
 
-                # 移除标题部分
-                text_without_title = full_text.replace(result['title'], '')
+                # 方法1: 查找包含描述文字的常见元素（使用更严格的过滤条件）
+                for tag_name in ['div', 'span']:
+                    if snippet_text:
+                        break
+                    elements = parent_div.find_all(tag_name)
+                    for elem in elements:
+                        text = elem.get_text(separator=' ', strip=True)
 
-                # 移除来源URL部分（所有出现）
-                if result.get('source'):
-                    # 移除所有出现的source
-                    while result['source'] in text_without_title:
+                        # 跳过太短或太长的文本
+                        if not (40 <= len(text) <= 500):
+                            continue
+
+                        # 跳过包含URL标识的文本
+                        if any(x in text for x in ['http://', 'https://', 'www.']):
+                            continue
+
+                        # 跳过包含breadcrumb符号的文本
+                        if '›' in text or '·' in text:
+                            continue
+
+                        # 跳过完全是标题的文本
+                        if text == result['title']:
+                            continue
+
+                        # 跳过主要是标题+其他的组合（标题占比>50%）
+                        if result['title'] in text and len(result['title']) / len(text) > 0.5:
+                            continue
+
+                        # 找到合适的snippet
+                        snippet_text = text
+                        break
+
+                # 方法2: 如果方法1失败，使用原来的全文提取方法
+                if not snippet_text:
+                    full_text = parent_div.get_text(separator=' ', strip=True)
+
+                    # 移除标题部分
+                    text_without_title = full_text.replace(result['title'], '', 1)
+
+                    # 移除来源URL部分
+                    if result.get('source'):
                         text_without_title = text_without_title.replace(result['source'], '')
 
-                # 移除URL本身（如果它出现在文本中）
-                if result.get('url'):
-                    text_without_title = text_without_title.replace(result['url'], '')
+                    # 移除URL
+                    if result.get('url'):
+                        text_without_title = text_without_title.replace(result['url'], '')
 
-                # 移除常见的无用前缀
-                for prefix in ['·', '› ', '转为简体网页', '翻译此页', '...']:
-                    text_without_title = text_without_title.replace(prefix, '')
+                    # 移除常见的无用文本
+                    noise_words = ['·', '› ', '转为简体网页', '翻译此页', 'https', 'www.']
+                    for noise in noise_words:
+                        text_without_title = text_without_title.replace(noise, ' ')
 
-                # 清理多余空格和特殊字符
-                text_without_title = ' '.join(text_without_title.split())
-                text_without_title = text_without_title.strip()
+                    # 清理空格
+                    text_without_title = ' '.join(text_without_title.split())
+                    text_without_title = text_without_title.strip()
 
-                # 如果清理后的文本长度合理，则作为snippet
-                if 10 < len(text_without_title) < 1000:
-                    # 限制长度
-                    result['snippet'] = text_without_title if len(text_without_title) <= 400 else text_without_title[:397] + '...'
+                    # 只有当文本长度合适时才使用
+                    if 30 < len(text_without_title) < 1000:
+                        snippet_text = text_without_title
+
+                # 保存snippet
+                if snippet_text:
+                    result['snippet'] = snippet_text if len(snippet_text) <= 400 else snippet_text[:397] + '...'
 
             # 只添加有效结果（必须有标题和URL）
             if result['title'] and result['url'] and len(result['title']) > 3:
@@ -484,11 +528,11 @@ class GoogleSearchProcessor:
                 # 格式化链接为超链接（使用尖括号格式自动生成链接）
                 md_parts.append(f"**链接:** <{result['url']}>\n")
 
-                # 只显示有意义的snippet（过滤掉重复和无用内容）
+                # 显示snippet描述文字
                 if result.get('snippet'):
                     snippet = result['snippet'].strip()
-                    # 过滤太短或重复的snippet
-                    if len(snippet) > 20 and snippet not in [result['title'], result.get('source', '')]:
+                    # Method 1 已经做了严格过滤，这里只需简单检查长度
+                    if len(snippet) > 20:
                         md_parts.append(f"\n{snippet}\n")
 
                 md_parts.append('')
