@@ -710,13 +710,15 @@ wf - WebFetcher便捷命令
   export WF_OUTPUT_DIR=~/Documents/web-content
   wf example.com                    # 自动保存到~/Documents/web-content
 
-Selenium集成说明:
-  --fetch-mode auto     # urllib失败时自动切换到Selenium（默认）
-  --fetch-mode urllib   # 仅使用urllib
+抓取方法说明 (Fetch Methods):
+  --fetch-mode auto     # urllib→CDP→Selenium智能降级（默认）
+  --fetch-mode urllib   # 仅使用urllib（轻量级）
+  --fetch-mode cdp      # 仅使用CDP（Chrome DevTools Protocol，保留会话）
   --fetch-mode selenium # 仅使用Selenium（需要Chrome调试会话）
-  --selenium-timeout 30 # Selenium页面加载超时（秒）
+  --selenium-timeout 30 # Selenium/CDP页面加载超时（秒）
 
-  启动Chrome调试会话: ./config/chrome-debug.sh
+  启动Chrome调试会话: ./config/start_chrome_debug.sh
+  CDP优势：轻量、快速、保留登录状态
 
 原始命令:
   wf [任何webfetcher参数]           # 直接传递给webfetcher.py
