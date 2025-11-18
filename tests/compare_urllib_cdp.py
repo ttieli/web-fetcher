@@ -70,15 +70,22 @@ def extract_urls_from_markdown_files(output_dir: str) -> List[str]:
             content = md_file.read_text(encoding='utf-8')
 
             # Extract URL from metadata section
-            # Look for patterns like "Input URL: https://..."
-            url_matches = re.findall(r'Input URL:\s*(https?://[^\s\)]+)', content)
+            # Look for patterns like "Original Request: [URL](URL)"
+            url_matches = re.findall(r'Original Request[^:]*:\s*\[([^\]]+)\]', content)
             for url in url_matches:
                 urls.add(url.strip())
 
-            # Also look for "Final URL:" pattern
-            url_matches = re.findall(r'Final URL:\s*(https?://[^\s\)]+)', content)
+            # Also look for "Final Location:" pattern
+            url_matches = re.findall(r'Final Location[^:]*:\s*\[([^\]]+)\]', content)
             for url in url_matches:
                 urls.add(url.strip())
+
+            # Also try to extract from markdown links directly
+            url_matches = re.findall(r'\[https?://[^\]]+\]\((https?://[^\)]+)\)', content)
+            for url in url_matches:
+                # Skip image URLs
+                if not any(ext in url.lower() for ext in ['.jpg', '.png', '.gif', '.webp', '.jpeg']):
+                    urls.add(url.strip())
 
         except Exception as e:
             print(f"⚠️  Error reading {md_file}: {e}")
