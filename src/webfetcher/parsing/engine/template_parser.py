@@ -463,6 +463,14 @@ class TemplateParser(BaseParser):
                     normalized_src = normalize_media_url(src, url)
                     img['src'] = normalized_src
 
+            # Normalize all link href URLs to absolute URLs (fix relative links like /search?...)
+            for link in soup.find_all('a'):
+                href = link.get('href')
+                if href:
+                    # Normalize URL using base URL
+                    normalized_href = normalize_media_url(href, url)
+                    link['href'] = normalized_href
+
             # Enhanced table handling for better markdown conversion
             tables_found = soup.find_all('table')
             for table in tables_found:
