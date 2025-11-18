@@ -4631,8 +4631,10 @@ def main():
     
     # Phase 2: Selenium integration arguments
     # CDP integration: Add 'cdp' mode for Chrome DevTools Protocol
-    ap.add_argument('--fetch-mode', choices=['auto', 'urllib', 'cdp', 'selenium'], default='auto',
+    ap.add_argument('-m', '--fetch-mode', choices=['auto', 'urllib', 'cdp', 'selenium'], default='auto',
                     help='Fetch method: auto (urllib->cdp->selenium fallback), urllib (urllib only), cdp (CDP only), selenium (selenium only) (default: auto)')
+    ap.add_argument('-c', '--cdp', action='store_true',
+                    help='Shortcut for --fetch-mode cdp (force CDP for JavaScript rendering with session reuse)')
     ap.add_argument('-s', '--selenium', action='store_true',
                     help='Shortcut for --fetch-mode selenium (force Selenium for JavaScript rendering)')
     ap.add_argument('-u', '--urllib', action='store_true',
@@ -4646,7 +4648,9 @@ def main():
     args = ap.parse_args()
     
     # Handle shortcuts for fetch modes
-    if args.selenium:
+    if args.cdp:
+        args.fetch_mode = 'cdp'
+    elif args.selenium:
         args.fetch_mode = 'selenium'
     elif args.urllib:
         args.fetch_mode = 'urllib'
