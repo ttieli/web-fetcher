@@ -1,0 +1,4 @@
+# CDP (Chrome DevTools Protocol) Dependencies
+# For advanced web scraping using Chrome remote debugging
+
+pychrome==0.2.3

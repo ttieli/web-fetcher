@@ -54,6 +54,19 @@ except ImportError as e:
     class SeleniumTimeoutError(Exception): pass
     class SeleniumNotAvailableError(Exception): pass
 
+# CDP (Chrome DevTools Protocol) integration - graceful degradation when not available
+try:
+    from webfetcher.fetchers.cdp_fetcher import CDPFetcher, fetch_with_cdp, CDP_AVAILABLE
+    if CDP_AVAILABLE:
+        logging.info("CDP fetcher available")
+        CDP_INTEGRATION_AVAILABLE = True
+    else:
+        CDP_INTEGRATION_AVAILABLE = False
+except ImportError as e:
+    logging.debug(f"CDP integration not available: {e}")
+    CDP_INTEGRATION_AVAILABLE = False
+    CDP_AVAILABLE = False
+
 # Chrome error handling (Phase 2.3) - enhanced error messages
 from webfetcher.errors.handler import (
     ChromeDebugError, ChromePortConflictError,
