@@ -4,6 +4,7 @@ Google Search Results Post-Processor
 """
 
 import re
+import urllib.parse
 from bs4 import BeautifulSoup, Tag
 from typing import Dict, List, Optional, Any
 
@@ -32,10 +33,12 @@ class GoogleSearchProcessor:
         results = {
             'knowledge_panel': self._extract_knowledge_panel(soup),
             'ai_overview': self._extract_ai_overview(soup),
+            'images': self._extract_images(soup),
             'related_questions': self._extract_related_questions(soup),
             'web_results': self._extract_web_results(soup),
             'videos': self._extract_videos(soup),
             'news': self._extract_news(soup),
+            'related_searches': self._extract_related_searches(soup),
         }
 
         # 生成格式化的Markdown
@@ -282,6 +285,135 @@ class GoogleSearchProcessor:
 
         return news_items
 
+    def _extract_images(self, soup: BeautifulSoup) -> List[Dict[str, Any]]:
+        """提取图片搜索结果"""
+        images = []
+
+        # 方法1: 查找带有图片链接的容器 (/imgres? 链接)
+        img_containers = soup.find_all('a', href=lambda x: x and '/imgres?' in x if x else False)
+
+        for container in img_containers[:6]:  # 限制数量
+            image = {
+                'title': None,
+                'url': None,
+                'source': None,
+                'thumbnail': None
+            }
+
+            # 提取缩略图URL
+            img_tag = container.find('img')
+            if img_tag:
+                # 获取src或data-src
+                image['thumbnail'] = img_tag.get('src') or img_tag.get('data-src')
+                # 获取alt作为标题
+                image['title'] = img_tag.get('alt', '')
+
+            # 提取原图URL - 从href参数中解析
+            href = container.get('href', '')
+            if '/imgres?' in href:
+                # 解析imgurl参数
+                params = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
+                if 'imgurl' in params:
+                    image['url'] = params['imgurl'][0]
+                if 'imgrefurl' in params:
+                    image['source'] = params['imgrefurl'][0]
+
+            # 只添加有效图片
+            if image['thumbnail'] and (image['url'] or image['title']):
+                images.append(image)
+
+        # 方法2: 如果方法1没找到，尝试查找所有图片（但过滤掉logo等）
+        if not images:
+            all_images = soup.find_all('img')
+            for img in all_images[:10]:  # 只查看前10个
+                src = img.get('src') or img.get('data-src')
+                alt = img.get('alt', '')
+
+                # 过滤条件：有src，有alt，不是logo或图标
+                if (src and alt and
+                    len(alt) > 5 and  # alt文本足够长
+                    not any(x in src.lower() for x in ['logo', 'icon', 'sprite', 'button'])):
+
+                    image = {
+                        'title': alt,
+                        'thumbnail': src,
+                        'url': None,
+                        'source': None
+                    }
+                    images.append(image)
+                    if len(images) >= 3:  # 限制数量
+                        break
+
+        return images
+
+    def _extract_related_searches(self, soup: BeautifulSoup) -> List[str]:
+        """提取相关搜索建议 (用户还搜索了)"""
+        related = []
+        seen = set()
+
+        # 方法1: 查找特定的"相关搜索"容器
+        # Google通常在页面底部有 "Searches related to..." 或类似的容器
+        related_section = soup.find('div', text=re.compile(r'(Related searches|相关搜索|Searches related to)'))
+        if related_section:
+            parent = related_section.find_parent('div')
+            if parent:
+                # 在这个容器中查找所有搜索链接
+                links = parent.find_all('a', href=lambda x: x and '/search?q=' in x if x else False)
+                for link in links[:10]:
+                    text = link.get_text(strip=True)
+                    if text and 2 < len(text) < 50 and text not in seen:
+                        related.append(text)
+                        seen.add(text)
+
+        # 方法2: 查找所有搜索链接，过滤出可能是相关搜索的
+        if not related:
+            search_links = soup.find_all('a', href=lambda x: x and '/search?q=' in x if x else False)
+
+            for link in search_links:
+                # 获取链接文本
+                text = link.get_text(strip=True)
+
+                # 过滤条件：
+                # 1. 文本不为空
+                # 2. 长度合理（2-50字符）
+                # 3. 不包含特殊字符、URL或导航文本
+                # 4. 未见过
+                # 5. 不是当前搜索页面的主要导航（如"全部"、"图片"等）
+                nav_keywords = ['全部', '图片', '视频', '新闻', '购物', 'All', 'Images', 'Videos', 'News', 'Shopping']
+
+                if (text and
+                    2 < len(text) < 50 and
+                    not any(char in text for char in ['http', '›', '...', '▸', '|']) and
+                    text not in nav_keywords and
+                    text not in seen):
+
+                    # 优先使用href中的q参数
+                    href = link.get('href', '')
+                    if '/search?q=' in href:
+                        try:
+                            parsed = urllib.parse.urlparse(href)
+                            params = urllib.parse.parse_qs(parsed.query)
+
+                            if 'q' in params:
+                                query = params['q'][0]
+                                if 2 < len(query) < 50 and query not in seen:
+                                    related.append(query)
+                                    seen.add(query)
+                            elif text:
+                                related.append(text)
+                                seen.add(text)
+                        except:
+                            # 解析失败，使用文本
+                            if text and text not in seen:
+                                related.append(text)
+                                seen.add(text)
+
+                    # 限制数量
+                    if len(related) >= 10:
+                        break
+
+        return related[:10]  # 返回最多10个
+
     def _format_markdown(self, results: Dict[str, Any], url: str) -> str:
         """将提取的结构化数据格式化为Markdown"""
         md_parts = []
@@ -307,6 +439,28 @@ class GoogleSearchProcessor:
                 for point in ai['points'][:5]:
                     md_parts.append(f"- {point}")
             md_parts.append('')
+
+        # 图片结果
+        if results.get('images'):
+            md_parts.append('## 📸 图片\n')
+            for i, img in enumerate(results['images'], 1):
+                if img.get('title'):
+                    md_parts.append(f"**{i}. {img['title']}**\n")
+                else:
+                    md_parts.append(f"**{i}. 图片**\n")
+
+                # 显示缩略图（Markdown图片格式）
+                if img.get('thumbnail'):
+                    title_text = img.get('title', '图片')
+                    md_parts.append(f"![{title_text}]({img['thumbnail']})\n")
+
+                # 显示来源链接
+                if img.get('source'):
+                    md_parts.append(f"- 来源: <{img['source']}>\n")
+                elif img.get('url'):
+                    md_parts.append(f"- 原图: <{img['url']}>\n")
+
+                md_parts.append('')
 
         # 相关问题
         if results.get('related_questions'):
@@ -358,6 +512,17 @@ class GoogleSearchProcessor:
                 if news.get('time'):
                     md_parts.append(f"  - {news['time']}")
                 md_parts.append('')
+
+        # 相关搜索建议
+        if results.get('related_searches'):
+            md_parts.append('## 🔗 相关搜索\n')
+            md_parts.append('**用户还搜索了：**\n')
+            for search in results['related_searches']:
+                # 创建搜索链接
+                encoded = urllib.parse.quote(search)
+                search_url = f"https://www.google.com/search?q={encoded}"
+                md_parts.append(f"- [{search}]({search_url})")
+            md_parts.append('')
 
         return '\n'.join(md_parts)
 
