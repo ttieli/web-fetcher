@@ -447,6 +447,34 @@ class TemplateParser(BaseParser):
             for tag in soup.find_all(['script', 'style', 'noscript']):
                 tag.decompose()
 
+            # Apply post_processing.remove_elements rules from template
+            if self.current_template and 'post_processing' in self.current_template:
+                remove_elements = self.current_template['post_processing'].get('remove_elements', [])
+                for remove_rule in remove_elements:
+                    if not isinstance(remove_rule, dict):
+                        continue
+
+                    selector = remove_rule.get('selector', '')
+                    strategy = remove_rule.get('strategy', 'css')
+
+                    if not selector:
+                        continue
+
+                    try:
+                        # Currently only support CSS selector strategy for removal
+                        if strategy == 'css':
+                            elements_to_remove = soup.select(selector)
+                            for element in elements_to_remove:
+                                element.decompose()
+                            if elements_to_remove:
+                                self.logger.debug(f"Removed {len(elements_to_remove)} elements matching '{selector}'")
+                        elif strategy == 'tag':
+                            # Tag strategy: remove all tags of given type
+                            for tag in soup.find_all(selector):
+                                tag.decompose()
+                    except Exception as e:
+                        self.logger.debug(f"Failed to remove elements with selector '{selector}': {e}")
+
             # Find all img tags with data-src attribute
             for img in soup.find_all('img'):
                 data_src = img.get('data-src')
@@ -505,6 +533,15 @@ class TemplateParser(BaseParser):
         # Convert HTML to Markdown
         try:
             markdown = self.html_converter.handle(html_content)
+
+            # Post-processing: Remove base64 data URLs from markdown
+            # This catches any that slipped through BeautifulSoup processing
+            import re
+            # Remove markdown image syntax with data URLs: ![alt](data:image/...)
+            markdown = re.sub(r'!\[([^\]]*)\]\(data:image/[^)]+\)', r'', markdown)
+            # Remove any standalone data:image URLs
+            markdown = re.sub(r'data:image/[^\s)]+', '', markdown)
+
             # Clean up excessive whitespace
             markdown = '\n'.join(line.rstrip() for line in markdown.split('\n'))
             # Remove multiple consecutive blank lines
