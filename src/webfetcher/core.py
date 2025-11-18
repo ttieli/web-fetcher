@@ -428,6 +428,18 @@ def validate_and_encode_url(url: str) -> str:
     if not url:
         raise ValueError("URL cannot be empty after stripping whitespace")
 
+    # 智能URL提取：从包含其他文本的字符串中提取URL
+    # 例如："《我爱我家》 http://xhslink.com/xxx 复制后打开" -> "http://xhslink.com/xxx"
+    import re
+    url_pattern = r'https?://[^\s\u4e00-\u9fff《》【】「」『』（）()，,。！!？?；;：:]+(?:/[^\s\u4e00-\u9fff《》【】「」『』（）()，,。！!？?；;：:]*)?'
+    url_matches = re.findall(url_pattern, url)
+
+    if url_matches:
+        extracted_url = url_matches[0].rstrip('.,;:!?')  # 移除末尾的标点
+        if extracted_url != url:
+            logging.info(f"📎 从文本中提取URL: '{url}' -> '{extracted_url}'")
+            url = extracted_url
+
     try:
         # Parse URL to validate structure
         parsed = urllib.parse.urlparse(url)
