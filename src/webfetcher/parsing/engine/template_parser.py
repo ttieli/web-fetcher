@@ -437,6 +437,17 @@ class TemplateParser(BaseParser):
         if not html_content:
             return ""
 
+        # Check if this is Google Search - use custom processor BEFORE post-processing
+        if (self.current_template and
+            self.current_template.get('name') == 'Google Search Template'):
+            try:
+                from .google_search_processor import process_google_search
+                markdown = process_google_search(html_content, url)
+                return markdown
+            except Exception as e:
+                self.logger.warning(f"Google Search custom processor failed: {e}, falling back to standard processing")
+                # Fall through to standard processing
+
         # Pre-process HTML to handle lazy-loaded images and remove unwanted elements
         # This is needed for WeChat and other sites that use lazy loading
         try:
@@ -532,6 +543,7 @@ class TemplateParser(BaseParser):
 
         # Convert HTML to Markdown
         try:
+            # Note: Google Search Template is handled earlier before post-processing
             markdown = self.html_converter.handle(html_content)
 
             # Post-processing: Remove base64 data URLs from markdown
