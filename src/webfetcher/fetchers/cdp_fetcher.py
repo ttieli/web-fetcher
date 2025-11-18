@@ -276,10 +276,23 @@ class CDPFetcher:
         tab = tab or self.current_tab
         if tab:
             try:
-                tab.stop()
+                # 抑制pychrome后台线程的JSON错误输出
+                import sys
+                import os
+                # 临时重定向stderr来隐藏pychrome的线程错误
+                old_stderr = sys.stderr
+                sys.stderr = open(os.devnull, 'w')
+                try:
+                    tab.stop()
+                    # 给后台线程一点时间来完成清理
+                    time.sleep(0.1)
+                finally:
+                    sys.stderr.close()
+                    sys.stderr = old_stderr
                 logger.info("✓ Tab closed")
             except Exception as e:
-                logger.error(f"Failed to close tab: {e}")
+                # 静默处理关闭错误，因为标签页通常已经成功关闭
+                logger.debug(f"Tab close exception (ignored): {e}")
 
     def close(self):
         """关闭连接"""
