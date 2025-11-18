@@ -89,8 +89,9 @@ post_processing:
     # 移除Google的内部链接和追踪元素
     - selector: ".fl"  # Flag elements
       strategy: "css"
-    - selector: "[jscontroller]"  # JavaScript controlled elements（可选）
-      strategy: "css"
+    # 注意：不要移除[jscontroller]，因为很多搜索结果元素都使用这个属性
+    # - selector: "[jscontroller]"  # JavaScript controlled elements
+    #   strategy: "css"
 
   # 链接修复规则
   fix_links:
