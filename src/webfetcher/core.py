@@ -1300,6 +1300,19 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
                 metrics.primary_method = "urllib"
                 # Continue to urllib logic below
 
+        elif fetcher_choice == 'cdp':
+            # CDP requested by routing config (e.g., for Google Search)
+            print(f"🚀 Config-driven routing: Using CDP for {url}", file=sys.stderr)
+            logging.info(f"🚀 Config-driven routing to CDP: {url}")
+            metrics.primary_method = "cdp_direct"
+
+            try:
+                return _try_cdp_fetch(url, ua, timeout, metrics, start_time, input_url)
+            except Exception as e:
+                logging.warning(f"CDP fetch failed for {url}, falling back to urllib: {e}")
+                metrics.primary_method = "urllib"
+                # Continue to urllib logic below
+
         elif fetcher_choice == 'manual_chrome':
             # Manual Chrome requested by routing config
             # This should rarely happen as manual_chrome is typically a fallback
