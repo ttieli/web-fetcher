@@ -6,6 +6,7 @@ CDP (Chrome DevTools Protocol) Fetcher
 import time
 import json
 import logging
+import requests
 from typing import Optional, Dict, Any, Tuple
 from dataclasses import dataclass
 
@@ -107,12 +108,40 @@ class CDPFetcher:
 
     def new_tab(self, url=None):
         """
-        创建新标签页
+        创建新标签页（使用PUT方法兼容新版Chrome）
 
         Args:
             url: 可选，创建后立即导航到该URL
         """
-        tab = self.browser.new_tab()
+        # 使用PUT方法创建标签页（修复pychrome与新版Chrome的兼容性问题）
+        # 新版Chrome要求使用PUT而不是GET来创建标签页
+        try:
+            response = requests.put(f"{self.debug_url}/json/new")
+            tab_info = response.json()
+
+            # 使用返回的标签页ID来获取Tab对象
+            tabs = self.browser.list_tab()
+            tab = None
+            for t in tabs:
+                if hasattr(t, 'id') and str(t.id) == tab_info.get('id'):
+                    tab = t
+                    break
+
+            if not tab:
+                # 如果找不到，使用最后一个标签页（最新创建的）
+                tab = tabs[-1] if tabs else None
+
+            if not tab:
+                raise Exception("Failed to find newly created tab")
+
+        except Exception as e:
+            logger.warning(f"PUT method failed: {e}, falling back to existing tab")
+            # 如果创建失败，使用现有标签页
+            tabs = self.browser.list_tab()
+            if not tabs:
+                raise Exception("No tabs available and cannot create new tab")
+            tab = tabs[0]
+
         tab.start()
         tab.Network.enable()
         tab.Page.enable()
@@ -123,7 +152,7 @@ class CDPFetcher:
             time.sleep(2)  # 等待页面加载
 
         self.current_tab = tab
-        logger.info(f"✓ Created new tab{': ' + url if url else ''}")
+        logger.info(f"✓ Created/attached to tab{': ' + url if url else ''}")
         return tab
 
     def fetch(self, url: str, wait_time: float = 3.0, use_existing_tab: bool = True) -> CDPFetchResult:
