@@ -1,0 +1,178 @@
+# Google Search Results Template v1.0
+# Comprehensive extraction for all Google search result types
+# Supports: Web Search, Knowledge Panel, News, Videos, Images, Q&A
+
+name: "Google Search Template"
+version: "1.0.0"
+domains:
+  - "google.com"
+  - "google.com.hk"
+  - "google.cn"
+  - "*.google.com"
+
+# ============================================================================
+# SELECTOR PATTERNS - Google Search Specific
+# ============================================================================
+
+selectors:
+  # ---------------------------------------------------------------------------
+  # TITLE - 搜索标题 (从页面title或首个h1提取)
+  # ---------------------------------------------------------------------------
+  title:
+    - selector: "title"
+      strategy: "css"
+    - selector: "h1"
+      strategy: "css"
+
+  # ---------------------------------------------------------------------------
+  # AUTHOR - 保持一致性，对Google搜索无意义
+  # ---------------------------------------------------------------------------
+  author:
+    - selector: "meta[name='author']"
+      strategy: "css"
+      attribute: "content"
+
+  # ---------------------------------------------------------------------------
+  # PUBLISH_DATE - 保持一致性，对Google搜索无意义
+  # ---------------------------------------------------------------------------
+  publish_date:
+    - selector: "meta[property='article:published_time']"
+      strategy: "css"
+      attribute: "content"
+
+  # ---------------------------------------------------------------------------
+  # CONTENT - 主要搜索结果内容
+  # 策略：提取整个搜索结果主容器，然后进行后处理
+  # ---------------------------------------------------------------------------
+  content:
+    # Main search results container
+    - selector: "#search"
+      strategy: "css"
+    - selector: "#rso"  # Results section only
+      strategy: "css"
+    - selector: "[role='main']"
+      strategy: "css"
+    - selector: "body"  # Fallback to entire body
+      strategy: "css"
+
+  # ---------------------------------------------------------------------------
+  # IMAGES - 禁用图片提取（Google搜索结果包含大量base64图片）
+  # ---------------------------------------------------------------------------
+  images: []
+
+# ============================================================================
+# POST-PROCESSING RULES - 专门针对Google搜索的清理规则
+# ============================================================================
+
+post_processing:
+  remove_elements:
+    # 移除脚本和样式
+    - selector: "script"
+      strategy: "tag"
+    - selector: "style"
+      strategy: "tag"
+    - selector: "noscript"
+      strategy: "tag"
+
+    # 移除Google特定的导航和工具栏
+    - selector: "#searchform"  # 搜索框
+      strategy: "css"
+    - selector: ".sfbg"  # 搜索框背景
+      strategy: "css"
+    - selector: "[role='navigation']"  # 导航栏
+      strategy: "css"
+
+    # 移除base64图片（会显示为乱码）
+    - selector: "img[src^='data:image']"
+      strategy: "css"
+
+    # 移除Google的内部链接和追踪元素
+    - selector: ".fl"  # Flag elements
+      strategy: "css"
+    - selector: "[jscontroller]"  # JavaScript controlled elements（可选）
+      strategy: "css"
+
+  # 链接修复规则
+  fix_links:
+    # 将相对链接转换为绝对链接
+    base_url: "https://www.google.com"
+    patterns:
+      - selector: "a[href^='/search']"
+        prefix: "https://www.google.com"
+      - selector: "a[href^='/url']"
+        prefix: "https://www.google.com"
+      - selector: "a[href^='/webhp']"
+        prefix: "https://www.google.com"
+      - selector: "a[href^='/maps']"
+        prefix: "https://www.google.com"
+      - selector: "a[href^='/images']"
+        prefix: "https://www.google.com"
+
+# ============================================================================
+# CONTENT FORMATTING - Markdown输出格式定制
+# ============================================================================
+
+formatting:
+  markdown:
+    # 移除base64编码的图片引用
+    remove_data_urls: true
+
+    # 链接格式
+    link_style: "inline"  # [text](url)
+
+    # 标题层级调整
+    heading_offset: 1  # h1 -> ##, h2 -> ###
+
+    # 代码块样式
+    code_fence: "```"
+
+    # 列表样式
+    bullet_char: "-"
+
+    # 表格样式（如果有）
+    table_format: "github"  # GitHub-flavored tables
+
+# ============================================================================
+# EXTRACTION OPTIONS
+# ============================================================================
+
+options:
+  # 跳过空内容
+  skip_empty: true
+
+  # 最大内容长度（字符数）- Google搜索结果通常很长
+  max_content_length: 100000
+
+  # 是否保留HTML结构（用于调试）
+  preserve_html: false
+
+  # 是否提取meta标签
+  extract_meta: true
+
+  # 超链接处理
+  links:
+    # 保留所有链接
+    include: true
+
+    # 转换为绝对URL
+    absolute_urls: true
+
+    # 移除追踪参数（Google的utm_参数等）
+    clean_tracking: true
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# 使用说明：
+# 1. 本模板专门优化了Google搜索结果页面的提取
+# 2. 自动过滤base64图片，避免输出乱码
+# 3. 将所有相对链接转换为绝对链接
+# 4. 保留搜索结果的结构化信息（知识面板、问答、新闻等）
+# 5. 适用于各种Google搜索类型：网页、新闻、视频、图片等
+#
+# 版本历史：
+# v1.0.0 (2025-11-18) - 初始版本
+#   - 基础选择器
+#   - 链接修复
+#   - Base64图片过滤
+#   - 结构化输出支持
