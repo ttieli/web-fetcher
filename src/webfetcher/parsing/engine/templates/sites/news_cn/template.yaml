@@ -4,7 +4,7 @@
 # Target: Extract content from <div id="detail"> container
 
 name: "News.cn Articles"
-version: "1.0.0"
+version: "1.0.1"
 domains:
   - "news.cn"
   - "www.news.cn"
@@ -36,6 +36,13 @@ selectors:
 
     # News.cn specific title class
     - selector: ".title"
+      strategy: "css"
+
+    # Topic page title (Zhuanti)
+    - selector: ".tit h3"
+      strategy: "css"
+
+    - selector: ".tit"
       strategy: "css"
 
   # ---------------------------------------------------------------------------
@@ -121,6 +128,16 @@ selectors:
 
     # Content wrapper fallback
     - selector: ".content"
+      strategy: "css"
+
+    # News.cn Topic List (Zhuanti)
+    - selector: ".list"
+      strategy: "css"
+
+    - selector: ".wz-list"
+      strategy: "css"
+
+    - selector: ".main"
       strategy: "css"
 
   # ---------------------------------------------------------------------------
