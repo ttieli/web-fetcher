@@ -3,12 +3,20 @@
 # Supports: Web Search, Knowledge Panel, News, Videos, Images, Q&A
 
 name: "Google Search Template"
-version: "1.1.0"
+version: "1.1.1"
 domains:
   - "google.com"
   - "google.com.hk"
   - "google.cn"
   - "*.google.com"
+
+# ============================================================================
+# METADATA CONFIGURATION
+# ============================================================================
+
+metadata:
+  defaults:
+    author: "" # Google search results typically don't have a single author
 
 # ============================================================================
 # SELECTOR PATTERNS - Google Search Specific
