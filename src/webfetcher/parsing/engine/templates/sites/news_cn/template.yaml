@@ -4,12 +4,25 @@
 # Target: Extract content from <div id="detail"> container
 
 name: "News.cn Articles"
-version: "1.0.1"
+version: "1.0.2"
 domains:
   - "news.cn"
   - "www.news.cn"
   - "*.news.cn"
 priority: 95  # High priority for exact domain match
+
+# ============================================================================
+# POST-PROCESSING - Clean up output
+# ============================================================================
+
+post_processing:
+  markdown:
+    # Fix list indentation: Remove indentation from top-level list items
+    # HTML2Text sometimes indents list items inconsistently
+    - type: "regex_replace"
+      pattern: "^  [*] "
+      replacement: "* "
+      flags: "m"  # multiline mode
 
 # ============================================================================
 # SELECTOR PATTERNS - News.cn-specific extraction rules

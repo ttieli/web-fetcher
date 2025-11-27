@@ -559,6 +559,12 @@ class TemplateParser(BaseParser):
             # Remove multiple consecutive blank lines
             while '\n\n\n' in markdown:
                 markdown = markdown.replace('\n\n\n', '\n\n')
+
+            # Apply markdown post-processing from template
+            if self.current_template and 'post_processing' in self.current_template:
+                markdown_rules = self.current_template['post_processing'].get('markdown', [])
+                markdown = self._apply_post_process(markdown, markdown_rules)
+
             return markdown.strip()
         except Exception as e:
             self.logger.error(f"Markdown conversion failed: {e}")
