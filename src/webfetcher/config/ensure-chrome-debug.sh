@@ -30,7 +30,7 @@ set -euo pipefail
 
 # Configuration
 DEFAULT_PORT="9222"
-DEFAULT_TIMEOUT=5
+DEFAULT_TIMEOUT=15
 DEFAULT_RETRY=3
 PROFILE_DIR="${HOME}/.chrome-wf"
 PID_FILE="${PROFILE_DIR}/.chrome-debug.pid"

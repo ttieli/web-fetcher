@@ -177,6 +177,11 @@ except ImportError as e:
 ssl_context_unverified = ssl.create_default_context()
 ssl_context_unverified.check_hostname = False
 ssl_context_unverified.verify_mode = ssl.CERT_NONE
+# Allow legacy server connect for older SSL implementations
+try:
+    ssl_context_unverified.options |= ssl.OP_LEGACY_SERVER_CONNECT
+except AttributeError:
+    pass  # Option might not be available in older OpenSSL versions
 
 # Initialize error classifier (Task 7 Phase 1)
 error_classifier = UnifiedErrorClassifier() if ERROR_CLASSIFIER_AVAILABLE else None
@@ -356,7 +361,7 @@ def create_url_metadata(input_url: str, final_url: str = None,
     }
 
 
-def add_metrics_to_markdown(md_content: str, metrics: FetchMetrics) -> str:
+def add_metrics_to_markdown(md_content: str, metrics: FetchMetrics, template_name: Optional[str] = None) -> str:
     """Add fetch metrics to markdown content as HTML comment and footer."""
     # Add HTML comment at the top with detailed metrics
     detailed_comment = f"""<!-- Fetch Metrics:
@@ -373,7 +378,10 @@ def add_metrics_to_markdown(md_content: str, metrics: FetchMetrics) -> str:
 """
     
     # Add visible footer with summary
-    footer = f"\n\n---\n\n*{metrics.get_summary()}*\n"
+    footer = f"\n\n---\n\n*{metrics.get_summary()}"
+    if template_name:
+        footer += f" | Template: {template_name}"
+    footer += "*\n"
     
     return detailed_comment + md_content + footer
 # BeautifulSoup导入移至动态导入机制
@@ -886,6 +894,11 @@ def extract_with_htmlparser(html_content: str, url: str) -> tuple[str, str, dict
 ssl_context_unverified = ssl.create_default_context()
 ssl_context_unverified.check_hostname = False
 ssl_context_unverified.verify_mode = ssl.CERT_NONE
+# Allow legacy server connect for older SSL implementations
+try:
+    ssl_context_unverified.options |= ssl.OP_LEGACY_SERVER_CONNECT
+except AttributeError:
+    pass  # Option might not be available in older OpenSSL versions
 
 # Multi-page document support constants
 MAX_PAGINATION_DEPTH = 5
@@ -5089,7 +5102,7 @@ def main():
     
     # Add fetch metrics to markdown content if available
     if fetch_metrics:
-        md = add_metrics_to_markdown(md, fetch_metrics)
+        md = add_metrics_to_markdown(md, fetch_metrics, template_name=metadata.get('template_used'))
 
     # Task-003 Phase 3: Enhance markdown with dual URL section
     # url_metadata should be available from fetch_html() call
