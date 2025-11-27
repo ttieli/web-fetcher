@@ -71,16 +71,11 @@ Issues = "https://github.com/ttieli/web-fetcher/issues"
 [tool.hatchling.build.targets.wheel]
 packages = ["src/webfetcher"]
 
-# 包含配置文件
-[tool.hatchling.build.targets.wheel.shared-data]
-"src/webfetcher/config" = "webfetcher/config"
-
 # 包含配置文件作为 package data
 [tool.hatchling.build.targets.sdist]
 include = [
     "/src/webfetcher",
     "/config/*.yaml",
-    "/config/*.sh",
 ]
 
 # pytest 配置
