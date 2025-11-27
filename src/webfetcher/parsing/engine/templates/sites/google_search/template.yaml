@@ -3,7 +3,7 @@
 # Supports: Web Search, Knowledge Panel, News, Videos, Images, Q&A
 
 name: "Google Search Template"
-version: "1.1.1"
+version: "1.1.2"
 domains:
   - "google.com"
   - "google.com.hk"
@@ -67,6 +67,20 @@ selectors:
   # IMAGES - 禁用图片提取（Google搜索结果包含大量base64图片）
   # ---------------------------------------------------------------------------
   images: []
+
+  # ---------------------------------------------------------------------------
+  # PAGINATION - 分页链接提取
+  # ---------------------------------------------------------------------------
+  pagination:
+    - selector: "#pnnext"
+      strategy: "css"
+      attribute: "href"
+    - selector: "a#pnnext"
+      strategy: "css"
+      attribute: "href"
+    - selector: "[aria-label='下一页']"
+      strategy: "css"
+      attribute: "href"
 
 # ============================================================================
 # POST-PROCESSING RULES - 专门针对Google搜索的清理规则
@@ -217,6 +231,9 @@ options:
 
     # 移除追踪参数（Google的utm_参数等）
     clean_tracking: true
+
+  # 启用分页
+  pagination: true
 
 # ============================================================================
 # NOTES
