@@ -129,18 +129,13 @@ class TemplateParser(BaseParser):
 
     def _normalize_selector_config(self, field_config: Any) -> list:
         """
-        Normalize selector configuration to list of (selector, strategy) tuples.
-
-        Supports three formats:
-        1. String: "#id, .class" -> [("#id", "css"), (".class", "css")]
-        2. List of dicts: [{"selector": "#id", "strategy": "css"}] -> [("#id", "css")]
-        3. Single dict: {"selector": "#id", "strategy": "css"} -> [("#id", "css")]
+        Normalize selector configuration to list of (selector, strategy, options) tuples.
 
         Args:
             field_config: Field configuration in any supported format
 
         Returns:
-            list: List of (selector, strategy) tuples
+            list: List of (selector, strategy, options) tuples
         """
         selectors = []
 
@@ -149,7 +144,7 @@ class TemplateParser(BaseParser):
             for s in field_config.split(','):
                 selector = s.strip()
                 strategy = self._detect_strategy(selector)
-                selectors.append((selector, strategy))
+                selectors.append((selector, strategy, {}))
 
         # Format 2: List of dicts (generic.yaml format)
         elif isinstance(field_config, list):
@@ -157,38 +152,29 @@ class TemplateParser(BaseParser):
                 if isinstance(item, dict):
                     selector = item.get('selector', '').strip()
                     strategy = item.get('strategy', 'css')
+                    # Pass through other options
+                    options = {k: v for k, v in item.items() if k not in ['selector', 'strategy']}
                     if selector:
-                        selectors.append((selector, strategy))
+                        selectors.append((selector, strategy, options))
                 elif isinstance(item, str):
                     # Handle list of strings (fallback)
                     selector = item.strip()
                     strategy = self._detect_strategy(selector)
-                    selectors.append((selector, strategy))
+                    selectors.append((selector, strategy, {}))
 
         # Format 3: Single dict (edge case)
         elif isinstance(field_config, dict):
             selector = field_config.get('selector', '').strip()
             strategy = field_config.get('strategy', 'css')
+            options = {k: v for k, v in field_config.items() if k not in ['selector', 'strategy']}
             if selector:
-                selectors.append((selector, strategy))
+                selectors.append((selector, strategy, options))
 
         return selectors
 
     def _extract_field(self, content: str, field_config: Any) -> Optional[str]:
         """
         Extract a field using configured selectors with fallback support.
-
-        Supports multiple selector formats:
-        - String: "#id, .class"
-        - List of dicts: [{"selector": "#id", "strategy": "css", "post_process": [...]}]
-        - Single dict: {"selector": "#id", "strategy": "css"}
-
-        Args:
-            content: HTML content to extract from
-            field_config: Field configuration in any supported format
-
-        Returns:
-            Optional[str]: Extracted value or None if not found (with post-processing applied)
         """
         # Process list of dicts with full config (including post_process)
         if isinstance(field_config, list):
@@ -235,7 +221,7 @@ class TemplateParser(BaseParser):
                 return None
 
             # Try each selector in order until one succeeds
-            for selector, strategy_type in selectors:
+            for selector, strategy_type, _ in selectors:
                 try:
                     # Auto-append @content for meta tags if not specified
                     if selector.startswith('meta[') and '@' not in selector:
@@ -589,13 +575,13 @@ class TemplateParser(BaseParser):
         """
         from bs4 import BeautifulSoup
 
-        # Normalize configuration to list of (selector, strategy) tuples
+        # Normalize configuration to list of (selector, strategy, options) tuples
         selectors = self._normalize_selector_config(selector_config)
 
         if not selectors:
             return None
 
-        for selector, strategy_type in selectors:
+        for selector, strategy_type, options in selectors:
             try:
                 # Currently only CSS strategy is supported for HTML extraction
                 # (BeautifulSoup's select_one uses CSS selectors)
@@ -606,12 +592,19 @@ class TemplateParser(BaseParser):
                 # Parse HTML
                 soup = BeautifulSoup(content, 'html.parser')
 
-                # Find element using CSS selector
-                element = soup.select_one(selector)
-
-                if element:
-                    # Return inner HTML (all children as HTML string)
-                    return str(element)
+                # Check if multiple matches are requested
+                if options.get('multiple'):
+                    # Find all elements
+                    elements = soup.select(selector)
+                    if elements:
+                        # Join all found elements
+                        return "\n".join(str(el) for el in elements)
+                else:
+                    # Find element using CSS selector (default behavior)
+                    element = soup.select_one(selector)
+                    if element:
+                        # Return inner HTML (all children as HTML string)
+                        return str(element)
 
             except Exception as e:
                 self.logger.debug(f"HTML extraction with selector '{selector}' (strategy: {strategy_type}) failed: {e}")
@@ -635,35 +628,12 @@ class TemplateParser(BaseParser):
 
         results = []
 
-        # Parse field_config directly to preserve attribute information
-        config_items = []
+        # Use _normalize_selector_config to handle all formats consistent with other methods
+        # This returns list of (selector, strategy, options)
+        selectors = self._normalize_selector_config(field_config)
 
-        if isinstance(field_config, list):
-            # List of dicts (WeChat/XHS images format)
-            for item in field_config:
-                if isinstance(item, dict):
-                    config_items.append({
-                        'selector': item.get('selector', '').strip(),
-                        'strategy': item.get('strategy', 'css'),
-                        'attribute': item.get('attribute'),
-                        'validation': item.get('validation', {})
-                    })
-        elif isinstance(field_config, dict):
-            # Single dict
-            config_items.append({
-                'selector': field_config.get('selector', '').strip(),
-                'strategy': field_config.get('strategy', 'css'),
-                'attribute': field_config.get('attribute'),
-                'validation': field_config.get('validation', {})
-            })
-        elif isinstance(field_config, str):
-            # Simple string selector
-            config_items.append({
-                'selector': field_config.strip(),
-                'strategy': 'css',
-                'attribute': None,
-                'validation': {}
-            })
+        if not selectors:
+            return []
 
         # Preprocess HTML once before all extractions
         try:
@@ -685,10 +655,9 @@ class TemplateParser(BaseParser):
             preprocessed_content = content
 
         # Process each configuration item
-        for config in config_items:
-            selector = config.get('selector')
-            attribute = config.get('attribute')
-            validation = config.get('validation', {})
+        for selector, strategy_type, options in selectors:
+            attribute = options.get('attribute')
+            validation = options.get('validation', {})
 
             if not selector:
                 continue
@@ -698,6 +667,7 @@ class TemplateParser(BaseParser):
                 soup = BeautifulSoup(preprocessed_content, 'html.parser')
 
                 # Find all matching elements
+                # List extraction inherently implies multiple matches, so we always use select()
                 elements = soup.select(selector)
 
                 for element in elements:

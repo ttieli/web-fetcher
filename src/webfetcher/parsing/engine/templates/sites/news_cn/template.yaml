@@ -4,7 +4,7 @@
 # Target: Extract content from <div id="detail"> container
 
 name: "News.cn Articles"
-version: "1.0.2"
+version: "1.0.4"
 domains:
   - "news.cn"
   - "www.news.cn"
@@ -56,6 +56,10 @@ selectors:
       strategy: "css"
 
     - selector: ".tit"
+      strategy: "css"
+
+    # Big Headline (Zhuanti)
+    - selector: ".dtt .tit"
       strategy: "css"
 
   # ---------------------------------------------------------------------------
@@ -144,14 +148,16 @@ selectors:
       strategy: "css"
 
     # News.cn Topic List (Zhuanti)
-    - selector: ".list"
+    - selector: ".list, .wz-list, .main"
       strategy: "css"
+      multiple: true
 
-    - selector: ".wz-list"
+    # News.cn Portal/Index Page Sections (Comprehensive)
+    # Combine all section selectors into one rule with multiple: true
+    # to ensure ALL sections are extracted and concatenated.
+    - selector: ".dtt, .part1-left .name, .part1_right ul, .latest .latest-cont ul, .hygb_list, .plzs_list, .ggkf_l_list, .ggkf_right, .video_scoll, .qhjs_left, .qhjs_list, .qhjs_pic, .zsjgg_list, .ggjjt_nr, .listNews"
       strategy: "css"
-
-    - selector: ".main"
-      strategy: "css"
+      multiple: true
 
   # ---------------------------------------------------------------------------
   # IMAGE EXTRACTION

@@ -368,7 +368,7 @@ def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_craw
 
     except Exception as e:
         # Fallback to legacy implementation if template parsing fails
-        logger.info(f"Phase 3.5: No template found or template parsing failed for {url}, using legacy parser")
+        logger.warning(f"Template-based Generic parser failed: {e}, using legacy parser")
         from webfetcher.parsing.legacy import generic_to_markdown as legacy_generic_parser
         return legacy_generic_parser(html, url, filter_level, is_crawling)
 
