@@ -11,6 +11,7 @@ import logging
 import subprocess
 import shutil
 import tempfile
+from typing import Optional
 
 # Configure logging
 logging.basicConfig(
