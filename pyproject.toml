@@ -37,6 +37,7 @@ dependencies = [
     "beautifulsoup4>=4.9.0",
     "selenium>=4.15.0,<5.0.0",
     "pychrome==0.2.3",
+    "python-docx>=0.8.11",
 ]
 
 # 可选依赖（用于特殊场景）
@@ -60,6 +61,7 @@ cdp = []
 # CLI 脚本注册
 [project.scripts]
 wf = "webfetcher.cli:main"
+wd = "webfetcher.doc_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/ttieli/web-fetcher"
