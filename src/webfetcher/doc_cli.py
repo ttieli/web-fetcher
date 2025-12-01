@@ -68,11 +68,68 @@ Examples:
         # Import converter here to avoid startup lag if just showing help
         from webfetcher.converters.docx_converter import convert_docx_to_markdown
         
+        temp_docx_path = None
+
         if input_path.suffix.lower() == '.docx':
             markdown_content = convert_docx_to_markdown(str(input_path))
+        elif input_path.suffix.lower() == '.doc':
+            logger.info("Detected legacy .doc format. Attempting conversion via LibreOffice...")
+            import subprocess
+            import shutil
+            import tempfile
+
+            # Find soffice executable
+            soffice = shutil.which('soffice')
+            if not soffice:
+                # Check standard macOS location
+                mac_soffice = '/Applications/LibreOffice.app/Contents/MacOS/soffice'
+                if os.path.exists(mac_soffice):
+                    soffice = mac_soffice
+            
+            if not soffice:
+                logger.error("Error: LibreOffice (soffice) not found.")
+                logger.info("Please install LibreOffice or add 'soffice' to your PATH to support .doc files.")
+                sys.exit(1)
+
+            # Create a temporary directory for the conversion output
+            with tempfile.TemporaryDirectory() as temp_dir:
+                logger.info(f"Converting .doc to .docx using: {soffice}")
+                try:
+                    # Run conversion
+                    # soffice --headless --convert-to docx --outdir <dir> <file>
+                    cmd = [
+                        soffice,
+                        '--headless',
+                        '--convert-to', 'docx',
+                        '--outdir', temp_dir,
+                        str(input_path)
+                    ]
+                    
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    
+                    if result.returncode != 0:
+                        logger.error(f"LibreOffice conversion failed (code {result.returncode})")
+                        if args.verbose:
+                            logger.error(f"Stderr: {result.stderr}")
+                        raise Exception("LibreOffice conversion failed")
+
+                    # Find the generated .docx file
+                    generated_files = list(Path(temp_dir).glob('*.docx'))
+                    if not generated_files:
+                        raise Exception("LibreOffice did not generate a .docx file")
+                    
+                    temp_docx_path = generated_files[0]
+                    logger.info(f"Intermediate conversion successful: {temp_docx_path.name}")
+                    
+                    # Now process the temporary .docx
+                    markdown_content = convert_docx_to_markdown(str(temp_docx_path))
+                    
+                except Exception as e:
+                    logger.error(f"Legacy conversion error: {e}")
+                    sys.exit(1)
         else:
             logger.error(f"Unsupported file format: {input_path.suffix}")
-            logger.info("Currently supported formats: .docx")
+            logger.info("Currently supported formats: .docx, .doc (requires LibreOffice)")
             sys.exit(1)
             
         # Write output
