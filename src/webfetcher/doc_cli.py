@@ -76,7 +76,7 @@ Examples:
             # Output is a directory
             out_dir = out_arg
             out_dir.mkdir(parents=True, exist_ok=True)
-            output_filename = input_path.stem + target_suffix
+            output_filename = input_path.stem + "_converted" + target_suffix
             final_output_path = out_dir / output_filename
         else:
             # Output is a specific file path
@@ -84,7 +84,7 @@ Examples:
             final_output_path.parent.mkdir(parents=True, exist_ok=True)
     else:
         # No output specified. Default to same dir as input, with new extension.
-        final_output_path = input_path.parent / (input_path.stem + target_suffix)
+        final_output_path = input_path.parent / (input_path.stem + "_converted" + target_suffix)
 
     logger.info(f"Processing '{input_path}'...")
     
