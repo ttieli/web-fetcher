@@ -1,0 +1,104 @@
+domain: "qcc.com"
+name: "Qichacha Company Detail"
+description: "Template for Qichacha company profile pages"
+
+# Content extraction rules
+selectors:
+  # Page Title (Company Name)
+  title:
+    - selector: "h1.copy-value"
+    - selector: ".title h1"
+
+  # Main Content Blocks
+  content:
+    # 1. Company Status Header
+    - selector: ".company-header .content"
+      type: "text"
+      description: "Company Header Info"
+
+    # 2. Core Registration Info (Top Block)
+    - selector: ".normal-company-info-part"
+      type: "text"
+      description: "Registration Overview"
+
+    # 3. Commercial Details (The big table)
+    - selector: "#cominfo"
+      type: "section"
+      description: "工商信息 (Commercial Registration)"
+      sub_selectors:
+        - selector: "table.ntable"
+          type: "table"
+
+    # 4. Shareholders
+    - selector: "#partner"
+      type: "section"
+      description: "股东信息 (Shareholders)"
+      sub_selectors:
+        - selector: "table.ntable"
+          type: "table"
+
+    # 5. Key Personnel
+    - selector: "#mainmember"
+      type: "section"
+      description: "主要人员 (Key Personnel)"
+      sub_selectors:
+        - selector: "table.ntable"
+          type: "table"
+
+    # 6. External Investment
+    - selector: "#touzilist"
+      type: "section"
+      description: "对外投资 (External Investment)"
+      sub_selectors:
+        - selector: "table.ntable"
+          type: "table"
+
+    # 7. Change Records
+    - selector: "#changelist"
+      type: "section"
+      description: "变更记录 (Change History)"
+      sub_selectors:
+        - selector: "table.ntable"
+          type: "table"
+
+    # 8. Annual Reports
+    - selector: "#reportyear"
+      type: "section"
+      description: "企业年报 (Annual Reports)"
+      sub_selectors:
+        - selector: ".swiper-container"
+          type: "text"
+
+# Cleanup rules to remove noise
+remove:
+  - ".app-copy"           # "Copy" buttons
+  - ".base_copy"          # "Copy" text
+  - ".app-copy-new"
+  - ".tbadge"             # Notification badges (numbers)
+  - ".app-glossary-info"  # Help icons/tooltips
+  - ".qcc-header"         # Site header
+  - ".qcc-footer"         # Site footer
+  - ".right"              # Right-side action buttons in headers
+  - "script"
+  - "style"
+  - ".logo"               # Logo images
+  - ".npanel-body"        # Side panels/recommendations
+  - ".qcc-rnav"           # Right floating nav
+  - "#canvasWatermark"    # Watermark
+  - ".watermark"
+  - ".ad-banner"
+  - ".download-app"
+  - ".feedback"           # Feedback buttons
+  - ".company-action"     # Action buttons like "Monitor", "Follow"
+
+# Pre-processing replacements
+# Clean up text before parsing
+replacements:
+  - old: "复制"
+    new: ""
+  - old: "查看地图"
+    new: ""
+  - old: "发生变更时通知我"
+    new: ""
+  - old: "简介："
+    new: "\n**简介**："
