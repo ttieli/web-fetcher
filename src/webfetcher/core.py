@@ -1569,6 +1569,13 @@ def _try_cdp_fetch(url: str, ua: Optional[str], timeout: int, metrics: FetchMetr
         raise Exception(error_msg)
 
     try:
+        # Auto-start Chrome if needed (similar to Selenium mode)
+        try:
+            ensure_chrome_debug(None)
+        except Exception as e:
+            logging.warning(f"Failed to auto-start Chrome for CDP: {e}")
+            # Continue anyway, maybe it's already running or we can't start it but want to try connecting
+
         logging.info(f"🔌 Attempting CDP fetch for {url}")
 
         # Use the simplified fetch_with_cdp interface

@@ -66,7 +66,7 @@ echo "正在启动Chrome..."
 
 "$CHROME" \
   --remote-debugging-port=$DEBUG_PORT \
-  --remote-allow-origins=* \
+  --remote-allow-origins='*' \
   --user-data-dir="$USER_DATA" \
   --no-first-run \
   --no-default-browser-check \

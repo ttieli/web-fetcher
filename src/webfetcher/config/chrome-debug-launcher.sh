@@ -161,7 +161,7 @@ launch_chrome_background() {
     nohup "${CHROME_APP}" \
         --remote-debugging-port="${PORT}" \
         --user-data-dir="${PROFILE_DIR}" \
-        --remote-allow-origins=* \
+        --remote-allow-origins='*' \
         --no-first-run \
         --no-default-browser-check \
         --disable-popup-blocking \
