@@ -652,11 +652,23 @@ attempt_recovery() {
                 remaining_pids=$(lsof -ti:${port} 2>/dev/null || echo "")
                 if [[ -n "${remaining_pids}" ]]; then
                     for rpid in ${remaining_pids}; do
-                        log_debug "Killing remaining process ${rpid}"
+                        log_debug "Killing remaining process ${rpid} on port ${port}"
                         kill -9 "${rpid}" 2>/dev/null || true
                     done
                     sleep 1
                 fi
+            fi
+
+            # NEW: Aggressively kill any Chrome process using our specific profile directory
+            # This handles cases where Chrome is running/stuck but not listening on the port yet
+            local profile_pids
+            profile_pids=$(pgrep -f "user-data-dir=${PROFILE_DIR}" || echo "")
+            if [[ -n "${profile_pids}" ]]; then
+                for ppid in ${profile_pids}; do
+                    log_debug "Killing stuck Chrome process ${ppid} (matching profile)"
+                    kill -9 "${ppid}" 2>/dev/null || true
+                done
+                sleep 1
             fi
 
             log_info "Chrome processes terminated, restarting..."
