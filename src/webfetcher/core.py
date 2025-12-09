@@ -1056,15 +1056,15 @@ def ensure_chrome_debug(config: Optional[Dict[str, Any]] = None, force_mode: boo
     # Task-002 Phase 1: Read timeout from environment variable, config, or default
     try:
         timeout = int(os.environ.get('WF_CHROME_TIMEOUT',
-                                     config.get('chrome', {}).get('health_check_timeout', 15) if config else 15))
+                                     config.get('chrome', {}).get('health_check_timeout', 30) if config else 30))
         # Validate range: 5-300 seconds
         if not (5 <= timeout <= 300):
-            logging.warning(f"Invalid timeout value {timeout}, using default 15 seconds")
-            timeout = 15
+            logging.warning(f"Invalid timeout value {timeout}, using default 30 seconds")
+            timeout = 30
         logging.info(f"Using Chrome health check timeout: {timeout} seconds")
     except (ValueError, TypeError):
-        logging.warning("Invalid WF_CHROME_TIMEOUT value, using default 15 seconds")
-        timeout = 15
+        logging.warning("Invalid WF_CHROME_TIMEOUT value, using default 30 seconds")
+        timeout = 30
 
     # Task-002 Phase 1: Force mode - quick port check only
     if force_mode:
