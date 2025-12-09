@@ -169,7 +169,6 @@ launch_chrome_background() {
         --disable-background-timer-throttling \
         --disable-renderer-backgrounding \
         --disable-device-discovery-notifications \
-        --headless=new \
         > "${log_file}" 2>&1 &
 
     local chrome_pid=$!
