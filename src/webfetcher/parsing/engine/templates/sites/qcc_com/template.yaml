@@ -1,4 +1,9 @@
 domain: "qcc.com"
+version: 1.0
+domains:
+  - "qcc.com"
+  - "*.qcc.com"
+
 name: "Qichacha Company Detail"
 description: "Template for Qichacha company profile pages"
 
