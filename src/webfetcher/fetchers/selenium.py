@@ -1228,13 +1228,18 @@ class SeleniumFetcher:
         """
         if self.driver:
             try:
-                # DON'T call driver.quit() - this would close the user's Chrome session
-                # and lose all login states. Instead, just disconnect our WebDriver.
+                # Stop chromedriver proxy process to prevent process leak,
+                # but DON'T call driver.quit() - that would close the user's
+                # Chrome session and lose all login states.
+                try:
+                    self.driver.service.stop()
+                except Exception:
+                    pass
                 self.driver = None
                 self._connection_established = False
-                
+
                 logging.info("✓ Disconnected from Chrome debug session (browser session preserved)")
-                
+
             except Exception as e:
                 logging.warning(f"Error during cleanup: {e}")
                 self.driver = None

@@ -78,9 +78,8 @@ class SeleniumConfig:
                 # Never use headless mode - session preservation requirement
                 pass
             
-            # Add stability options
+            # Add stability options (NOTE: --disable-web-security removed for security)
             chrome_options.extend([
-                '--disable-web-security',
                 '--disable-features=VizDisplayCompositor',
                 '--disable-extensions',
                 '--no-sandbox',

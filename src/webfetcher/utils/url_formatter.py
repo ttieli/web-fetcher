@@ -4,7 +4,7 @@ URL Formatter Module for Web_Fetcher
 Provides utilities for consistent URL formatting in markdown output.
 Handles URL detection, markdown link generation, and edge cases.
 
-Task-003 Phase 2: URL Formatter Module
+URL Formatter Module
 Author: Web_Fetcher Team
 Version: 1.0
 """
@@ -77,7 +77,7 @@ def format_url_as_markdown(url: str, text: Optional[str] = None) -> str:
     # Validate URL first
     if not is_valid_url(url):
         # Use debug level for JavaScript URLs and other expected invalid formats
-        logger.debug(f"Task-003 Phase 2: Invalid URL format, returning as-is: {url}")
+        logger.debug(f"Invalid URL format, returning as-is: {url}")
         return url  # Return as-is if invalid
 
     # Use URL as text if not provided
@@ -114,7 +114,7 @@ def is_valid_url(url: str) -> bool:
             return True
         return False
     except Exception as e:
-        logger.debug(f"Task-003 Phase 2: URL validation error for '{url}': {e}")
+        logger.debug(f"URL validation error for '{url}': {e}")
         return False
 
 
@@ -197,7 +197,7 @@ def detect_urls_in_text(text: str) -> List[Tuple[str, int, int]]:
 
         if is_valid_url(url):
             urls.append((url, start, end))
-            logger.debug(f"Task-003 Phase 2: Detected URL '{url}' at position {start}-{end}")
+            logger.debug(f"Detected URL '{url}' at position {start}-{end}")
 
     return urls
 
@@ -221,14 +221,14 @@ def _is_in_code_block(text: str, position: int) -> bool:
     inline_pattern = re.compile(CODE_BLOCK_PATTERNS['inline'])
     for match in inline_pattern.finditer(text):
         if match.start() <= position < match.end():
-            logger.debug(f"Task-003 Phase 2: Position {position} is in inline code block")
+            logger.debug(f"Position {position} is in inline code block")
             return True
 
     # Check fenced code blocks
     fenced_pattern = re.compile(CODE_BLOCK_PATTERNS['fenced'], re.DOTALL)
     for match in fenced_pattern.finditer(text):
         if match.start() <= position < match.end():
-            logger.debug(f"Task-003 Phase 2: Position {position} is in fenced code block")
+            logger.debug(f"Position {position} is in fenced code block")
             return True
 
     # Check indented code blocks (per line basis)
@@ -239,7 +239,7 @@ def _is_in_code_block(text: str, position: int) -> bool:
         if current_pos <= position < line_end:
             # Check if this line is indented code
             if re.match(CODE_BLOCK_PATTERNS['indented'], line):
-                logger.debug(f"Task-003 Phase 2: Position {position} is in indented code block")
+                logger.debug(f"Position {position} is in indented code block")
                 return True
             break
         current_pos = line_end + 1  # +1 for newline
@@ -271,7 +271,7 @@ def _is_existing_markdown_link(text: str, url_start: int) -> bool:
             # URL should be right after ](
             if search_start + bracket_pos + 2 == url_start or \
                search_start + bracket_pos + 2 == url_start - 1:
-                logger.debug(f"Task-003 Phase 2: URL at {url_start} is already a markdown link")
+                logger.debug(f"URL at {url_start} is already a markdown link")
                 return True
 
     return False
@@ -308,34 +308,34 @@ def replace_urls_with_markdown(text: str, preserve_code_blocks: bool = True) -> 
     urls = detect_urls_in_text(text)
 
     if not urls:
-        logger.debug("Task-003 Phase 2: No URLs detected in text")
+        logger.debug("No URLs detected in text")
         return text
 
-    logger.info(f"Task-003 Phase 2: Found {len(urls)} URL(s) to process")
+    logger.info(f"Found {len(urls)} URL(s) to process")
 
     # Process URLs in reverse order to maintain position accuracy
     result = text
     for url, start, end in reversed(urls):
         # Skip if in code block
         if preserve_code_blocks and _is_in_code_block(result, start):
-            logger.debug(f"Task-003 Phase 2: Skipping URL in code block: {url}")
+            logger.debug(f"Skipping URL in code block: {url}")
             continue
 
         # Skip if already a markdown link
         if _is_existing_markdown_link(result, start):
-            logger.debug(f"Task-003 Phase 2: Skipping existing markdown link: {url}")
+            logger.debug(f"Skipping existing markdown link: {url}")
             continue
 
         # Replace with markdown link
         markdown_link = format_url_as_markdown(url)
         result = result[:start] + markdown_link + result[end:]
-        logger.debug(f"Task-003 Phase 2: Replaced '{url}' with '{markdown_link}'")
+        logger.debug(f"Replaced '{url}' with '{markdown_link}'")
 
     return result
 
 
 # ================================================================================
-# Task-003 Phase 3: Dual URL Metadata Section Functions
+# Dual URL Metadata Section Functions
 # ================================================================================
 
 def format_dual_url_section(url_metadata: dict) -> str:
@@ -374,7 +374,7 @@ def format_dual_url_section(url_metadata: dict) -> str:
     """
     # Graceful degradation - return empty if no metadata
     if not url_metadata:
-        logger.debug("Task-003 Phase 3: No url_metadata provided, skipping dual URL section")
+        logger.debug("No url_metadata provided, skipping dual URL section")
         return ""
 
     # Extract URL fields
@@ -384,7 +384,7 @@ def format_dual_url_section(url_metadata: dict) -> str:
 
     # If both URLs are empty, skip section
     if not input_url and not final_url:
-        logger.warning("Task-003 Phase 3: Both input_url and final_url are empty")
+        logger.warning("Both input_url and final_url are empty")
         return ""
 
     # Format URLs as markdown links (with normalization)
@@ -404,7 +404,7 @@ def format_dual_url_section(url_metadata: dict) -> str:
     if not fetch_date:
         from datetime import datetime
         fetch_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        logger.debug(f"Task-003 Phase 3: Generated fetch_date: {fetch_date}")
+        logger.debug(f"Generated fetch_date: {fetch_date}")
 
     # Build the dual URL section with bilingual labels
     section = f"""
@@ -416,7 +416,7 @@ def format_dual_url_section(url_metadata: dict) -> str:
 ---
 """
 
-    logger.info("Task-003 Phase 3: Created dual URL section successfully")
+    logger.info("Created dual URL section successfully")
     return section
 
 
@@ -455,7 +455,7 @@ def insert_dual_url_section(markdown: str, url_metadata: dict) -> str:
     """
     # Graceful degradation - return original if no metadata
     if not url_metadata:
-        logger.debug("Task-003 Phase 3: No url_metadata, returning original markdown")
+        logger.debug("No url_metadata, returning original markdown")
         return markdown
 
     # Generate the dual URL section
@@ -463,7 +463,7 @@ def insert_dual_url_section(markdown: str, url_metadata: dict) -> str:
 
     # If section is empty (e.g., empty URLs), return original
     if not dual_url_section:
-        logger.debug("Task-003 Phase 3: Dual URL section is empty, returning original markdown")
+        logger.debug("Dual URL section is empty, returning original markdown")
         return markdown
 
     # Split markdown into lines for processing
@@ -475,17 +475,17 @@ def insert_dual_url_section(markdown: str, url_metadata: dict) -> str:
         stripped = line.strip()
         if stripped.startswith('# ') and len(stripped) > 2:
             title_index = i
-            logger.debug(f"Task-003 Phase 3: Found title at line {i}: {stripped[:50]}")
+            logger.debug(f"Found title at line {i}: {stripped[:50]}")
             break
 
     # Build enhanced markdown
     if title_index == -1:
         # No title found - insert section at beginning
-        logger.info("Task-003 Phase 3: No H1 title found, inserting at beginning")
+        logger.info("No H1 title found, inserting at beginning")
         result_lines = [dual_url_section.strip(), ''] + lines
     else:
         # Insert after title (with proper spacing)
-        logger.info(f"Task-003 Phase 3: Inserting dual URL section after title at line {title_index}")
+        logger.info(f"Inserting dual URL section after title at line {title_index}")
         result_lines = (
             lines[:title_index + 1] +     # Include title line
             [''] +                         # Blank line after title
@@ -500,15 +500,7 @@ def insert_dual_url_section(markdown: str, url_metadata: dict) -> str:
 
         result_lines.extend(lines[remaining_start:])
 
-    # Join lines back together - preserve original line break format
-    # Check if original markdown uses \n\n (paragraph breaks) or \n (line breaks)
-    if '\n\n' in markdown:
-        # Original uses paragraph breaks - preserve them by joining with single \n
-        # The split() has already separated at each line, including blank lines
-        enhanced_markdown = '\n'.join(result_lines)
-    else:
-        # Original uses single line breaks
-        enhanced_markdown = '\n'.join(result_lines)
+    enhanced_markdown = '\n'.join(result_lines)
 
-    logger.info("Task-003 Phase 3: Successfully inserted dual URL section")
+    logger.info("Successfully inserted dual URL section")
     return enhanced_markdown

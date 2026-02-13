@@ -49,15 +49,11 @@ class UnifiedErrorClassifier:
         """Initialize error detection patterns / 初始化错误检测模式"""
 
         # Permanent errors - never retry / 永久性错误 - 永不重试
+        # NOTE: SSL-specific patterns (UNSAFE_LEGACY_RENEGOTIATION_DISABLED etc.)
+        # are in SSL_CONFIG category which is checked first for Selenium fallback.
         self.patterns[ErrorType.PERMANENT] = [
-            # SSL/TLS errors / SSL/TLS 错误
-            r'UNSAFE_LEGACY_RENEGOTIATION_DISABLED',
+            # SSL/TLS errors (non-config) / SSL/TLS 错误（非配置类）
             r'CERTIFICATE_VERIFY_FAILED',
-            r'SSLV3_ALERT_HANDSHAKE_FAILURE',
-            r'SSL23_GET_SERVER_HELLO',
-            r'WRONG_VERSION_NUMBER',
-            r'TLSV1_ALERT_PROTOCOL_VERSION',
-            r'DH_KEY_TOO_SMALL',
             r'CERTIFICATE_EXPIRED',
 
             # Client errors / 客户端错误
@@ -244,17 +240,9 @@ class UnifiedErrorClassifier:
         """
         error_str = str(error)
 
-        # Check for specific SSL configuration issues / 检查特定的 SSL 配置问题
-        ssl_config_patterns = [
-            'UNSAFE_LEGACY_RENEGOTIATION_DISABLED',
-            'SSLV3_ALERT_HANDSHAKE_FAILURE',
-            'WRONG_VERSION_NUMBER',
-            'TLSV1_ALERT_PROTOCOL_VERSION',
-            'DH_KEY_TOO_SMALL'
-        ]
-
-        for pattern in ssl_config_patterns:
-            if pattern in error_str:
+        # Check for specific SSL configuration issues using compiled patterns
+        for pattern in self.compiled_patterns.get(ErrorType.SSL_CONFIG, []):
+            if pattern.search(error_str):
                 return ErrorClassification(
                     error_type=ErrorType.SSL_CONFIG,
                     should_retry=False,

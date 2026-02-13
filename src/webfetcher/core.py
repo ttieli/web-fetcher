@@ -173,25 +173,10 @@ except ImportError as e:
 
 
 # === EMBEDDED DOWNLOADER MODULE ===
-# SSL context for unverified connections
-ssl_context_unverified = ssl.create_default_context()
-ssl_context_unverified.check_hostname = False
-ssl_context_unverified.verify_mode = ssl.CERT_NONE
-# Allow legacy server connect for older SSL implementations
-try:
-    ssl_context_unverified.options |= ssl.OP_LEGACY_SERVER_CONNECT
-except AttributeError:
-    pass  # Option might not be available in older OpenSSL versions
+# NOTE: ssl_context_unverified is defined below (after FallbackHTMLParser) as module-level singleton
 
 # Initialize error classifier (Task 7 Phase 1)
 error_classifier = UnifiedErrorClassifier() if ERROR_CLASSIFIER_AVAILABLE else None
-
-
-def sanitize_filename(name: str) -> str:
-    invalid = set('/\\:*?"<>|\n\r\t')
-    name = ''.join(ch if ch not in invalid else ' ' for ch in name)
-    name = re.sub(r"\s+", " ", name).strip()
-    return name[:160]
 
 
 class SimpleDownloader:
@@ -2630,7 +2615,7 @@ def detect_page_type(html: str, url: Optional[str] = None, is_crawling: bool = F
     )
     
     # 调试信息（可选）
-    print(f"[DEBUG] Links - Total: {len(all_links)}, Content: {len(content_links)}, Anchor: {len(anchor_links)}")
+    logging.debug(f"Links - Total: {len(all_links)}, Content: {len(content_links)}, Anchor: {len(anchor_links)}")
     logging.debug(f"Page type detection - Links: {len(content_links)}, "
                  f"Density: {link_density:.2f}, "
                  f"List containers: {list_container_count}, "
@@ -4692,7 +4677,9 @@ def main():
     # Task-002 Phase 1: Force Chrome mode flag
     ap.add_argument('--force-chrome', action='store_true',
                     help='Skip Chrome health check (use when Chrome is known to be running)')
-    
+    ap.add_argument('--stdout', action='store_true',
+                    help='Print markdown content to stdout instead of writing to file')
+
     args = ap.parse_args()
     
     # Handle shortcuts for fetch modes
@@ -4729,7 +4716,8 @@ def main():
     # Validate and encode URL for proper Unicode handling
     url = validate_and_encode_url(args.url)
     outdir = Path(args.outdir)
-    outdir.mkdir(parents=True, exist_ok=True)
+    if not args.stdout:
+        outdir.mkdir(parents=True, exist_ok=True)
 
     # Detect file:// URLs and convert to --html mode
     is_file_url = url.startswith('file://')
@@ -4876,6 +4864,10 @@ def main():
             # Task-003 Phase 3: Enhance markdown with dual URL section
             md = insert_dual_url_section(md, crawl_url_metadata)
 
+            if args.stdout:
+                print(md)
+                return
+
             # Write markdown file if requested
             if output_markdown:
                 path.write_text(md, encoding='utf-8')
@@ -4990,12 +4982,14 @@ def main():
                     # Generate failure report
                     timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
                     failure_filename = get_failure_filename(timestamp, url)
-                    failure_path = outdir / f"{failure_filename}.md"
-
                     failure_md = generate_failure_markdown(url, fetch_metrics, None)
-                    failure_path.write_text(failure_md, encoding='utf-8')
-                    logging.info(f"Failure report saved: {failure_path}")
-                    print(str(failure_path))
+                    if args.stdout:
+                        print(failure_md)
+                    else:
+                        failure_path = outdir / f"{failure_filename}.md"
+                        failure_path.write_text(failure_md, encoding='utf-8')
+                        logging.info(f"Failure report saved: {failure_path}")
+                        print(str(failure_path))
                     sys.exit(1)
 
             except (ChromeConnectionError, SeleniumNotAvailableError, SeleniumFetchError, SeleniumTimeoutError) as e:
@@ -5007,7 +5001,6 @@ def main():
                 # Phase 2: Generate failure report instead of exiting immediately
                 timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
                 failure_filename = get_failure_filename(timestamp, url)
-                failure_path = outdir / f"{failure_filename}.md"
 
                 # Create minimal FetchMetrics for failure report
                 failure_metrics = FetchMetrics(
@@ -5017,9 +5010,13 @@ def main():
                 )
 
                 failure_md = generate_failure_markdown(url, failure_metrics, e)
-                failure_path.write_text(failure_md, encoding='utf-8')
-                logging.info(f"Failure report saved: {failure_path}")
-                print(str(failure_path))
+                if args.stdout:
+                    print(failure_md)
+                else:
+                    failure_path = outdir / f"{failure_filename}.md"
+                    failure_path.write_text(failure_md, encoding='utf-8')
+                    logging.info(f"Failure report saved: {failure_path}")
+                    print(str(failure_path))
                 sys.exit(1)
 
             except Exception as e:
@@ -5030,7 +5027,6 @@ def main():
                 # Generate failure report
                 timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
                 failure_filename = get_failure_filename(timestamp, url)
-                failure_path = outdir / f"{failure_filename}.md"
 
                 # Create minimal FetchMetrics for failure report
                 failure_metrics = FetchMetrics(
@@ -5040,18 +5036,23 @@ def main():
                 )
 
                 failure_md = generate_failure_markdown(url, failure_metrics, e)
-                failure_path.write_text(failure_md, encoding='utf-8')
-                logging.info(f"Failure report saved: {failure_path}")
-                print(str(failure_path))
+                if args.stdout:
+                    print(failure_md)
+                else:
+                    failure_path = outdir / f"{failure_filename}.md"
+                    failure_path.write_text(failure_md, encoding='utf-8')
+                    logging.info(f"Failure report saved: {failure_path}")
+                    print(str(failure_path))
                 sys.exit(1)
 
     # Try to download file if it's a downloadable type
-    downloader = SimpleDownloader()
-    if downloader.try_download(url, ua, args.timeout, args.outdir):
-        return  # Exit early, skip HTML processing for binary files
+    if not getattr(args, 'stdout', False):
+        downloader = SimpleDownloader()
+        if downloader.try_download(url, ua, args.timeout, args.outdir):
+            return  # Exit early, skip HTML processing for binary files
 
     # Optionally save HTML snapshot before parsing
-    if args.save_html:
+    if args.save_html and not args.stdout:
         if args.save_html is True:
             ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
             host_safe = (urllib.parse.urlparse(url).hostname or 'page').replace(':','_')
@@ -5114,6 +5115,10 @@ def main():
     # Task-003 Phase 3: Enhance markdown with dual URL section
     # url_metadata should be available from fetch_html() call
     md = insert_dual_url_section(md, url_metadata)
+
+    if args.stdout:
+        print(md)
+        return
 
     # Determine output formats needed
     output_markdown, output_html = determine_output_format(args, url)
