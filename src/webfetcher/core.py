@@ -411,8 +411,8 @@ def validate_and_encode_url(url: str) -> str:
         'https://zh.wikipedia.org/wiki/%E4%B8%AD%E6%96%87'
         >>> validate_and_encode_url('https://example.com/path with spaces')
         'https://example.com/path%20with%20spaces'
-        >>> validate_and_encode_url('file:///Users/name/file.html')
-        'file:///Users/name/file.html'
+        >>> validate_and_encode_url('file:///tmp/file.html')
+        'file:///tmp/file.html'
     """
     if not url or not isinstance(url, str):
         raise ValueError("URL must be a non-empty string")
