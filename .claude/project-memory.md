@@ -2,6 +2,56 @@
 
 ## 会话记录
 
+### 2026-02-13 23:52:18 (会话ID: 9yem)
+
+#### ✅ 完成
+
+- **trafilatura 替代 CSS 选择器堆砌** — 通用解析器重构
+  - `pyproject.toml`: 添加 `trafilatura>=2.0.0` 依赖
+  - `generic.yaml`: 从 685 行精简到 96 行，删除 50+ 内容选择器和无代码消费段（cms_patterns, post_process, exclude_patterns, quality, strategies, performance, output）
+  - `templates.py:generic_to_markdown()`: 三级 fallback — site 模板 → trafilatura `bare_extraction(as_dict=True)` → legacy
+  - 提取 `_build_generic_output()` 公共 helper 消除重复
+  - 注意：trafilatura 2.0 `bare_extraction` 默认返回 Document 对象而非 dict，需 `as_dict=True`
+
+- **开源就绪修复**
+  - 新增 MIT LICENSE 文件（与 pyproject.toml 声明一致）
+  - `core.py:414-415` docstring 示例路径 `/Users/name/` → `/tmp/`
+  - `tests/compare_urllib_cdp.py:316` 默认路径改为 `./output`
+  - 开源扫描 Verdict: PASS ✓（0 issues）
+
+- **WeChat 反爬检测 + CDP 自动回退**
+  - 新增 `AntiBotDetectedError` 异常类
+  - `_detect_wechat_antibot()`: 检测"环境异常"反爬页和无 `js_content` 的 JS 渲染页
+  - `core.py` 解析阶段捕获异常 → 自动 CDP 重新采集（wait_time=5s）
+  - `parser.py` 透传 `AntiBotDetectedError`
+
+- **WeChat 图集文章图片提取**
+  - `_extract_wechat_gallery_images()`: 从 `<div data-src>` 和 CSS `background-image` 提取 mmbiz 图片
+  - `wechat_to_markdown()` 将图片嵌入 markdown 输出
+
+- **WeChat 输出格式清理**
+  - `_clean_wechat_content()`: 过滤赞赏弹窗、数字键盘、重复标题等 UI 噪音
+  - 图集文章（`js_image_content`）丢弃无意义文本，只保留图片
+  - 无发布时间时不输出空行
+
+#### 📋 计划
+
+（无）
+
+#### ⏸️ 未完成
+
+（无）
+
+#### ⚠️ 问题
+
+- WeChat 图集文章"作者"字段实际提取到的是地区标签（如"辽宁"），非真实作者名。属于数据源限制。
+- WeChat 反爬拦截是间歇性的，同一 URL 有时 urllib 能通过有时不行。
+
+#### 💡 备注
+
+- 修改文件：`pyproject.toml`, `generic.yaml`, `templates.py`, `core.py`, `parser.py`, `LICENSE`, `tests/compare_urllib_cdp.py`
+- 4 个 commit: c172f7a, 5e32c0f, 65e5a9e, fc7c95e — 全部已推送到 GitHub
+
 ### 2026-02-10 10:17:04 (会话ID: jdn1)
 
 #### ✅ 完成
