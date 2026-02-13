@@ -57,11 +57,12 @@ class TextPatternStrategy(ExtractionStrategy):
         """
         super().__init__()
         self.default_flags = flags
+        self._pattern_cache: dict = {}
         logger.debug(f"TextPatternStrategy initialized with flags: {flags}")
 
     def _compile_pattern(self, pattern: str, flags: Optional[int] = None) -> Pattern:
         """
-        Compile regex pattern with flags.
+        Compile regex pattern with flags (cached).
 
         Args:
             pattern: Regular expression pattern
@@ -75,8 +76,10 @@ class TextPatternStrategy(ExtractionStrategy):
         """
         try:
             use_flags = flags if flags is not None else self.default_flags
-            compiled = re.compile(pattern, use_flags)
-            return compiled
+            cache_key = (pattern, use_flags)
+            if cache_key not in self._pattern_cache:
+                self._pattern_cache[cache_key] = re.compile(pattern, use_flags)
+            return self._pattern_cache[cache_key]
 
         except re.error as e:
             logger.error(f"Invalid regex pattern '{pattern}': {e}")
@@ -379,9 +382,7 @@ class TextPatternStrategy(ExtractionStrategy):
 
     def validate_selector(self, selector: str) -> bool:
         """
-        Validate regex pattern syntax.
-
-        Performs basic validation by attempting to compile the pattern.
+        Validate regex pattern syntax (uses cached compilation).
 
         Args:
             selector: Regular expression pattern to validate
@@ -393,11 +394,10 @@ class TextPatternStrategy(ExtractionStrategy):
             return False
 
         try:
-            # Try to compile the pattern
-            re.compile(selector)
+            self._compile_pattern(selector)
             return True
 
-        except re.error as e:
+        except (re.error, SelectionError) as e:
             logger.warning(f"Invalid regex pattern '{selector}': {e}")
             return False
 

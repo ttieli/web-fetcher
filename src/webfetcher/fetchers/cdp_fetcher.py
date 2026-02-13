@@ -149,7 +149,7 @@ class CDPFetcher:
 
         if url:
             tab.Page.navigate(url=url)
-            time.sleep(2)  # 等待页面加载
+            self._wait_for_ready(tab, timeout=10)
 
         self.current_tab = tab
         logger.info(f"✓ Created/attached to tab{': ' + url if url else ''}")
@@ -188,9 +188,8 @@ class CDPFetcher:
             else:
                 tab = self.new_tab(url)
 
-            # 等待页面加载
-            logger.info(f"Waiting {wait_time}s for page to load...")
-            time.sleep(wait_time)
+            # 等待页面加载（智能轮询 readyState）
+            self._wait_for_ready(tab, timeout=wait_time)
 
             # 获取渲染后的HTML
             html = self._get_html(tab)
@@ -229,6 +228,27 @@ class CDPFetcher:
                 error=error_msg,
                 duration=duration
             )
+
+    def _wait_for_ready(self, tab, timeout: float = 10, poll_interval: float = 0.3):
+        """
+        等待页面加载完成（轮询 document.readyState）
+
+        Args:
+            tab: CDP tab object
+            timeout: 最大等待时间（秒）
+            poll_interval: 轮询间隔（秒）
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                state = self._eval_js(tab, "document.readyState")
+                if state == "complete":
+                    logger.debug(f"Page ready in {timeout - (deadline - time.time()):.1f}s")
+                    return
+            except Exception:
+                pass
+            time.sleep(poll_interval)
+        logger.debug(f"Page load timeout after {timeout}s, proceeding anyway")
 
     def _get_html(self, tab) -> str:
         """获取渲染后的完整HTML"""

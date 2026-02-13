@@ -18,6 +18,16 @@ import warnings
 # Suppress SyntaxWarning from parser_engine docstrings
 warnings.filterwarnings('ignore', category=SyntaxWarning)
 
+# Pre-compiled URL patterns for extract_url_from_text()
+_CLEAN_URL_RE = re.compile(r'^https?://[^\s]+$')
+_URL_EXTRACT_PATTERNS = [
+    re.compile(r'(https?://mp\.weixin\.qq\.com/s/[^\s\u4e00-\u9fff]+)', re.IGNORECASE),
+    re.compile(r'(mp\.weixin\.qq\.com/s/[^\s\u4e00-\u9fff]+)', re.IGNORECASE),
+    re.compile(r'(?:^|\s)((?:xhslink|t|dwz|url|c|6|bit|tinyurl)\.(?:com|cn|co|ly|me)/[^\s\u4e00-\u9fff]+)', re.IGNORECASE),
+    re.compile(r'https?://[^\s"\']+', re.IGNORECASE),
+]
+_TRAILING_PUNCT_RE = re.compile(r'[,!?。，！？、）)】」』》\uff09]+$')
+
 # Import ChromeDriver version management
 try:
     from webfetcher.drivers import check_chrome_driver_compatibility
@@ -229,28 +239,16 @@ def extract_url_from_text(text: str) -> tuple:
         ('http://example.com', False)
     """
     # If input is already a clean URL, return as-is
-    clean_url_pattern = r'^https?://[^\s]+$'
-    if re.match(clean_url_pattern, text.strip()):
+    if _CLEAN_URL_RE.match(text.strip()):
         return text.strip(), False
 
-    # Comprehensive URL extraction patterns for Chinese social media
-    url_patterns = [
-        # WeChat article links (high priority for business use)
-        r'(https?://mp\.weixin\.qq\.com/s/[^\s\u4e00-\u9fff]+)',
-        r'(mp\.weixin\.qq\.com/s/[^\s\u4e00-\u9fff]+)',
-        # Specific short-link domains
-        r'(?:^|\s)((?:xhslink|t|dwz|url|c|6|bit|tinyurl)\.(?:com|cn|co|ly|me)/[^\s\u4e00-\u9fff]+)',
-        # Standard URLs LAST (most generic)
-        r'https?://[^\s"\']+',
-    ]
-
-    for pattern in url_patterns:
-        matches = re.findall(pattern, text, re.IGNORECASE)
+    for pattern in _URL_EXTRACT_PATTERNS:
+        matches = pattern.findall(text)
         if matches:
             # Extract first URL found
             url = matches[0] if isinstance(matches[0], str) else matches[0][0]
             # Remove trailing Chinese/English punctuation
-            url = re.sub(r'[,!?。，！？、）)】」』》\uff09]+$', '', url)
+            url = _TRAILING_PUNCT_RE.sub('', url)
             # Add protocol if missing
             if not url.startswith('http'):
                 url = 'https://' + url

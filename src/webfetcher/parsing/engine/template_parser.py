@@ -581,6 +581,9 @@ class TemplateParser(BaseParser):
         if not selectors:
             return None
 
+        # Parse HTML once before iterating selectors
+        soup = BeautifulSoup(content, 'html.parser')
+
         for selector, strategy_type, options in selectors:
             try:
                 # Currently only CSS strategy is supported for HTML extraction
@@ -588,9 +591,6 @@ class TemplateParser(BaseParser):
                 if strategy_type != 'css':
                     self.logger.debug(f"HTML extraction only supports CSS selectors, got: {strategy_type}")
                     continue
-
-                # Parse HTML
-                soup = BeautifulSoup(content, 'html.parser')
 
                 # Check if multiple matches are requested
                 if options.get('multiple'):
@@ -649,12 +649,11 @@ class TemplateParser(BaseParser):
                 if data_src and not img.get('src'):
                     img['src'] = data_src
 
-            preprocessed_content = str(soup)
         except Exception as e:
             self.logger.debug(f"HTML preprocessing failed in _extract_list: {e}")
-            preprocessed_content = content
+            soup = BeautifulSoup(content, 'html.parser')
 
-        # Process each configuration item
+        # Process each configuration item (reuse preprocessed soup)
         for selector, strategy_type, options in selectors:
             attribute = options.get('attribute')
             validation = options.get('validation', {})
@@ -663,10 +662,7 @@ class TemplateParser(BaseParser):
                 continue
 
             try:
-                # Parse preprocessed HTML
-                soup = BeautifulSoup(preprocessed_content, 'html.parser')
-
-                # Find all matching elements
+                # Find all matching elements (reuse preprocessed soup directly)
                 # List extraction inherently implies multiple matches, so we always use select()
                 elements = soup.select(selector)
 
