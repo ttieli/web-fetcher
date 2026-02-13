@@ -226,6 +226,52 @@ def xhs_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[str
         return legacy_xhs_parser(html, url)
 
 
+def _clean_wechat_content(content: str, title: str = '') -> str:
+    """Remove WeChat UI noise from converted markdown content.
+
+    Strips: duplicate title, reward dialog text, number pad digits,
+    share/close buttons, and other non-article elements.
+    """
+    if not content:
+        return content
+
+    lines = content.split('\n')
+    cleaned: list[str] = []
+
+    # Noise patterns (exact match or substring)
+    _noise_exact = {
+        '关闭 __', '****', '更多 __', '__', '名称已清空',
+        '确定', '返回 __', '¥', '.', '文章', '暂无文章',
+    }
+    _noise_substr = [
+        '微信扫一扫', '赞赏作者', '喜欢作者', '其它金额', '赞赏金额',
+        '最低赞赏', '赞赏后展示', 'javascript:',
+    ]
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            cleaned.append(line)
+            continue
+        # Skip duplicate title (heading that matches the title)
+        if stripped.lstrip('#').strip() == title.strip():
+            continue
+        # Skip single digit/dot (number pad)
+        if stripped in set('0123456789.'):
+            continue
+        # Skip exact noise
+        if stripped in _noise_exact:
+            continue
+        # Skip substring noise
+        if any(ns in stripped for ns in _noise_substr):
+            continue
+        cleaned.append(line)
+
+    # Collapse excessive blank lines
+    result = re.sub(r'\n{3,}', '\n\n', '\n'.join(cleaned))
+    return result.strip()
+
+
 def _extract_wechat_gallery_images(html: str) -> list[str]:
     """Extract images from WeChat image-set articles (图集模式).
 
@@ -315,11 +361,20 @@ def wechat_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[
 
         # WeChat image-set articles store images in <div data-src> and
         # <li style="background-image:url(...)"> instead of <img> tags.
-        # Fallback extraction when TemplateParser finds no images.
+        is_gallery = 'js_image_content' in html
         if not images:
             images = _extract_wechat_gallery_images(html)
             if images:
+                is_gallery = True
                 logger.info(f"Extracted {len(images)} images from WeChat gallery format")
+
+        # Clean content: remove WeChat UI noise (赞赏弹窗, 数字键盘, etc.)
+        content = result.content or ''
+        content = _clean_wechat_content(content, title)
+
+        # For gallery articles, text content is just UI noise — discard it
+        if is_gallery and images:
+            content = ''
 
         # Parse date
         date_only, date_time = parse_date_like(publish_time)
@@ -329,14 +384,12 @@ def wechat_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[
         meta = [f"- 标题: {title}"]
         if author:
             meta.append(f"- 作者: {author}")
+        if publish_time:
+            meta.append(f"- 发布时间: {date_time}")
         meta += [
-            f"- 发布时间: {date_time}",
             f"- 来源: [{url}]({url})",
             f"- 抓取时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         ]
-
-        # Combine header and content
-        content = result.content or ''
         lines += meta
 
         if content.strip():
@@ -344,8 +397,7 @@ def wechat_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[
             lines.append(content)
 
         # Embed images that aren't already in the converted content
-        content_has_images = '![' in content if content else False
-        if images and not content_has_images:
+        if images and (not content or '![' not in content):
             lines.append("")
             for img_url in images:
                 lines.append(f"![]({normalize_media_url(img_url, url)})")
@@ -359,7 +411,7 @@ def wechat_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[
             'publish_time': publish_time
         }
 
-        logger.info(f"Phase 3.3: Successfully parsed WeChat article using template engine")
+        logger.info(f"Successfully parsed WeChat article using template engine")
         return date_only, markdown_content, metadata
 
     except Exception as e:
