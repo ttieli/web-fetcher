@@ -275,11 +275,7 @@ def wechat_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[
 
 def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_crawling: bool = False, url_metadata: dict = None) -> tuple[str, str, dict]:
     """
-    Generic parser - Template-based implementation
-
-    Phase 3.1: Framework with TODO markers
-    Phase 3.3: Implement template-based generic parsing
-    Phase 3.5 (Task-4): Added template-based parsing with fallback to legacy
+    Generic parser — site templates first, then trafilatura for content extraction.
 
     Args:
         html: HTML content of the page
@@ -291,86 +287,124 @@ def generic_to_markdown(html: str, url: str, filter_level: str = 'safe', is_craw
     Returns:
         tuple: (date_only, markdown_content, metadata)
     """
+    from .engine.template_parser import TemplateParser
+    import os
+
+    # --- Step 1: TemplateParser for metadata (and site-specific content) ---
+    template_dir = os.path.join(os.path.dirname(__file__), 'engine', 'templates')
+    parser = TemplateParser(template_dir=template_dir)
+    parser.reload_templates()
+
+    tp_title = ''
+    tp_author = ''
+    tp_date = ''
+    tp_content = ''
+    tp_images: list = []
+    template_name = ''
+    is_generic_template = True
+
     try:
-        # Phase 3.5: Try template-based parsing first
-        from .engine.template_parser import TemplateParser
-        from .engine.template_loader import TemplateLoader
-        import os
-
-        # Initialize template parser
-        template_dir = os.path.join(
-            os.path.dirname(__file__),
-            'engine', 'templates'
-        )
-        parser = TemplateParser(template_dir=template_dir)
-        parser.reload_templates()  # Force reload to get updated generic.yaml v2.1.0
-
-        # Parse using template engine (will auto-select based on URL domain)
         result = parser.parse(html, url)
-
-        if not result.success:
-            # Template parsing failed or no template found, use legacy
-            raise Exception(f"Template parsing failed: {result.errors}")
-
-        # Template parsing succeeded
-        logger.info(f"Phase 3.5: Successfully parsed using template '{result.template_name}' for {url}")
-
-        # Extract parsed data
-        title = result.title or "未命名"
-        author = result.metadata.get('author', 'Wikipedia contributors')
-        publish_time = result.metadata.get('date', '')
-        images = result.metadata.get('images', [])
-        content = result.content or ''
-
-        # Parse date
-        date_only, date_time = parse_date_like(publish_time)
-
-        # Format markdown output
-        lines = [f"# {title}"]
-        meta = [f"- 标题: {title}"]
-        if author:
-            meta.append(f"- 作者: {author}")
-        if publish_time:
-            meta.append(f"- 发布时间: {date_time}")
-        meta += [
-            f"- 来源: {url}",
-            f"- 抓取时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        ]
-
-        # Add metadata section
-        lines += meta
-
-        # Add main content
-        if content:
-            lines += ["", content]
-
-        # Add images section if images exist AND not already in content
-        # Check if content already contains images (news articles with inline images)
-        content_has_images = content and '![' in content if content else False
-
-        if images and not content_has_images:
-            # Only add separate image section for posts where images are separate from content
-            # (e.g., XiaoHongShu posts, not news articles with inline images)
-            lines += ["", "## 图片", ""] + [f"![]({normalize_media_url(u, url)})" for u in images]
-
-        # Combine into markdown
-        markdown_content = "\n\n".join(lines).strip() + "\n"
-
-        # Build metadata dictionary
-        metadata = {
-            'author': author,
-            'images': [normalize_media_url(u, url) for u in images],
-            'publish_time': publish_time,
-            'template_used': result.template_name
-        }
-
-        return date_only, markdown_content, metadata
-
+        if result.success:
+            template_name = result.template_name or ''
+            is_generic_template = 'generic' in template_name.lower()
+            tp_title = result.title or ''
+            tp_author = result.metadata.get('author', '')
+            tp_date = result.metadata.get('date', '')
+            tp_images = result.metadata.get('images', [])
+            tp_content = result.content or ''
+            logger.info(f"TemplateParser matched '{template_name}' for {url}")
     except Exception as e:
-        # Fallback to legacy implementation if template parsing fails
-        logger.warning(f"Template-based Generic parser failed: {e}, using legacy parser")
+        logger.debug(f"TemplateParser failed: {e}")
+
+    # If a site-specific template produced content, use it directly
+    if not is_generic_template and tp_content.strip():
+        return _build_generic_output(
+            title=tp_title, author=tp_author, publish_time=tp_date,
+            content=tp_content, images=tp_images, url=url,
+            template_name=template_name,
+        )
+
+    # --- Step 2: trafilatura for content extraction ---
+    content = ''
+    traf_title = ''
+    traf_author = ''
+    traf_date = ''
+
+    try:
+        from trafilatura import bare_extraction
+        extracted = bare_extraction(
+            html, url=url,
+            include_tables=True, include_links=True,
+            include_images=True, include_formatting=True,
+            favor_precision=False, as_dict=True,
+        )
+        if extracted:
+            traf_title = extracted.get('title') or ''
+            traf_author = extracted.get('author') or ''
+            traf_date = extracted.get('date') or ''
+            raw_text = extracted.get('text') or ''
+            if raw_text:
+                content = raw_text
+                logger.info(f"trafilatura extracted {len(content)} chars for {url}")
+    except Exception as e:
+        logger.warning(f"trafilatura extraction failed: {e}")
+
+    # Merge: prefer TemplateParser metadata, fill gaps with trafilatura
+    title = tp_title or traf_title or '未命名'
+    author = tp_author or traf_author
+    publish_time = tp_date or traf_date
+
+    # If trafilatura also failed, fall back to legacy
+    if not content.strip():
+        logger.warning(f"trafilatura returned empty content for {url}, falling back to legacy")
         from webfetcher.parsing.legacy import generic_to_markdown as legacy_generic_parser
         return legacy_generic_parser(html, url, filter_level, is_crawling)
+
+    return _build_generic_output(
+        title=title, author=author, publish_time=publish_time,
+        content=content, images=tp_images, url=url,
+        template_name=template_name or 'trafilatura',
+    )
+
+
+def _build_generic_output(
+    *, title: str, author: str, publish_time: str,
+    content: str, images: list, url: str, template_name: str,
+) -> tuple[str, str, dict]:
+    """Format the standard (date_only, markdown, metadata) output tuple."""
+    title = title or '未命名'
+    date_only, date_time = parse_date_like(publish_time)
+
+    lines = [f"# {title}"]
+    meta = [f"- 标题: {title}"]
+    if author:
+        meta.append(f"- 作者: {author}")
+    if publish_time:
+        meta.append(f"- 发布时间: {date_time}")
+    meta += [
+        f"- 来源: {url}",
+        f"- 抓取时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+    ]
+    lines += meta
+
+    if content:
+        lines += ["", content]
+
+    # Only add separate images if content doesn't already include them
+    if images and (not content or '![' not in content):
+        lines += ["", "## 图片", ""] + [f"![]({normalize_media_url(u, url)})" for u in images]
+
+    markdown_content = "\n\n".join(lines).strip() + "\n"
+
+    metadata = {
+        'author': author,
+        'images': [normalize_media_url(u, url) for u in images],
+        'publish_time': publish_time,
+        'template_used': template_name,
+    }
+
+    return date_only, markdown_content, metadata
 
 
 # ============================================================================
