@@ -34,8 +34,8 @@ import time
 import random
 import signal
 from collections import deque
-import xml.etree.ElementTree as ET  # Task-008 Phase 2: Sitemap parsing
-import gzip  # Task-008 Phase 2: Gzipped sitemap support
+import xml.etree.ElementTree as ET
+import gzip
 
 # Selenium integration (Phase 2) - graceful degradation when not available
 try:
@@ -145,7 +145,7 @@ from webfetcher.parsing.parser import (
     generic_to_markdown
 )
 
-# Task-003 Phase 3: URL Formatter Module
+# URL Formatter Module
 from webfetcher.utils.url_formatter import insert_dual_url_section
 
 # Error handler integration (Task 1 Phase 2)
@@ -1008,7 +1008,6 @@ def ensure_chrome_debug(config: Optional[Dict[str, Any]] = None, force_mode: boo
 
     Phase 1: Core Integration - Chrome auto-launch before Selenium initialization.
     Phase 2: Enhanced error handling with specific exceptions and user-friendly messages.
-    Task-002 Phase 1: Add force_mode parameter for quick Chrome port check.
 
     This function integrates the existing Chrome debug health check and launch scripts
     with enhanced error reporting.
@@ -1038,7 +1037,7 @@ def ensure_chrome_debug(config: Optional[Dict[str, Any]] = None, force_mode: boo
     import subprocess
     import os
 
-    # Task-002 Phase 1: Read timeout from environment variable, config, or default
+  
     try:
         timeout = int(os.environ.get('WF_CHROME_TIMEOUT',
                                      config.get('chrome', {}).get('health_check_timeout', 30) if config else 30))
@@ -1051,7 +1050,7 @@ def ensure_chrome_debug(config: Optional[Dict[str, Any]] = None, force_mode: boo
         logging.warning("Invalid WF_CHROME_TIMEOUT value, using default 30 seconds")
         timeout = 30
 
-    # Task-002 Phase 1: Force mode - quick port check only
+  
     if force_mode:
         logging.info("Force mode enabled - skipping full health check")
         # Quick port check only
@@ -1082,7 +1081,7 @@ def ensure_chrome_debug(config: Optional[Dict[str, Any]] = None, force_mode: boo
             guidance=ChromeErrorMessages.get_message('launch_failed', error_details=error_msg)
         )
 
-    # Task-002 Phase 1 Stage 1.3: Quick session reuse - check for existing Chrome session
+  
     def quick_chrome_check(port=9222):
         """
         Quick check if Chrome debug session is already running and healthy.
@@ -1116,7 +1115,7 @@ def ensure_chrome_debug(config: Optional[Dict[str, Any]] = None, force_mode: boo
             [ensure_script],
             capture_output=True,
             text=True,
-            timeout=timeout  # Task-002 Phase 1: Use dynamic timeout from environment/config
+            timeout=timeout
         )
 
         # Parse return code and raise specific exceptions
@@ -1270,7 +1269,7 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
         fetch_mode: 'auto' (urllib->cdp->selenium), 'urllib' (urllib only),
                    'cdp' (cdp only), 'selenium' (selenium only)
         force_chrome: Skip Chrome health check (for faster fallback)
-        input_url: Original URL as provided by user (for metadata tracking, Task-003 Phase 1)
+        input_url: Original URL as provided by user 
 
     Returns:
         tuple[str, FetchMetrics, dict]: (html_content, fetch_metrics, url_metadata)
@@ -1343,7 +1342,7 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
             
             # Call the original fetch_html function and track metrics
             html, fetch_metrics, final_url = fetch_html_original(url, ua, timeout)
-            logging.debug(f"Task-003: Received final_url from fetch_html_original: {final_url}")
+            
 
             # Merge metrics from original fetch
             metrics.fetch_duration = time.time() - start_time
@@ -1352,13 +1351,13 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
                 metrics.fallback_method = fetch_metrics.fallback_method
             metrics.final_status = "success"
 
-            # Task-003 Phase 1: Create URL metadata
+          
             url_metadata = create_url_metadata(
                 input_url=input_url or url,  # Use preserved input_url if provided
                 final_url=final_url,
                 fetch_mode='urllib'
             )
-            logging.debug(f"Task-003: Created URL metadata: {url_metadata}")
+            
 
             return html, metrics, url_metadata
             
@@ -1608,7 +1607,7 @@ def _try_selenium_fetch(url: str, ua: Optional[str], timeout: int, metrics: Fetc
         timeout: Timeout in seconds
         metrics: FetchMetrics object to update
         start_time: Start time for duration calculation
-        input_url: Original URL as provided by user (for metadata tracking, Task-003 Phase 1)
+        input_url: Original URL as provided by user 
 
     Returns:
         tuple[str, FetchMetrics, dict]: (html_content, updated_metrics, url_metadata)
@@ -1642,7 +1641,7 @@ def _try_selenium_fetch(url: str, ua: Optional[str], timeout: int, metrics: Fetc
             raise SeleniumNotAvailableError(error_msg)
 
         # Phase 1 & 2: Ensure Chrome debug session is running with enhanced error handling
-        # Task-002 Phase 1: Pass force_chrome flag to skip full health check
+      
         logging.info("Checking Chrome debug session health...")
         try:
             chrome_ok, chrome_message = ensure_chrome_debug(config._config, force_mode=force_chrome)
@@ -1715,7 +1714,7 @@ def _try_selenium_fetch(url: str, ua: Optional[str], timeout: int, metrics: Fetc
             metrics.chrome_connected = selenium_metrics.chrome_connected
             metrics.js_detection_used = selenium_metrics.js_detection_used
 
-            # Task-003 Phase 1: Create URL metadata for Selenium fetch
+          
             selenium_final_url = selenium_metrics.final_url if hasattr(selenium_metrics, 'final_url') and selenium_metrics.final_url else url
             url_metadata = create_url_metadata(
                 input_url=input_url or url,
@@ -1744,7 +1743,7 @@ def _try_manual_chrome_fallback(url: str, metrics: FetchMetrics, start_time: flo
     """
     Try manual Chrome hybrid fallback as last resort after all automated methods fail.
 
-    This function implements Task-000: Manual Chrome Hybrid Integration.
+    Manual Chrome Hybrid Integration.
     It should only be called after BOTH urllib and Selenium have failed.
 
     The manual Chrome approach works by:
@@ -1765,7 +1764,7 @@ def _try_manual_chrome_fallback(url: str, metrics: FetchMetrics, start_time: flo
         tuple[str, FetchMetrics]: (html_content, updated_metrics)
                                   Returns empty string if manual Chrome fails or is disabled
     """
-    # Task-003 Phase 1: Create fallback url_metadata
+  
     url_metadata = create_url_metadata(
         input_url=input_url or url,
         final_url=url,
@@ -1860,7 +1859,7 @@ def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], tim
         start_time: Start time for duration calculation
         urllib_error: Error message from urllib failure
         input_url: Original URL as provided by user (for metadata tracking)
-        force_chrome: Skip health check and use Chrome immediately (Task-002 Phase 1)
+        force_chrome: Skip health check and use Chrome immediately
 
     Returns:
         tuple[str, FetchMetrics, dict]: (html_content, updated_metrics, url_metadata)
@@ -1886,7 +1885,7 @@ def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], tim
             return _try_manual_chrome_fallback(url, metrics, start_time, error_msg, input_url)
 
         # Phase 1 & 2: Ensure Chrome debug session is running with enhanced error handling
-        # Task-002 Phase 1: Pass force_chrome flag to skip full health check
+      
         logging.info("Checking Chrome debug session health for fallback...")
         try:
             chrome_ok, chrome_message = ensure_chrome_debug(config._config, force_mode=force_chrome)
@@ -1925,7 +1924,7 @@ def _try_selenium_fallback_after_urllib_failure(url: str, ua: Optional[str], tim
             metrics.chrome_connected = selenium_metrics.chrome_connected
             metrics.js_detection_used = selenium_metrics.js_detection_used
 
-            # Task-003 Phase 1: Create URL metadata for successful Selenium fallback
+          
             selenium_final_url = selenium_metrics.final_url if hasattr(selenium_metrics, 'final_url') and selenium_metrics.final_url else url
             url_metadata = create_url_metadata(
                 input_url=input_url or url,
@@ -2129,9 +2128,9 @@ def fetch_html_original(url: str, ua: Optional[str] = None, timeout: int = 30) -
             # 使用智能解码替代简单的UTF-8解码
             html = smart_decode(data, r)
 
-            # Task-003 Phase 1: Capture final URL after redirects
+          
             final_url = r.geturl()
-            logging.debug(f"Task-003: Final URL after redirects: {final_url}")
+            
 
             metrics.final_status = "success"
             return html, metrics, final_url
@@ -3275,8 +3274,7 @@ def is_documentation_url(url: str) -> bool:
     return True  # Default: include
 
 # ============================================================================
-# Task-008 Phase 2: Sitemap Discovery and Parsing Functions
-# Task-008 Phase 2：Sitemap 发现与解析功能
+# Sitemap Discovery and Parsing Functions
 # ============================================================================
 
 def discover_sitemaps(base_url: str, ua: str) -> list:
@@ -3461,7 +3459,7 @@ def crawl_from_sitemap(start_url: str, ua: str, max_pages: int = 1000,
     Returns:
         List of (url, html, depth) tuples, same format as crawl_site()
     """
-    logging.info("Task-008 Phase 2: Attempting sitemap-first crawling / 尝试sitemap优先爬取")
+    logging.info("Attempting sitemap-first crawling / 尝试sitemap优先爬取")
 
     # Step 1: Discover sitemaps
     sitemaps = discover_sitemaps(start_url, ua)
@@ -3536,8 +3534,7 @@ def crawl_from_sitemap(start_url: str, ua: str, max_pages: int = 1000,
     return results
 
 # ============================================================================
-# End of Task-008 Phase 2 Sitemap Functions
-# Task-008 Phase 2 Sitemap 功能结束
+# End of Sitemap Functions
 # ============================================================================
 
 def detect_government_site(url: str, html: str) -> bool:
@@ -3773,7 +3770,7 @@ def crawl_site_by_categories(start_url: str, ua: str, categories: list, **kwargs
 
 def crawl_site(start_url: str, ua: str, max_depth: int = 10,
                max_pages: int = 1000, delay: float = 0.5,
-               # Task-008 Phase 1: NEW parameters
+             
                follow_pagination: bool = False,
                same_domain_only: bool = True,
                # Stage 1 optimization parameters
@@ -3795,8 +3792,8 @@ def crawl_site(start_url: str, ua: str, max_depth: int = 10,
         max_depth: Maximum crawling depth / 最大爬取深度
         max_pages: Maximum number of pages to crawl / 最大爬取页面数
         delay: Delay between requests in seconds / 请求间隔秒数
-        follow_pagination: Follow pagination links (Task-008 Phase 1) / 跟随分页链接（Task-008 Phase 1）
-        same_domain_only: Only crawl same domain (Task-008 Phase 1) / 仅爬取同域名（Task-008 Phase 1）
+        follow_pagination: Follow pagination links / 跟随分页链接
+        same_domain_only: Only crawl same domain / 仅爬取同域名
         enable_optimizations: Enable Stage 1 optimizations / 启用Stage 1优化
         crawl_strategy: Crawling strategy / 爬取策略
         memory_efficient: Enable memory optimization / 启用内存优化
@@ -4619,6 +4616,30 @@ def get_failure_filename(timestamp: str, url: str) -> str:
     return f"FAILED_{timestamp} - {sanitized_domain}"
 
 
+def _save_failure_and_exit(url: str, outdir: Path, method: str, error_msg: str,
+                           exception=None, stdout_mode: bool = False):
+    """Generate failure report, save it, and exit with code 1.
+
+    Consolidates the repeated failure handling pattern in main().
+    """
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    failure_filename = get_failure_filename(timestamp, url)
+    failure_metrics = FetchMetrics(
+        primary_method=method,
+        final_status="failed",
+        error_message=error_msg
+    )
+    failure_md = generate_failure_markdown(url, failure_metrics, exception)
+    if stdout_mode:
+        print(failure_md)
+    else:
+        failure_path = outdir / f"{failure_filename}.md"
+        failure_path.write_text(failure_md, encoding='utf-8')
+        logging.info(f"Failure report saved: {failure_path}")
+        print(str(failure_path))
+    sys.exit(1)
+
+
 def main():
     ap = argparse.ArgumentParser(
         description='Fetch a URL (WeChat/XHS/generic) and save as Markdown.',
@@ -4647,15 +4668,15 @@ def main():
     ap.add_argument('--crawl-delay', type=float, default=0.5,
                     help='Delay between crawl requests in seconds (default: 0.5)')
 
-    # Task-008 Phase 1: Add pagination and domain control flags
-    # Task-008 Phase 1：添加分页和域名控制标志
+  
+  
     ap.add_argument('--follow-pagination', action='store_true',
                     help='Follow pagination links (next page, etc.) during crawling / 爬取时跟随分页链接（下一页等）')
     ap.add_argument('--same-domain-only', action='store_true', default=True,
                     help='Only crawl URLs from the same domain (default: True) / 仅爬取同域名的URL（默认：True）')
 
-    # Task-008 Phase 2: Sitemap support
-    # Task-008 Phase 2：Sitemap 支持
+  
+  
     ap.add_argument('--use-sitemap', action='store_true',
                     help='Use sitemap.xml for site crawling (if available, falls back to BFS if not found) / 使用 sitemap.xml 进行站点爬取（如可用，未找到时回退到BFS）')
 
@@ -4674,7 +4695,7 @@ def main():
                     help='Shortcut for --fetch-mode urllib (force urllib without Selenium fallback)')
     ap.add_argument('--selenium-timeout', type=int, default=30,
                     help='Selenium page load timeout in seconds (default: 30)')
-    # Task-002 Phase 1: Force Chrome mode flag
+  
     ap.add_argument('--force-chrome', action='store_true',
                     help='Skip Chrome health check (use when Chrome is known to be running)')
     ap.add_argument('--stdout', action='store_true',
@@ -4709,9 +4730,9 @@ def main():
     
     setup_logging(args.verbose)
 
-    # Task-003 Phase 1: Preserve original input URL exactly as provided by user
+  
     input_url = args.url.strip()  # Keep original, unmodified
-    logging.debug(f"Task-003: Input URL preserved: {input_url}")
+    
 
     # Validate and encode URL for proper Unicode handling
     url = validate_and_encode_url(args.url)
@@ -4742,8 +4763,8 @@ def main():
     if url != args.url and not is_file_url:
         logging.info(f"URL encoded from: {args.url}")
 
-    # Task-011 Phase 1: Skip URL resolution for explicit Selenium/manual Chrome modes
-    # Task-011 阶段1：跳过显式 Selenium/手动 Chrome 模式的 URL 解析
+  
+  
     # Reason: Avoid premature HEAD requests that may fail with 405 errors
     # 原因：避免可能失败并返回 405 错误的过早 HEAD 请求
     if is_file_url:
@@ -4777,13 +4798,13 @@ def main():
     if args.crawl_site:
         logging.info("Site crawling mode activated / 站点爬取模式已激活")
 
-        # Task-008 Phase 1: Log pagination mode
+      
         if args.follow_pagination:
             logging.info("Pagination following enabled / 已启用分页跟随")
         if not args.same_domain_only:
             logging.warning("Cross-domain crawling enabled - use with caution / 已启用跨域爬取 - 请谨慎使用")
 
-        # Task-008 Phase 2: Log sitemap mode
+      
         if args.use_sitemap:
             logging.info("Sitemap-first crawling enabled / 已启用sitemap优先爬取")
 
@@ -4792,7 +4813,7 @@ def main():
             logging.error("Site crawling not supported for social media sites")
             sys.exit(1)
 
-        # Task-008 Phase 2: Choose crawling method based on --use-sitemap flag
+      
         if args.use_sitemap:
             # Use sitemap-first crawling (with automatic fallback to BFS)
             crawled_pages = crawl_from_sitemap(
@@ -4811,8 +4832,8 @@ def main():
                 max_depth=args.max_crawl_depth,
                 max_pages=args.max_pages,
                 delay=args.crawl_delay,
-                follow_pagination=args.follow_pagination,      # Task-008 Phase 1
-                same_domain_only=args.same_domain_only        # Task-008 Phase 1
+                follow_pagination=args.follow_pagination,    
+                same_domain_only=args.same_domain_only      
             )
         
         if crawled_pages:
@@ -4854,14 +4875,14 @@ def main():
             # Determine output formats needed
             output_markdown, output_html = determine_output_format(args, url)
 
-            # Task-003 Phase 3: Create url_metadata for crawl mode
+          
             crawl_url_metadata = create_url_metadata(
                 input_url=input_url,
                 final_url=url,  # For crawl mode, final URL is typically the starting URL
                 fetch_mode='crawl'
             )
 
-            # Task-003 Phase 3: Enhance markdown with dual URL section
+          
             md = insert_dual_url_section(md, crawl_url_metadata)
 
             if args.stdout:
@@ -4928,8 +4949,8 @@ def main():
         html = None
         fetch_metrics = None
 
-        # Task-011 Phase 1: Separate Selenium mode detection from Playwright rendering
-        # Task-011 阶段1：将 Selenium 模式检测与 Playwright 渲染分离
+      
+      
         # Show accurate fetch method based on actual mode
         # 根据实际模式显示准确的获取方法
         if hasattr(args, 'fetch_mode') and args.fetch_mode == 'selenium':
@@ -4968,82 +4989,28 @@ def main():
             fetch_timeout = args.selenium_timeout if args.fetch_mode == 'selenium' else args.timeout
 
             # Phase 2 Enhancement: Catch Selenium exceptions and exit with non-zero code
-            # Task-002 Phase 1: Pass force_chrome flag to fetch function
-            # Task-003 Phase 1: Pass input_url and receive url_metadata
+          
+          
             try:
                 html, fetch_metrics, url_metadata = fetch_html(url, ua=ua, timeout=fetch_timeout, fetch_mode=args.fetch_mode, force_chrome=args.force_chrome, input_url=input_url)
                 logging.info("Static fetch completed")
-                logging.debug(f"Task-003: Received url_metadata: {url_metadata}")
+                
 
                 # Phase 2: Check if fetch failed
                 if fetch_metrics and fetch_metrics.final_status == "failed":
                     logging.warning(f"Fetch failed: {fetch_metrics.error_message}")
-
-                    # Generate failure report
-                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
-                    failure_filename = get_failure_filename(timestamp, url)
-                    failure_md = generate_failure_markdown(url, fetch_metrics, None)
-                    if args.stdout:
-                        print(failure_md)
-                    else:
-                        failure_path = outdir / f"{failure_filename}.md"
-                        failure_path.write_text(failure_md, encoding='utf-8')
-                        logging.info(f"Failure report saved: {failure_path}")
-                        print(str(failure_path))
-                    sys.exit(1)
+                    _save_failure_and_exit(url, outdir, fetch_metrics.primary_method,
+                                          fetch_metrics.error_message, stdout_mode=args.stdout)
 
             except (ChromeConnectionError, SeleniumNotAvailableError, SeleniumFetchError, SeleniumTimeoutError) as e:
                 logging.error(f"Selenium fetch failed: {e}")
-                # Phase 3 Step 1: Use structured error formatting
-                formatted_error = format_selenium_error(e)
-                print(formatted_error, file=sys.stderr)
-
-                # Phase 2: Generate failure report instead of exiting immediately
-                timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
-                failure_filename = get_failure_filename(timestamp, url)
-
-                # Create minimal FetchMetrics for failure report
-                failure_metrics = FetchMetrics(
-                    primary_method="selenium",
-                    final_status="failed",
-                    error_message=str(e)
-                )
-
-                failure_md = generate_failure_markdown(url, failure_metrics, e)
-                if args.stdout:
-                    print(failure_md)
-                else:
-                    failure_path = outdir / f"{failure_filename}.md"
-                    failure_path.write_text(failure_md, encoding='utf-8')
-                    logging.info(f"Failure report saved: {failure_path}")
-                    print(str(failure_path))
-                sys.exit(1)
+                print(format_selenium_error(e), file=sys.stderr)
+                _save_failure_and_exit(url, outdir, "selenium", str(e), e, args.stdout)
 
             except Exception as e:
-                # Phase 2: Catch urllib and other fetch failures
                 logging.error(f"Fetch failed: {e}")
                 print(f"Error: {e}", file=sys.stderr)
-
-                # Generate failure report
-                timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
-                failure_filename = get_failure_filename(timestamp, url)
-
-                # Create minimal FetchMetrics for failure report
-                failure_metrics = FetchMetrics(
-                    primary_method="urllib",
-                    final_status="failed",
-                    error_message=str(e)
-                )
-
-                failure_md = generate_failure_markdown(url, failure_metrics, e)
-                if args.stdout:
-                    print(failure_md)
-                else:
-                    failure_path = outdir / f"{failure_filename}.md"
-                    failure_path.write_text(failure_md, encoding='utf-8')
-                    logging.info(f"Failure report saved: {failure_path}")
-                    print(str(failure_path))
-                sys.exit(1)
+                _save_failure_and_exit(url, outdir, "urllib", str(e), e, args.stdout)
 
     # Try to download file if it's a downloadable type
     if not getattr(args, 'stdout', False):
@@ -5071,7 +5038,7 @@ def main():
             logging.warning(f"Failed to save HTML snapshot: {e}")
 
     # Parser selection
-    # Task-003 Phase 1: Pass url_metadata to parsers
+  
     if 'mp.weixin.qq.com' in host:
         logging.info("Selected parser: WeChat")
         parser_name = "WeChat"
@@ -5112,7 +5079,7 @@ def main():
     if fetch_metrics:
         md = add_metrics_to_markdown(md, fetch_metrics, template_name=metadata.get('template_used'))
 
-    # Task-003 Phase 3: Enhance markdown with dual URL section
+  
     # url_metadata should be available from fetch_html() call
     md = insert_dual_url_section(md, url_metadata)
 

@@ -349,6 +349,42 @@ def diagnose_system():
 
     sys.exit(exit_code)
 
+def _prepare_url(mode_name, url_input):
+    """Extract URL from text, add protocol, clean WeChat tokens.
+
+    Args:
+        mode_name: Mode label for logging (e.g. 'Fast', 'Raw')
+        url_input: Raw URL input string
+
+    Returns:
+        Cleaned URL string ready for fetching
+    """
+    url, was_extracted = extract_url_from_text(url_input)
+    if was_extracted:
+        logger.info(f"✓ {mode_name}：已从文本中提取URL: {url}")
+    if not url.startswith('http'):
+        url = f'https://{url}'
+    return clean_wechat_url(url)
+
+
+def _prepare_and_run(webfetcher_module, url, raw_args_rest, stdout_mode, extra_args=None):
+    """Parse output dir, ensure it exists, and run webfetcher.
+
+    Args:
+        webfetcher_module: The core module
+        url: Prepared URL
+        raw_args_rest: Remaining args after URL (for output dir parsing)
+        stdout_mode: Whether --stdout is enabled
+        extra_args: Additional args to insert (e.g. ['--render', 'never'])
+    """
+    output_dir, remaining_args = parse_output_dir(raw_args_rest)
+    if not stdout_mode:
+        ensure_output_dir(output_dir)
+    stdout_args = ['--stdout'] if stdout_mode else []
+    cmd_args = [url, '-o', output_dir] + (extra_args or []) + remaining_args + stdout_args
+    run_webfetcher(webfetcher_module, cmd_args)
+
+
 def main():
     # Check for updates (async, non-blocking)
     try:
@@ -366,6 +402,16 @@ def main():
 
     # Parse arguments
     raw_args = sys.argv[1:]
+
+    # Extract --stdout flag before mode dispatch
+    stdout_mode = '--stdout' in raw_args
+    if stdout_mode:
+        raw_args = [a for a in raw_args if a != '--stdout']
+
+    if not raw_args:
+        print_help()
+        return
+
     cmd = raw_args[0]
 
     # URL extraction from mixed text (new feature)
@@ -391,21 +437,14 @@ def main():
 
     # Quick grab mode - detect URL (modified condition)
     if extracted_url or 'http://' in cmd or 'https://' in cmd or 'file://' in cmd or ('.' in cmd and cmd not in ['help', '-h', '--help']):
-        # Use extracted URL if available, otherwise process normally
-        # Support file:// protocol for local files
         if extracted_url:
             url = extracted_url
         elif cmd.startswith(('http://', 'https://', 'file://')):
             url = cmd
         else:
             url = f'https://{cmd}'
-        # Clean WeChat URLs (remove poc_token that causes errors)
         url = clean_wechat_url(url)
-        # Parse output directory
-        output_dir, remaining_args = parse_output_dir(raw_args[1:])
-        ensure_output_dir(output_dir)
-        # Run webfetcher
-        run_webfetcher(webfetcher_module, [url, '-o', output_dir] + remaining_args)
+        _prepare_and_run(webfetcher_module, url, raw_args[1:], stdout_mode)
 
     # 快速模式
     elif cmd == 'fast':
@@ -413,24 +452,9 @@ def main():
             print("错误: fast模式需要提供URL")
             print("用法: wf fast <URL> [输出目录]")
             return
-
-        # Extract URL from potentially mixed text
-        url_input = raw_args[1]
-        url, was_extracted = extract_url_from_text(url_input)
-
-        if was_extracted:
-            logger.info(f"✓ Fast模式：已从文本中提取URL: {url}")
-
-        if not url.startswith('http'):
-            url = f'https://{url}'
-
-        # Clean WeChat URLs (remove poc_token that causes errors)
-        url = clean_wechat_url(url)
-
-        # Parse output directory
-        output_dir, remaining_args = parse_output_dir(raw_args[2:])
-        ensure_output_dir(output_dir)
-        run_webfetcher(webfetcher_module, [url, '-o', output_dir, '--render', 'never', '--timeout', '30'] + remaining_args)
+        url = _prepare_url('Fast模式', raw_args[1])
+        _prepare_and_run(webfetcher_module, url, raw_args[2:], stdout_mode,
+                         ['--render', 'never', '--timeout', '30'])
 
     # 完整模式
     elif cmd == 'full':
@@ -438,21 +462,9 @@ def main():
             print("错误: full模式需要提供URL")
             print("用法: wf full <URL> [输出目录]")
             return
-
-        # Extract URL from potentially mixed text
-        url_input = raw_args[1]
-        url, was_extracted = extract_url_from_text(url_input)
-
-        if was_extracted:
-            logger.info(f"✓ Full模式：已从文本中提取URL: {url}")
-
-        if not url.startswith('http'):
-            url = f'https://{url}'
-
-        # Parse output directory
-        output_dir, remaining_args = parse_output_dir(raw_args[2:])
-        ensure_output_dir(output_dir)
-        run_webfetcher(webfetcher_module, [url, '-o', output_dir, '--download-assets', '--render', 'auto'] + remaining_args)
+        url = _prepare_url('Full模式', raw_args[1])
+        _prepare_and_run(webfetcher_module, url, raw_args[2:], stdout_mode,
+                         ['--download-assets', '--render', 'auto'])
 
     # 站点爬虫
     elif cmd == 'site':
@@ -465,60 +477,32 @@ def main():
             print("  --delay SECONDS        请求间隔秒数 (默认: 0.5) / Request delay in seconds (default: 0.5)")
             print("  --follow-pagination    跟随分页链接 / Follow pagination links")
             print("  --same-domain-only     仅爬取同域名 (默认启用) / Only crawl same domain (default enabled)")
-            print("  --use-sitemap          使用sitemap.xml进行爬取 / Use sitemap.xml for crawling (Phase 2)")
+            print("  --use-sitemap          使用sitemap.xml进行爬取 / Use sitemap.xml for crawling")
             return
 
-        # Extract URL from potentially mixed text
-        url_input = raw_args[1]
-        url, was_extracted = extract_url_from_text(url_input)
-
-        if was_extracted:
-            logger.info(f"✓ Site模式：已从文本中提取URL: {url}")
-
-        if not url.startswith('http'):
-            url = f'https://{url}'
-
-        # Parse output directory and extract parameters
+        url = _prepare_url('Site模式', raw_args[1])
         output_dir, remaining_args = parse_output_dir(raw_args[2:])
-        ensure_output_dir(output_dir)
+        if not stdout_mode:
+            ensure_output_dir(output_dir)
 
         # Build webfetcher command with configurable parameters
         cmd_args = [url, '-o', output_dir, '--crawl-site']
 
         # Extract user-specified parameters or use defaults
-        max_pages_value = None
-        max_depth_value = None
-        delay_value = None
-
-        # Extract parameters manually (simple approach)
+        param_map = {'--max-pages': None, '--max-crawl-depth': None, '--max-depth': None,
+                     '--delay': None, '--crawl-delay': None}
         i = 0
         while i < len(remaining_args):
             arg = remaining_args[i]
-
-            if arg in ['--max-pages', '--max-crawl-depth', '--max-depth', '--delay', '--crawl-delay']:
-                if i + 1 < len(remaining_args):
-                    value = remaining_args[i + 1]
-
-                    if arg == '--max-pages':
-                        max_pages_value = value
-                    elif arg in ['--max-crawl-depth', '--max-depth']:
-                        max_depth_value = value
-                    elif arg in ['--delay', '--crawl-delay']:
-                        delay_value = value
-
-                    # Skip next item (the value)
-                    i += 2
-                    continue
-
+            if arg in param_map and i + 1 < len(remaining_args):
+                param_map[arg] = remaining_args[i + 1]
+                i += 2
+                continue
             i += 1
 
-        # Apply defaults
-        if max_pages_value is None:
-            max_pages_value = '100'
-        if max_depth_value is None:
-            max_depth_value = '5'
-        if delay_value is None:
-            delay_value = '0.5'
+        max_pages_value = param_map['--max-pages'] or '100'
+        max_depth_value = param_map['--max-crawl-depth'] or param_map['--max-depth'] or '5'
+        delay_value = param_map['--delay'] or param_map['--crawl-delay'] or '0.5'
 
         cmd_args.extend(['--max-pages', max_pages_value])
         cmd_args.extend(['--max-crawl-depth', max_depth_value])
@@ -527,24 +511,20 @@ def main():
         # Add boolean flags if present
         if '--follow-pagination' in remaining_args:
             cmd_args.append('--follow-pagination')
-
         if '--use-sitemap' in remaining_args:
             cmd_args.append('--use-sitemap')
             logger.info("Sitemap-first crawling enabled / 已启用sitemap优先爬取")
-
-        # same-domain-only is default, explicitly add it
         cmd_args.append('--same-domain-only')
 
         # Add any other remaining args (like --fetch-mode, etc.)
+        consumed_params = set(param_map.keys()) | {'--follow-pagination', '--same-domain-only', '--use-sitemap'}
         for arg in remaining_args:
-            if arg not in ['--max-pages', '--max-depth', '--max-crawl-depth',
-                          '--delay', '--crawl-delay', '--follow-pagination', '--same-domain-only', '--use-sitemap']:
-                # Check if it's a value (next to a parameter we already processed)
-                if not (arg.replace('.', '').isdigit() or arg.startswith('/')):
-                    cmd_args.append(arg)
+            if arg not in consumed_params and not (arg.replace('.', '').isdigit() or arg.startswith('/')):
+                cmd_args.append(arg)
 
         logger.info(f"Site crawling with: max-pages={max_pages_value}, max-depth={max_depth_value}, delay={delay_value}")
-        run_webfetcher(webfetcher_module, cmd_args)
+        stdout_args = ['--stdout'] if stdout_mode else []
+        run_webfetcher(webfetcher_module, cmd_args + stdout_args)
 
     # Raw模式
     elif cmd == 'raw':
@@ -552,24 +532,14 @@ def main():
             print("错误: raw模式需要提供URL")
             print("用法: wf raw <URL> [输出目录]")
             return
-
-        # Extract URL from potentially mixed text
-        url_input = raw_args[1]
-        url, was_extracted = extract_url_from_text(url_input)
-
-        if was_extracted:
-            logger.info(f"✓ Raw模式：已从文本中提取URL: {url}")
-
-        if not url.startswith('http'):
-            url = f'https://{url}'
-
-        # Parse output directory
-        output_dir, remaining_args = parse_output_dir(raw_args[2:])
-        ensure_output_dir(output_dir)
-        run_webfetcher(webfetcher_module, [url, '-o', output_dir, '--raw'] + remaining_args)
+        url = _prepare_url('Raw模式', raw_args[1])
+        _prepare_and_run(webfetcher_module, url, raw_args[2:], stdout_mode, ['--raw'])
 
     # 批量抓取
     elif cmd == 'batch':
+        if stdout_mode:
+            print("错误: --stdout 不支持批量模式", file=sys.stderr)
+            return
         if len(raw_args) < 2:
             print("错误: batch模式需要提供URL文件")
             print("用法: wf batch <urls.txt> [输出目录]")
@@ -579,7 +549,6 @@ def main():
             print(f"错误: 文件 {urls_file} 不存在")
             return
 
-        # 解析输出目录
         output_dir, remaining_args = parse_output_dir(raw_args[2:])
         ensure_output_dir(output_dir)
 
@@ -604,10 +573,11 @@ def main():
 
     # 默认：传递给webfetcher
     else:
-        # 对于其他命令，也处理输出目录
         output_dir, remaining_args = parse_output_dir(raw_args)
-        ensure_output_dir(output_dir)
-        run_webfetcher(webfetcher_module, ['-o', output_dir] + remaining_args)
+        if not stdout_mode:
+            ensure_output_dir(output_dir)
+        stdout_args = ['--stdout'] if stdout_mode else []
+        run_webfetcher(webfetcher_module, ['-o', output_dir] + remaining_args + stdout_args)
 
 def run_webfetcher(webfetcher_module, args):
     """运行webfetcher.core并传递参数"""
@@ -682,6 +652,12 @@ wf - WebFetcher便捷命令
   wf site URL [输出目录]            # 整站爬虫
   wf batch urls.txt [输出目录]     # 批量抓取
   wf diagnose                       # 系统诊断（含ChromeDriver检查）
+
+Stdout模式:
+  wf example.com --stdout             # 输出到终端（stdout），不保存文件
+  wf --stdout example.com             # 同上，参数位置灵活
+  wf fast example.com --stdout        # 快速模式 + stdout
+  wf example.com --stdout | pbcopy    # 配合管道使用
 
 处理复杂URL的示例:
   # URL包含路径时，推荐使用-o或--
