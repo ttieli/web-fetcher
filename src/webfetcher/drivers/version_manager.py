@@ -316,26 +316,25 @@ class VersionDownloader:
                 response = requests.get(url, stream=True, timeout=DOWNLOAD_TIMEOUT)
                 response.raise_for_status()
 
-                # Prepare temp file
-                temp_zip = Path(tempfile.mktemp(suffix='.zip'))
-
-                # Download with progress
+                # Download with progress to a secure temp file
                 total_size = int(response.headers.get('content-length', 0))
                 downloaded = 0
 
-                with open(temp_zip, 'wb') as f:
+                with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as tmp:
+                    temp_zip = Path(tmp.name)
                     for chunk in response.iter_content(chunk_size=8192):
                         if chunk:
-                            f.write(chunk)
+                            tmp.write(chunk)
                             downloaded += len(chunk)
                             if progress_callback and total_size:
                                 progress_callback(downloaded, total_size)
 
-                # Extract
-                driver_path = self._extract_driver(temp_zip, version)
-
-                # Cleanup
-                temp_zip.unlink()
+                try:
+                    # Extract
+                    driver_path = self._extract_driver(temp_zip, version)
+                finally:
+                    # Cleanup
+                    temp_zip.unlink(missing_ok=True)
 
                 return driver_path
 

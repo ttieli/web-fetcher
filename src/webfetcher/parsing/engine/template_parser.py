@@ -5,6 +5,7 @@ from web pages. It integrates with the TemplateLoader to match URLs to templates
 and extract structured data based on template rules.
 """
 
+import re
 from typing import Dict, Any, Optional, List
 import html2text
 from lxml import etree
@@ -255,7 +256,6 @@ class TemplateParser(BaseParser):
         Returns:
             str: Processed value
         """
-        import re
 
         if not post_process or not value:
             return value
@@ -534,7 +534,6 @@ class TemplateParser(BaseParser):
 
             # Post-processing: Remove base64 data URLs from markdown
             # This catches any that slipped through BeautifulSoup processing
-            import re
             # Remove markdown image syntax with data URLs: ![alt](data:image/...)
             markdown = re.sub(r'!\[([^\]]*)\]\(data:image/[^)]+\)', r'', markdown)
             # Remove any standalone data:image URLs
@@ -624,7 +623,6 @@ class TemplateParser(BaseParser):
             List[str]: List of extracted values (validated URLs or text)
         """
         from bs4 import BeautifulSoup
-        import re
 
         results = []
 
@@ -714,8 +712,6 @@ class TemplateParser(BaseParser):
         Returns:
             bool: True if URL passes validation, False otherwise
         """
-        import re
-
         # Filter out JavaScript code disguised as URLs
         # JavaScript keywords that shouldn't appear in image URLs
         js_keywords = [
