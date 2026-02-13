@@ -142,7 +142,8 @@ import webfetcher.parsing.parser as parsers
 from webfetcher.parsing.parser import (
     wechat_to_markdown,
     xhs_to_markdown,
-    generic_to_markdown
+    generic_to_markdown,
+    AntiBotDetectedError,
 )
 
 # URL Formatter Module
@@ -5042,7 +5043,26 @@ def main():
     if 'mp.weixin.qq.com' in host:
         logging.info("Selected parser: WeChat")
         parser_name = "WeChat"
-        date_only, md, metadata = wechat_to_markdown(html, url, url_metadata)
+        try:
+            date_only, md, metadata = wechat_to_markdown(html, url, url_metadata)
+        except AntiBotDetectedError:
+            # WeChat returned anti-bot page, retry with CDP
+            logging.warning("WeChat anti-bot detected, retrying with CDP")
+            try:
+                html, fetch_metrics, url_metadata = _try_cdp_fetch(
+                    url, ua=None, timeout=fetch_timeout,
+                    metrics=fetch_metrics, start_time=time.time(),
+                    input_url=input_url, wait_time=5.0,
+                )
+                date_only, md, metadata = wechat_to_markdown(html, url, url_metadata)
+            except AntiBotDetectedError:
+                logging.error("WeChat anti-bot persists after CDP retry")
+                _save_failure_and_exit(url, outdir, "cdp",
+                                       "WeChat anti-bot verification page (环境异常), please open in browser",
+                                       stdout_mode=args.stdout)
+            except Exception as e:
+                logging.error(f"CDP re-fetch failed: {e}")
+                _save_failure_and_exit(url, outdir, "cdp", str(e), e, args.stdout)
         rendered = 'wechat' in ua.lower()
     elif 'xiaohongshu.com' in host or 'xhslink.com' in original_host:
         logging.info("Selected parser: Xiaohongshu")

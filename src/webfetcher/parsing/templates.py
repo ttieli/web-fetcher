@@ -55,6 +55,34 @@ from webfetcher.parsing.legacy import (
 logger = logging.getLogger(__name__)
 
 
+class AntiBotDetectedError(Exception):
+    """Raised when anti-bot/verification page is detected instead of real content."""
+    pass
+
+
+# WeChat anti-bot / JS-required signatures
+_WECHAT_ANTIBOT_KEYWORDS = ['环境异常', '完成验证后即可继续访问', '去验证']
+
+
+def _detect_wechat_antibot(html: str) -> bool:
+    """Check if WeChat returned a page without real content.
+
+    Triggers on:
+    - Anti-bot verification page ("环境异常")
+    - JS-required mobile page (no js_content div, needs rendering)
+    """
+    # If js_content exists, the real article HTML was served
+    if 'id="js_content"' in html or "id='js_content'" in html:
+        return False
+    # Anti-bot keywords
+    if any(kw in html for kw in _WECHAT_ANTIBOT_KEYWORDS):
+        return True
+    # No js_content and it's a WeChat page → JS rendering needed
+    if 'mp.weixin.qq.com' in html or '微信' in html:
+        return True
+    return False
+
+
 # ============================================================================
 # MIGRATION ADAPTER LAYER
 # ============================================================================
@@ -198,11 +226,51 @@ def xhs_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[str
         return legacy_xhs_parser(html, url)
 
 
+def _extract_wechat_gallery_images(html: str) -> list[str]:
+    """Extract images from WeChat image-set articles (图集模式).
+
+    WeChat gallery articles store images as:
+    - <div data-src="https://mmbiz..."> (full-size)
+    - <li style="background-image: url(...)"> (thumbnails, same URLs)
+    We prefer <div data-src> as they are the full-size versions.
+    """
+    urls: list[str] = []
+    seen: set[str] = set()
+
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, 'html.parser')
+
+        # 1) <div data-src="mmbiz..."> inside gallery
+        for div in soup.find_all('div', attrs={'data-src': True}):
+            src = div['data-src'].strip()
+            if 'mmbiz' in src and src not in seen:
+                seen.add(src)
+                urls.append(src)
+
+        # 2) Fallback: background-image in style attribute
+        if not urls:
+            import re as _re
+            for tag in soup.find_all(style=_re.compile(r'background-image')):
+                m = _re.search(r'url\(["\']?(https?://mmbiz[^"\')\s]+)', tag.get('style', ''))
+                if m and m.group(1) not in seen:
+                    seen.add(m.group(1))
+                    urls.append(m.group(1))
+
+        # 3) Fallback: og:image meta
+        if not urls:
+            og = soup.find('meta', {'property': 'og:image'})
+            if og and og.get('content') and 'mmbiz' in og['content']:
+                urls.append(og['content'])
+    except Exception as e:
+        logger.debug(f"WeChat gallery image extraction failed: {e}")
+
+    return urls
+
+
 def wechat_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[str, str, dict]:
     """
     WeChat (微信公众号) parser - Template-based implementation
-
-    Phase 3.3: Migrated to template-based parsing engine
 
     Args:
         html: HTML content of the page
@@ -211,7 +279,14 @@ def wechat_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[
 
     Returns:
         tuple: (date_only, markdown_content, metadata)
+
+    Raises:
+        AntiBotDetectedError: When WeChat returns an anti-bot verification page
     """
+    # Detect anti-bot page BEFORE any parsing attempt
+    if _detect_wechat_antibot(html):
+        raise AntiBotDetectedError("WeChat anti-bot verification page detected (环境异常)")
+
     try:
         # Import template-based parsing engine
         from .engine.template_parser import TemplateParser
@@ -238,6 +313,14 @@ def wechat_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[
         publish_time = result.metadata.get('date', '')
         images = result.metadata.get('images', [])
 
+        # WeChat image-set articles store images in <div data-src> and
+        # <li style="background-image:url(...)"> instead of <img> tags.
+        # Fallback extraction when TemplateParser finds no images.
+        if not images:
+            images = _extract_wechat_gallery_images(html)
+            if images:
+                logger.info(f"Extracted {len(images)} images from WeChat gallery format")
+
         # Parse date
         date_only, date_time = parse_date_like(publish_time)
 
@@ -253,13 +336,26 @@ def wechat_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[
         ]
 
         # Combine header and content
-        lines += meta + ["", result.content]
+        content = result.content or ''
+        lines += meta
+
+        if content.strip():
+            lines.append("")
+            lines.append(content)
+
+        # Embed images that aren't already in the converted content
+        content_has_images = '![' in content if content else False
+        if images and not content_has_images:
+            lines.append("")
+            for img_url in images:
+                lines.append(f"![]({normalize_media_url(img_url, url)})")
+
         markdown_content = "\n\n".join(lines).strip() + "\n"
 
         # Build metadata dictionary
         metadata = {
             'author': author,
-            'images': images,
+            'images': [normalize_media_url(u, url) for u in images],
             'publish_time': publish_time
         }
 
@@ -500,6 +596,9 @@ __all__ = [
     'xhs_to_markdown',
     'wechat_to_markdown',
     'generic_to_markdown',
+
+    # Exceptions
+    'AntiBotDetectedError',
 
     # List handling
     'extract_list_content',

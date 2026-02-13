@@ -38,7 +38,8 @@ logger = logging.getLogger(__name__)
 from webfetcher.parsing.templates import (
     xhs_to_markdown as xhs_to_markdown_migrated,
     wechat_to_markdown as wechat_to_markdown_migrated,
-    generic_to_markdown as generic_to_markdown_migrated
+    generic_to_markdown as generic_to_markdown_migrated,
+    AntiBotDetectedError,
 )
 
 def get_beautifulsoup_parser():
