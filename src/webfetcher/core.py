@@ -33,6 +33,7 @@ import logging
 import time
 import random
 import signal
+import socket as _socket
 from collections import deque
 import xml.etree.ElementTree as ET
 import gzip
@@ -1393,6 +1394,76 @@ def _determine_fetcher_via_routing(url: str) -> Optional[str]:
         return None
 
 
+# === FAILURE LOG PERSISTENCE ===
+_FAILURE_LOG_DIR = Path.home() / '.wf'
+_FAILURE_LOG_PATH = _FAILURE_LOG_DIR / 'fetch_failures.jsonl'
+_FAILURE_LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+_FAILURE_LOG_BACKUP_COUNT = 3
+
+
+def _rotate_failure_log():
+    """Rotate log file when it exceeds max size. Keeps up to 3 backups."""
+    try:
+        if not _FAILURE_LOG_PATH.exists():
+            return
+        if _FAILURE_LOG_PATH.stat().st_size < _FAILURE_LOG_MAX_BYTES:
+            return
+
+        # Rotate: .3 → delete, .2 → .3, .1 → .2, current → .1
+        for i in range(_FAILURE_LOG_BACKUP_COUNT, 0, -1):
+            src = _FAILURE_LOG_PATH.with_suffix(f'.jsonl.{i}')
+            dst = _FAILURE_LOG_PATH.with_suffix(f'.jsonl.{i+1}') if i < _FAILURE_LOG_BACKUP_COUNT else None
+            if src.exists():
+                if dst:
+                    src.rename(dst)
+                else:
+                    src.unlink()
+
+        _FAILURE_LOG_PATH.rename(_FAILURE_LOG_PATH.with_suffix('.jsonl.1'))
+    except Exception as e:
+        logging.debug(f"Log rotation error (non-fatal): {e}")
+
+
+def persist_fetch_failure(
+    url: str, input_url: str, fetchers_tried: list,
+    failure_type: str, failure_reason: str,
+    last_error: str, html_size: int,
+    validation_details: list, fetch_mode: str,
+    duration_seconds: float,
+):
+    """Append a failure record to ~/.wf/fetch_failures.jsonl.
+
+    Silently degrades on any I/O error — never blocks the main pipeline.
+    """
+    try:
+        _FAILURE_LOG_DIR.mkdir(parents=True, exist_ok=True, mode=0o755)
+        _rotate_failure_log()
+
+        record = {
+            'ts': datetime.datetime.now().isoformat(timespec='seconds'),
+            'url': url,
+            'input_url': input_url or url,
+            'fetchers_tried': fetchers_tried,
+            'failure_type': failure_type,
+            'failure_reason': failure_reason,
+            'last_error': str(last_error)[:500],
+            'html_size': html_size,
+            'validation_details': validation_details,
+            'fetch_mode': fetch_mode,
+            'duration_seconds': round(duration_seconds, 2),
+            'wf_version': __version__,
+            'hostname': _socket.gethostname(),
+        }
+
+        line = json.dumps(record, ensure_ascii=False) + '\n'
+
+        with open(_FAILURE_LOG_PATH, 'a', encoding='utf-8') as f:
+            f.write(line)
+
+    except Exception as e:
+        logging.warning(f"Failed to persist failure log: {e}")
+
+
 _FETCH_TOTAL_DEADLINE = 120  # seconds — hard cap on total fetch time including all fallbacks
 
 
@@ -1480,6 +1551,19 @@ def _try_fallback_for_invalid_content(
         f"All fetchers failed content validation for {url}. "
         f"Returning best result ({best_html_len} chars). "
         f"Failures: {metrics.validation_failures}"
+    )
+    # Persist failure log
+    persist_fetch_failure(
+        url=url,
+        input_url=input_url or url,
+        fetchers_tried=list(tried_fetchers),
+        failure_type='content_invalid',
+        failure_reason=validation_reason,
+        last_error='',
+        html_size=best_html_len,
+        validation_details=[f"{f}:{r}" for f, r in metrics.validation_failures],
+        fetch_mode='auto',
+        duration_seconds=time.time() - start_time,
     )
     best_metrics.validation_failures = metrics.validation_failures
     best_metrics.final_status = "degraded"
@@ -4909,6 +4993,18 @@ def _save_failure_and_exit(url: str, outdir: Path, method: str, error_msg: str,
         failure_path.write_text(failure_md, encoding='utf-8')
         logging.info(f"Failure report saved: {failure_path}")
         print(str(failure_path))
+    # Persist failure for analysis
+    persist_fetch_failure(
+        url=url, input_url=url,
+        fetchers_tried=[method],
+        failure_type='fetch_error',
+        failure_reason=error_msg[:200] if error_msg else 'unknown',
+        last_error=str(exception) if exception else error_msg,
+        html_size=0,
+        validation_details=[],
+        fetch_mode=method,
+        duration_seconds=0,
+    )
     sys.exit(1)
 
 
