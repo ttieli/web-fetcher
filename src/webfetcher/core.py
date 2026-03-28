@@ -454,24 +454,25 @@ def validate_fetched_html(html: str, url: str) -> tuple[bool, str]:
         # 2. Fast extraction (regex-based, no DOM)
         title, body_head, body_text_len = _extract_title_and_body_head(html)
 
-        # 3. Certainly invalid: body text extremely short
+        # 3. Title-based anti-bot detection (high confidence, check before length)
+        for pattern in _ANTIBOT_TITLE_PATTERNS:
+            if pattern in title:
+                return False, f'antibot_title:{pattern}'
+
+        # 4. Body-head keyword detection — when body is short (dual criteria)
+        #    Check keywords BEFORE the too_short fallback so we get specific reasons
+        if body_text_len < _BODY_TEXT_SUSPICIOUS:
+            for pattern in _ANTIBOT_BODY_PATTERNS:
+                if pattern in body_head:
+                    return False, f'antibot_body:{pattern}'
+
+        # 5. Certainly invalid: body text extremely short (no keyword matched above)
         if body_text_len < _BODY_TEXT_CERTAINLY_INVALID:
             # Check for SPA shell markers (need CDP rendering, not an error per se)
             if any(marker in html for marker in ['id="app"', 'id="root"', 'id="__next"',
                                                    'id="__nuxt"', 'data-reactroot']):
                 return False, 'spa_shell'
             return False, 'too_short'
-
-        # 4. Title-based anti-bot detection (high confidence)
-        for pattern in _ANTIBOT_TITLE_PATTERNS:
-            if pattern in title:
-                return False, f'antibot_title:{pattern}'
-
-        # 5. Body-head keyword detection — ONLY when body is short (dual criteria)
-        if body_text_len < _BODY_TEXT_SUSPICIOUS:
-            for pattern in _ANTIBOT_BODY_PATTERNS:
-                if pattern in body_head:
-                    return False, f'antibot_body:{pattern}'
 
         # 6. WeChat-specific: no js_content div on WeChat pages
         if 'mp.weixin.qq.com' in url:
