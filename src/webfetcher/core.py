@@ -25,7 +25,7 @@ import urllib.error
 import ssl
 import sys
 from typing import Optional, List, Dict, Set, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from html.parser import HTMLParser
 from pathlib import Path
@@ -276,6 +276,9 @@ class FetchMetrics:
     chrome_auto_launched: bool = False
     chrome_launch_message: Optional[str] = None
 
+    # Content validation tracking (采集成功率优化)
+    validation_failures: list = field(default_factory=list)
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert metrics to dictionary for JSON serialization."""
         return {
@@ -291,7 +294,8 @@ class FetchMetrics:
             'chrome_connected': self.chrome_connected,
             'js_detection_used': self.js_detection_used,
             'chrome_auto_launched': self.chrome_auto_launched,
-            'chrome_launch_message': self.chrome_launch_message
+            'chrome_launch_message': self.chrome_launch_message,
+            'validation_failures': self.validation_failures,
         }
     
     def get_summary(self) -> str:
@@ -319,7 +323,11 @@ class FetchMetrics:
         
         if self.js_detection_used:
             summary += " | JS detection used"
-            
+
+        if self.validation_failures:
+            reasons = [f"{f[0]}:{f[1]}" for f in self.validation_failures]
+            summary += f" | Validation issues: {', '.join(reasons)}"
+
         return summary
 
 
