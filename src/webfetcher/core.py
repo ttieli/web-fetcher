@@ -148,6 +148,7 @@ from webfetcher.parsing.parser import (
 
 # URL Formatter Module
 from webfetcher.utils.url_formatter import insert_dual_url_section
+from webfetcher.parsing.templates import apply_yaml_frontmatter
 
 # Error handler integration (Task 1 Phase 2)
 try:
@@ -345,6 +346,139 @@ def create_url_metadata(input_url: str, final_url: str = None,
         'fetch_date': datetime.datetime.now(),
         'fetch_mode': fetch_mode or 'unknown'
     }
+
+
+# === CONTENT VALIDATION ===
+# Inserted by: 采集成功率优化 Batch 1, Task 1
+
+# Anti-bot / block page signatures — checked in <title> + first 2000 chars of <body>
+_ANTIBOT_TITLE_PATTERNS = [
+    # Cloudflare
+    'just a moment', 'attention required', 'checking your browser',
+    # Generic HTTP errors embedded in pages
+    '403 forbidden', 'access denied', '429 too many requests',
+    '503 service temporarily unavailable', 'request blocked',
+    # Chinese WAF / anti-bot
+    '百度安全验证', '安全验证', '访问验证',
+]
+
+_ANTIBOT_BODY_PATTERNS = [
+    # Cloudflare / CDN challenge
+    'cf-browser-verification', '_cf_chl_opt', 'challenges.cloudflare.com',
+    'cf-turnstile', 'jschl_vc', 'jschl_answer',
+    # hCaptcha / reCAPTCHA / GeeTest
+    'hcaptcha.com', 'h-captcha', 'recaptcha', 'google.com/recaptcha',
+    'geetest', 'gt_captcha',
+    # Akamai / AWS WAF
+    'awswaf', 'akamaized.net',
+    # Tencent WAF / captcha
+    'captcha.qq.com', 'TencentCaptcha', 'tgateway',
+    # Chinese anti-bot phrases (body head only)
+    '验证码', '环境异常', '访问频繁', '访问过于频繁', '请求异常',
+    '操作过于频繁', '系统检测到异常', '当前访问疑似机器行为',
+    '请完成安全验证', '完成验证后即可继续访问',
+    '请在微信客户端打开', 'IP被封禁', 'IP被限制',
+    '网络不给力',
+    # Login wall (only when combined with short body)
+    '请登录', 'login required', 'sign in to continue', 'please log in',
+    # English anti-bot
+    'access denied', 'please verify you are a human',
+    'blocked', 'robot check',
+]
+
+# Minimum body text thresholds
+_BODY_TEXT_CERTAINLY_INVALID = 50      # < 50 chars: definitely invalid
+_BODY_TEXT_SUSPICIOUS = 500            # 50-500 chars: suspicious, needs keyword match
+
+
+def _extract_title_and_body_head(html: str) -> tuple[str, str, int]:
+    """Fast extraction of title text and first 2000 chars of body text.
+
+    Uses regex for speed — avoids full DOM parse for the common (valid) case.
+
+    Returns:
+        (title_lower, body_head_lower, body_text_length_estimate)
+    """
+    # Extract <title>
+    title = ''
+    m = re.search(r'<title[^>]*>(.*?)</title>', html[:5000], re.IGNORECASE | re.DOTALL)
+    if m:
+        title = m.group(1).strip().lower()
+
+    # Rough body text: strip tags from first 8000 chars of <body>
+    body_start = html.lower().find('<body')
+    if body_start >= 0:
+        body_raw = html[body_start:body_start + 8000]
+        # Remove <script> and <style> blocks
+        body_clean = re.sub(r'<script[^>]*>.*?</script>', '', body_raw, flags=re.DOTALL | re.IGNORECASE)
+        body_clean = re.sub(r'<style[^>]*>.*?</style>', '', body_clean, flags=re.DOTALL | re.IGNORECASE)
+        # Strip remaining tags
+        body_text = re.sub(r'<[^>]+>', ' ', body_clean)
+        body_text = re.sub(r'\s+', ' ', body_text).strip()
+    else:
+        body_text = ''
+
+    body_text_len = len(body_text)
+    body_head = body_text[:2000].lower()
+
+    return title, body_head, body_text_len
+
+
+def validate_fetched_html(html: str, url: str) -> tuple[bool, str]:
+    """Validate fetched HTML content quality.
+
+    Checks for empty content, anti-bot pages, login walls, and SPA shells.
+    Uses dual-criteria: keywords alone don't trigger failure on long pages.
+
+    Args:
+        html: Raw HTML string from fetcher
+        url: The URL that was fetched (for context-aware checks)
+
+    Returns:
+        (is_valid, reason) — reason is '' when valid, descriptive string when invalid
+    """
+    try:
+        # 1. Empty or whitespace-only
+        if not html or not html.strip():
+            return False, 'empty_content'
+
+        # 2. Fast extraction (regex-based, no DOM)
+        title, body_head, body_text_len = _extract_title_and_body_head(html)
+
+        # 3. Certainly invalid: body text extremely short
+        if body_text_len < _BODY_TEXT_CERTAINLY_INVALID:
+            # Check for SPA shell markers (need CDP rendering, not an error per se)
+            if any(marker in html for marker in ['id="app"', 'id="root"', 'id="__next"',
+                                                   'id="__nuxt"', 'data-reactroot']):
+                return False, 'spa_shell'
+            return False, 'too_short'
+
+        # 4. Title-based anti-bot detection (high confidence)
+        for pattern in _ANTIBOT_TITLE_PATTERNS:
+            if pattern in title:
+                return False, f'antibot_title:{pattern}'
+
+        # 5. Body-head keyword detection — ONLY when body is short (dual criteria)
+        if body_text_len < _BODY_TEXT_SUSPICIOUS:
+            for pattern in _ANTIBOT_BODY_PATTERNS:
+                if pattern in body_head:
+                    return False, f'antibot_body:{pattern}'
+
+        # 6. WeChat-specific: no js_content div on WeChat pages
+        if 'mp.weixin.qq.com' in url:
+            if 'id="js_content"' not in html and "id='js_content'" not in html:
+                if any(kw in html for kw in ['环境异常', '完成验证后即可继续访问', '去验证']):
+                    return False, 'wechat_antibot'
+                # WeChat page without js_content = needs JS rendering
+                return False, 'wechat_needs_rendering'
+
+        # Valid
+        return True, ''
+
+    except Exception as e:
+        # Validation must never block the fetch pipeline
+        logging.warning(f"Content validation error (allowing through): {e}")
+        return True, 'validation_error'
 
 
 def add_metrics_to_markdown(md_content: str, metrics: FetchMetrics, template_name: Optional[str] = None) -> str:
@@ -4701,6 +4835,10 @@ def main():
                     help='Skip Chrome health check (use when Chrome is known to be running)')
     ap.add_argument('--stdout', action='store_true',
                     help='Print markdown content to stdout instead of writing to file')
+    ap.add_argument('--engine', choices=['v1', 'v2'], default='v2',
+                    help='Parsing engine: v2 (competition + memory, default), v1 (legacy)')
+    ap.add_argument('--frontmatter', choices=['none', 'yaml'], default='none',
+                    help='Metadata format: none (inline list, default), yaml (YAML front matter)')
 
     args = ap.parse_args()
     
@@ -4886,6 +5024,9 @@ def main():
           
             md = insert_dual_url_section(md, crawl_url_metadata)
 
+            if getattr(args, 'frontmatter', 'none') == 'yaml':
+                md = apply_yaml_frontmatter(md, url, metadata)
+
             if args.stdout:
                 print(md)
                 return
@@ -5070,9 +5211,92 @@ def main():
         date_only, md, metadata = xhs_to_markdown(html, url, url_metadata)
         rendered = should_render
     else:
-        logging.info("Selected parser: Generic")
-        parser_name = "Generic"
-        date_only, md, metadata = generic_to_markdown(html, url, getattr(args, 'filter', 'safe'), is_crawling=False, url_metadata=url_metadata)
+        if getattr(args, 'engine', 'v1') == 'v2':
+            logging.info("Selected parser: Generic V2 (competition engine)")
+            parser_name = "Generic_V2"
+            from webfetcher.parsing.engine_v2 import generic_v2
+            date_only, md, metadata = generic_v2(html, url, url_metadata=url_metadata, args=args)
+
+            # V2 自动升级：质量差时逐级尝试更高级的 fetcher
+            # 仅在用户未手动指定 fetch-mode 时触发（auto 模式）
+            # 升级链: urllib → cdp → selenium → manual_chrome（人工托底）
+            if (metadata.get('_v2_quality_low')
+                    and getattr(args, 'fetch_mode', 'auto') == 'auto'):
+                _upgrade_chain = ['cdp', 'selenium', 'manual_chrome']
+                _total_steps = len(_upgrade_chain)
+                for _v2_attempt, next_mode in enumerate(_upgrade_chain, 1):
+                    prev_score = metadata.get('_v2_score', 0)
+                    logging.warning(f"V2 auto-upgrade [{_v2_attempt}/{_total_steps}]: "
+                                    f"→ {next_mode} (prev_score={prev_score:.3f})")
+
+                    # manual_chrome 走专用的人工辅助通道
+                    if next_mode == 'manual_chrome':
+                        if not MANUAL_CHROME_AVAILABLE or manual_chrome_helper is None:
+                            logging.warning("V2 auto-upgrade: manual_chrome not available, skipping")
+                            continue
+                        try:
+                            _mc_start = time.time()
+                            _mc_metrics = FetchMetrics()
+                            html2, fm2, um2 = _try_manual_chrome_fallback(
+                                url, _mc_metrics, _mc_start,
+                                f"V2 quality low (score={prev_score:.3f})",
+                                input_url=input_url,
+                            )
+                            if html2 and len(html2) > len(html):
+                                html = html2
+                                fetch_metrics = fm2
+                                url_metadata = um2
+                                args._v2_no_upgrade = True
+                                date_only, md, metadata = generic_v2(
+                                    html, url, url_metadata=url_metadata, args=args)
+                                args._v2_no_upgrade = False
+                                logging.info(f"V2 auto-upgrade success: manual_chrome, "
+                                             f"HTML={len(html)} chars")
+                                break
+                            else:
+                                logging.warning("V2 auto-upgrade: manual_chrome returned no improvement")
+                        except Exception as e:
+                            logging.warning(f"V2 auto-upgrade manual_chrome failed: {e}")
+                        continue
+
+                    # cdp / selenium 走 fetch_html 通道
+                    try:
+                        html2, fm2, um2 = fetch_html(
+                            url, ua=ua, timeout=args.timeout,
+                            fetch_mode=next_mode, force_chrome=True,
+                            input_url=input_url,
+                        )
+                        if html2 and len(html2) > len(html):
+                            html = html2
+                            fetch_metrics = fm2
+                            url_metadata = um2
+                            # 重新解析（禁止再次触发升级）
+                            args._v2_no_upgrade = True
+                            date_only, md, metadata = generic_v2(
+                                html, url, url_metadata=url_metadata, args=args)
+                            args._v2_no_upgrade = False
+                            logging.info(f"V2 auto-upgrade success: {next_mode}, "
+                                         f"HTML={len(html)} chars")
+                            # 质量已经改善，停止升级
+                            if not metadata.get('_v2_quality_low'):
+                                break
+                        else:
+                            logging.warning(f"V2 auto-upgrade: {next_mode} "
+                                            f"returned {len(html2) if html2 else 0} chars "
+                                            f"(not better than {len(html)}), trying next")
+                    except Exception as e:
+                        logging.warning(f"V2 auto-upgrade {next_mode} failed: {e}, trying next")
+                        continue
+
+            # 清理内部信号，不泄露到最终 metadata
+            metadata.pop('_v2_quality_low', None)
+            metadata.pop('_v2_needs_upgrade', None)
+            metadata.pop('_v2_current_fetcher', None)
+            metadata.pop('_v2_score', None)
+        else:
+            logging.info("Selected parser: Generic")
+            parser_name = "Generic"
+            date_only, md, metadata = generic_to_markdown(html, url, getattr(args, 'filter', 'safe'), is_crawling=False, url_metadata=url_metadata)
         rendered = False
 
     # Title for filename comes from first heading
@@ -5102,6 +5326,9 @@ def main():
   
     # url_metadata should be available from fetch_html() call
     md = insert_dual_url_section(md, url_metadata)
+
+    if getattr(args, 'frontmatter', 'none') == 'yaml':
+        md = apply_yaml_frontmatter(md, url, metadata)
 
     if args.stdout:
         print(md)
