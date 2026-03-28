@@ -1393,6 +1393,99 @@ def _determine_fetcher_via_routing(url: str) -> Optional[str]:
         return None
 
 
+_FETCH_TOTAL_DEADLINE = 120  # seconds — hard cap on total fetch time including all fallbacks
+
+
+def _try_fallback_for_invalid_content(
+    url: str, html: str, validation_reason: str,
+    ua: Optional[str], timeout: int,
+    metrics: FetchMetrics, start_time: float,
+    input_url: str = None, force_chrome: bool = False,
+    tried_fetchers: set = None,
+) -> tuple[str, FetchMetrics, dict]:
+    """Try higher-capability fetchers when content validation fails.
+
+    Unlike _try_cdp_fallback_after_urllib_failure (which handles fetch *exceptions*),
+    this handles fetch *success with invalid content*.
+
+    Cascade: CDP → Selenium → Manual Chrome, validating each result.
+    If all fail validation, returns the longest HTML as degraded output.
+    """
+    if tried_fetchers is None:
+        tried_fetchers = set()
+
+    best_html = html
+    best_html_len = len(html) if html else 0
+    best_metrics = metrics
+    best_url_metadata = create_url_metadata(input_url=input_url or url, final_url=url, fetch_mode='urllib')
+
+    fallback_chain = [
+        ('cdp', _try_cdp_fetch, CDP_INTEGRATION_AVAILABLE),
+        ('selenium', lambda u, ua, t, m, st, iu: _try_selenium_fetch(u, ua, t, m, st, force_chrome, iu),
+         SELENIUM_INTEGRATION_AVAILABLE),
+        ('manual_chrome', lambda u, ua, t, m, st, iu: _try_manual_chrome_fallback(
+            u, m, st, f"Content invalid: {validation_reason}", iu),
+         MANUAL_CHROME_AVAILABLE and manual_chrome_helper is not None),
+    ]
+
+    for fetcher_name, fetch_fn, available in fallback_chain:
+        if fetcher_name in tried_fetchers:
+            continue
+
+        elapsed = time.time() - start_time
+        if elapsed >= _FETCH_TOTAL_DEADLINE:
+            logging.warning(f"Content validation fallback: deadline exceeded ({elapsed:.0f}s >= {_FETCH_TOTAL_DEADLINE}s)")
+            break
+
+        if not available:
+            logging.info(f"Content validation fallback: {fetcher_name} not available, skipping")
+            continue
+
+        tried_fetchers.add(fetcher_name)
+        logging.info(f"Content validation fallback: trying {fetcher_name} (reason: {validation_reason})")
+
+        try:
+            fb_metrics = FetchMetrics(primary_method=fetcher_name)
+            fb_start = time.time()
+            fb_html, fb_metrics, fb_url_metadata = fetch_fn(url, ua, timeout, fb_metrics, fb_start, input_url)
+
+            if not fb_html:
+                logging.warning(f"Content validation fallback: {fetcher_name} returned empty HTML")
+                metrics.validation_failures.append((fetcher_name, 'fetch_empty'))
+                continue
+
+            is_valid, reason = validate_fetched_html(fb_html, url)
+
+            if is_valid:
+                logging.info(f"Content validation fallback: {fetcher_name} returned valid content ({len(fb_html)} chars)")
+                fb_metrics.fallback_method = fetcher_name
+                fb_metrics.validation_failures = metrics.validation_failures
+                return fb_html, fb_metrics, fb_url_metadata
+
+            logging.warning(f"Content validation fallback: {fetcher_name} also invalid ({reason})")
+            metrics.validation_failures.append((fetcher_name, reason))
+
+            if len(fb_html) > best_html_len:
+                best_html = fb_html
+                best_html_len = len(fb_html)
+                best_metrics = fb_metrics
+                best_url_metadata = fb_url_metadata
+
+        except Exception as e:
+            logging.warning(f"Content validation fallback: {fetcher_name} failed: {e}")
+            metrics.validation_failures.append((fetcher_name, f'error:{type(e).__name__}'))
+
+    # All fallbacks failed or exhausted — return best HTML as degraded output
+    logging.warning(
+        f"All fetchers failed content validation for {url}. "
+        f"Returning best result ({best_html_len} chars). "
+        f"Failures: {metrics.validation_failures}"
+    )
+    best_metrics.validation_failures = metrics.validation_failures
+    best_metrics.final_status = "degraded"
+    return best_html, best_metrics, best_url_metadata
+
+
 def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
                          fetch_mode: str = 'auto', force_chrome: bool = False,
                          input_url: str = None) -> tuple[str, FetchMetrics, dict]:
@@ -1421,6 +1514,7 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
     metrics = FetchMetrics(primary_method="urllib")
     start_time = time.time()
     last_exception = None
+    deadline = start_time + _FETCH_TOTAL_DEADLINE
 
     # === CONFIG-DRIVEN ROUTING: Intelligent fetcher selection ===
     # === 配置驱动路由：智能获取器选择 ===
@@ -1434,7 +1528,12 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
             metrics.primary_method = "selenium_direct"
 
             try:
-                return _try_selenium_fetch(url, ua, timeout, metrics, start_time, force_chrome, input_url)
+                html, metrics, url_metadata = _try_selenium_fetch(url, ua, timeout, metrics, start_time, force_chrome, input_url)
+                is_valid, reason = validate_fetched_html(html, url)
+                if not is_valid:
+                    logging.warning(f"Config-driven Selenium content validation failed: {reason}")
+                    metrics.validation_failures.append(('selenium', reason))
+                return html, metrics, url_metadata
             except Exception as e:
                 logging.warning(f"Selenium fetch failed for {url}, falling back to urllib: {e}")
                 metrics.primary_method = "urllib"
@@ -1447,7 +1546,12 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
             metrics.primary_method = "cdp_direct"
 
             try:
-                return _try_cdp_fetch(url, ua, timeout, metrics, start_time, input_url)
+                html, metrics, url_metadata = _try_cdp_fetch(url, ua, timeout, metrics, start_time, input_url)
+                is_valid, reason = validate_fetched_html(html, url)
+                if not is_valid:
+                    logging.warning(f"Config-driven CDP content validation failed: {reason}")
+                    metrics.validation_failures.append(('cdp', reason))
+                return html, metrics, url_metadata
             except Exception as e:
                 logging.warning(f"CDP fetch failed for {url}, falling back to urllib: {e}")
                 metrics.primary_method = "urllib"
@@ -1479,6 +1583,10 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
         
         try:
             if attempt > 0:
+                # Check deadline before retrying
+                if time.time() >= deadline:
+                    logging.warning(f"Deadline exceeded ({_FETCH_TOTAL_DEADLINE}s), stopping retries for {url}")
+                    break
                 delay = calculate_backoff_delay(attempt - 1)
                 logging.info(f"Retry attempt {attempt}/{MAX_RETRIES} for {url} after {delay:.1f}s delay")
                 time.sleep(delay)
@@ -1500,7 +1608,17 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
                 final_url=final_url,
                 fetch_mode='urllib'
             )
-            
+
+            # Content validation — check before returning
+            if fetch_mode == 'auto':
+                is_valid, reason = validate_fetched_html(html, url)
+                if not is_valid:
+                    logging.warning(f"urllib content validation failed for {url}: {reason}")
+                    metrics.validation_failures.append(('urllib', reason))
+                    return _try_fallback_for_invalid_content(
+                        url, html, reason, ua, timeout, metrics, start_time,
+                        input_url, force_chrome, tried_fetchers={'urllib'},
+                    )
 
             return html, metrics, url_metadata
             
@@ -1644,7 +1762,18 @@ def _try_cdp_fallback_after_urllib_failure(url: str, ua: Optional[str], timeout:
         logging.info(f"🔌 Attempting CDP fallback for {url}")
         html, metrics, url_metadata = _try_cdp_fetch(url, ua, timeout, metrics, start_time, input_url)
 
-        # CDP succeeded - update metrics to reflect fallback
+        # CDP succeeded - validate content before accepting
+        is_valid, reason = validate_fetched_html(html, url)
+        if not is_valid:
+            logging.warning(f"CDP fallback content validation failed for {url}: {reason}")
+            metrics.validation_failures.append(('cdp', reason))
+            # Continue to Selenium fallback
+            return _try_selenium_fallback_after_urllib_failure(
+                url, ua, timeout, metrics, start_time,
+                f"urllib failed: {urllib_error}. CDP content invalid: {reason}",
+                input_url, force_chrome
+            )
+
         metrics.fallback_method = "cdp"
         logging.info(f"✓ CDP fallback successful for {url}")
 
