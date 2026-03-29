@@ -835,6 +835,9 @@ wf - WebFetcher便捷命令
   wf site URL [输出目录]            # 整站爬虫
   wf batch urls.txt [输出目录]     # 批量抓取
   wf diagnose                       # 系统诊断（含ChromeDriver检查）
+  wf learn                          # 分析失败日志，建议路由规则
+  wf learn --apply                  # 自动将建议写入routing.yaml
+  wf learn --since 7d               # 只分析最近7天
 
 Stdout模式:
   wf example.com --stdout             # 输出到终端（stdout），不保存文件
@@ -883,6 +886,14 @@ Stdout模式:
   wf -c example.com               # 使用CDP
   wf -u example.com               # 使用urllib
   wf -s example.com               # 使用Selenium
+
+失败分析与路由学习:
+  wf learn                          # 查看采集失败统计（按域名聚合）
+  wf learn --apply                  # 一键将建议写入routing.yaml
+  wf learn --since 7d               # 只看最近7天
+
+  所有采集失败自动记录到 ~/.wf/fetch_failures.jsonl
+  积累数据后运行 wf learn 可自动发现哪些站需要CDP/Selenium
 
 原始命令:
   wf [任何webfetcher参数]           # 直接传递给webfetcher.py
