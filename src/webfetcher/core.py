@@ -1618,6 +1618,14 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
                 if not is_valid:
                     logging.warning(f"Config-driven Selenium content validation failed: {reason}")
                     metrics.validation_failures.append(('selenium', reason))
+                    persist_fetch_failure(
+                        url=url, input_url=input_url or url,
+                        fetchers_tried=['selenium'], failure_type='content_invalid',
+                        failure_reason=reason, last_error='',
+                        html_size=len(html) if html else 0,
+                        validation_details=[f'selenium:{reason}'],
+                        fetch_mode='selenium_direct', duration_seconds=time.time() - start_time,
+                    )
                 return html, metrics, url_metadata
             except Exception as e:
                 logging.warning(f"Selenium fetch failed for {url}, falling back to urllib: {e}")
@@ -1636,6 +1644,14 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
                 if not is_valid:
                     logging.warning(f"Config-driven CDP content validation failed: {reason}")
                     metrics.validation_failures.append(('cdp', reason))
+                    persist_fetch_failure(
+                        url=url, input_url=input_url or url,
+                        fetchers_tried=['cdp'], failure_type='content_invalid',
+                        failure_reason=reason, last_error='',
+                        html_size=len(html) if html else 0,
+                        validation_details=[f'cdp:{reason}'],
+                        fetch_mode='cdp_direct', duration_seconds=time.time() - start_time,
+                    )
                 return html, metrics, url_metadata
             except Exception as e:
                 logging.warning(f"CDP fetch failed for {url}, falling back to urllib: {e}")
@@ -5536,6 +5552,23 @@ def main():
     # Title for filename comes from first heading
     m = re.match(r'^#\s*(.+)$', md.splitlines()[0].strip())
     title = m.group(1) if m else '未命名'
+
+    # Post-parse quality check: log if output is suspiciously poor
+    _md_text_len = len(re.sub(r'\[.*?\]\(.*?\)|!\[.*?\]\(.*?\)|^#+\s|^\s*[-*]\s|```.*?```', '', md, flags=re.MULTILINE | re.DOTALL).strip())
+    if _md_text_len < 100 and html and len(html) > 1000:
+        logging.warning(f"Parse output suspiciously short ({_md_text_len} chars from {len(html)} char HTML)")
+        persist_fetch_failure(
+            url=url, input_url=input_url or url,
+            fetchers_tried=[getattr(fetch_metrics, 'primary_method', 'unknown')] if fetch_metrics else ['unknown'],
+            failure_type='parse_poor_output',
+            failure_reason=f'md_text={_md_text_len}_from_html={len(html)}',
+            last_error='',
+            html_size=len(html),
+            validation_details=[f'parser={parser_name}', f'title={title}'],
+            fetch_mode=getattr(args, 'fetch_mode', 'auto'),
+            duration_seconds=fetch_metrics.fetch_duration if fetch_metrics else 0,
+        )
+
     # Use current timestamp for filename to avoid conflicts
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
     base = f"{timestamp} - {sanitize_filename(title)}"
