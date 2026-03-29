@@ -21,6 +21,42 @@ except ImportError:
     logger.warning("pychrome not installed. CDP fetcher unavailable. Install with: pip install pychrome")
 
 
+# === STEALTH JS — Anti-bot detection bypass ===
+# Injected before each navigation to mask automation fingerprints.
+# Shared between CDP and Selenium fetchers.
+STEALTH_JS = """
+// 1. Remove webdriver flag (primary detection vector)
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+
+// 2. Fake chrome.runtime (Cloudflare checks this)
+if (!window.chrome) {
+  window.chrome = {};
+}
+if (!window.chrome.runtime) {
+  window.chrome.runtime = {};
+}
+
+// 3. Fake plugins array (empty plugins = automation fingerprint)
+Object.defineProperty(navigator, 'plugins', {
+  get: () => [1, 2, 3, 4, 5],
+});
+
+// 4. Fake languages
+Object.defineProperty(navigator, 'languages', {
+  get: () => ['zh-CN', 'zh', 'en-US', 'en'],
+});
+
+// 5. Override permissions.query (notification permission detection)
+if (navigator.permissions && navigator.permissions.query) {
+  const originalQuery = navigator.permissions.query.bind(navigator.permissions);
+  navigator.permissions.query = (parameters) =>
+    parameters.name === 'notifications'
+      ? Promise.resolve({ state: Notification.permission })
+      : originalQuery(parameters);
+}
+"""
+
+
 @dataclass
 class CDPFetchResult:
     """CDP采集结果"""
@@ -155,7 +191,24 @@ class CDPFetcher:
         logger.info(f"✓ Created/attached to tab{': ' + url if url else ''}")
         return tab
 
-    def fetch(self, url: str, wait_time: float = 3.0, use_existing_tab: bool = True) -> CDPFetchResult:
+    def _inject_stealth(self, tab):
+        """Inject stealth JS to mask automation fingerprints.
+
+        Uses Page.addScriptToEvaluateOnNewDocument so the script runs
+        before any page JS on every navigation (including redirects).
+        Falls back to Runtime.evaluate if the CDP command isn't available.
+        """
+        try:
+            tab.call_method("Page.addScriptToEvaluateOnNewDocument", source=STEALTH_JS)
+            logger.debug("Stealth JS injected via Page.addScriptToEvaluateOnNewDocument")
+        except Exception:
+            try:
+                tab.Runtime.evaluate(expression=STEALTH_JS)
+                logger.debug("Stealth JS injected via Runtime.evaluate (fallback)")
+            except Exception as e:
+                logger.debug(f"Stealth JS injection failed (non-fatal): {e}")
+
+    def fetch(self, url: str, wait_time: float = 15.0, use_existing_tab: bool = True) -> CDPFetchResult:
         """
         使用CDP采集网页
 
@@ -184,11 +237,14 @@ class CDPFetcher:
             # 选择或创建标签页
             if use_existing_tab and self.current_tab:
                 tab = self.current_tab
+                self._inject_stealth(tab)
                 tab.Page.navigate(url=url)
             else:
-                tab = self.new_tab(url)
+                tab = self.new_tab()
+                self._inject_stealth(tab)
+                tab.Page.navigate(url=url)
 
-            # 等待页面加载（智能轮询 readyState）
+            # 等待页面加载（智能等待：readyState + DOM 稳定性检测）
             self._wait_for_ready(tab, timeout=wait_time)
 
             # 获取渲染后的HTML
@@ -229,26 +285,58 @@ class CDPFetcher:
                 duration=duration
             )
 
-    def _wait_for_ready(self, tab, timeout: float = 10, poll_interval: float = 0.3):
+    def _wait_for_ready(self, tab, timeout: float = 15, poll_interval: float = 0.5):
         """
-        等待页面加载完成（轮询 document.readyState）
+        Smart wait: readyState + DOM content stability detection.
 
-        Args:
-            tab: CDP tab object
-            timeout: 最大等待时间（秒）
-            poll_interval: 轮询间隔（秒）
+        Phase 1: Wait for document.readyState === 'complete'
+        Phase 2: After readyState complete, monitor body.innerHTML.length
+                 until it stabilizes (2 consecutive checks with same length)
+
+        Exits quickly for static sites (~0.5s), waits longer for SPAs (~2-10s).
         """
         deadline = time.time() + timeout
+        ready_state_done = False
+        prev_body_len = -1
+        stable_count = 0
+        STABLE_THRESHOLD = 2
+
         while time.time() < deadline:
             try:
-                state = self._eval_js(tab, "document.readyState")
-                if state == "complete":
-                    logger.debug(f"Page ready in {timeout - (deadline - time.time()):.1f}s")
-                    return
+                result = self._eval_js(tab, """
+                    JSON.stringify({
+                        state: document.readyState,
+                        bodyLen: document.body ? document.body.innerHTML.length : 0
+                    })
+                """)
+
+                if result:
+                    status = json.loads(result)
+                    state = status.get('state', '')
+                    body_len = status.get('bodyLen', 0)
+
+                    if not ready_state_done:
+                        if state == 'complete':
+                            ready_state_done = True
+                            prev_body_len = body_len
+                            logger.debug(f"readyState complete, body={body_len} chars, checking stability...")
+                    else:
+                        if body_len == prev_body_len and body_len > 0:
+                            stable_count += 1
+                            if stable_count >= STABLE_THRESHOLD:
+                                elapsed = timeout - (deadline - time.time())
+                                logger.debug(f"DOM stable after {elapsed:.1f}s (body={body_len} chars)")
+                                return
+                        else:
+                            stable_count = 0
+                            prev_body_len = body_len
+
             except Exception:
                 pass
+
             time.sleep(poll_interval)
-        logger.debug(f"Page load timeout after {timeout}s, proceeding anyway")
+
+        logger.debug(f"Smart wait timeout after {timeout}s, proceeding anyway")
 
     def _get_html(self, tab) -> str:
         """获取渲染后的完整HTML"""
@@ -326,7 +414,7 @@ class CDPFetcher:
 # 简化的函数接口（兼容现有fetcher模式）
 # ============================================================================
 
-def fetch_with_cdp(url: str, wait_time: float = 3.0, **kwargs) -> Tuple[str, str, dict]:
+def fetch_with_cdp(url: str, wait_time: float = 15.0, **kwargs) -> Tuple[str, str, dict]:
     """
     使用CDP采集网页（简化接口）
 
