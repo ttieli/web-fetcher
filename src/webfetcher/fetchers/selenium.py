@@ -63,6 +63,14 @@ except ImportError:
     REQUESTS_AVAILABLE = False
     logging.debug("requests not available, using urllib.request fallback")
 
+# Stealth JS for anti-bot bypass (shared with CDP fetcher)
+try:
+    from webfetcher.fetchers.cdp_fetcher import STEALTH_JS
+    _STEALTH_JS_AVAILABLE = True
+except ImportError:
+    _STEALTH_JS_AVAILABLE = False
+    STEALTH_JS = ""
+
 # Conditional imports - graceful degradation when Selenium not available
 try:
     from selenium import webdriver
@@ -977,6 +985,8 @@ class SeleniumFetcher:
                 options.add_argument('--log-level=3')  # Level 3 = FATAL only
                 options.add_argument('--disable-logging')
                 options.add_argument('--silent')
+                # Anti-automation: disable blink automation flag (effective when Chrome launched with this flag)
+                options.add_argument('--disable-blink-features=AutomationControlled')
 
                 # Additional stability options (user-provided chrome_options can override defaults)
                 chrome_options = self.config.get('chrome_options', [])
@@ -997,6 +1007,17 @@ class SeleniumFetcher:
                 self._connection_established = True
 
                 logging.info(f"✓ Connected to Chrome debug session on {debugger_address} in {connection_time:.2f}s")
+
+                # Inject stealth JS to mask automation fingerprints
+                if _STEALTH_JS_AVAILABLE and STEALTH_JS:
+                    try:
+                        self.driver.execute_cdp_cmd(
+                            'Page.addScriptToEvaluateOnNewDocument',
+                            {'source': STEALTH_JS}
+                        )
+                        logging.info("Stealth JS injected via CDP command")
+                    except Exception as e:
+                        logging.debug(f"Stealth JS injection failed (non-fatal): {e}")
 
                 # Solution E: Show browser notification if enabled
                 if self.config.get('browser_notification', {}).get('enabled', True):
