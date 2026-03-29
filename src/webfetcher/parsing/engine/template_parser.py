@@ -472,6 +472,21 @@ class TemplateParser(BaseParser):
                     except Exception as e:
                         self.logger.debug(f"Failed to remove elements with selector '{selector}': {e}")
 
+            # Apply filters from template (css_classes_to_remove, ids_to_remove)
+            if self.current_template and 'filters' in self.current_template:
+                filters = self.current_template['filters']
+
+                # Remove elements by CSS class
+                for css_class in filters.get('css_classes_to_remove', []):
+                    for el in soup.find_all(class_=css_class):
+                        el.decompose()
+
+                # Remove elements by ID
+                for id_val in filters.get('ids_to_remove', []):
+                    el = soup.find(id=id_val)
+                    if el:
+                        el.decompose()
+
             # Find all img tags with data-src attribute
             for img in soup.find_all('img'):
                 data_src = img.get('data-src')
@@ -544,6 +559,15 @@ class TemplateParser(BaseParser):
             # Remove multiple consecutive blank lines
             while '\n\n\n' in markdown:
                 markdown = markdown.replace('\n\n\n', '\n\n')
+
+            # Apply filters.remove_patterns from template (regex on markdown lines)
+            if self.current_template and 'filters' in self.current_template:
+                remove_patterns = self.current_template['filters'].get('remove_patterns', [])
+                if remove_patterns:
+                    compiled = [re.compile(p) for p in remove_patterns]
+                    lines = markdown.split('\n')
+                    lines = [l for l in lines if not any(p.search(l.strip()) for p in compiled)]
+                    markdown = '\n'.join(lines)
 
             # Apply markdown post-processing from template
             if self.current_template and 'post_processing' in self.current_template:

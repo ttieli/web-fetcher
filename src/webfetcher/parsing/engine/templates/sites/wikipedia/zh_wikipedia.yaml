@@ -176,20 +176,39 @@ filters:
     - "^查看源代码$"                   # "查看源代码" view source
     - "^查看历史$"                     # "查看历史" view history
 
-  # CSS classes to remove (additional cleanup)
+  # CSS classes to remove (HTML elements with these classes are decomposed before markdown conversion)
   css_classes_to_remove:
-    - "mw-editsection"
-    - "mw-jump"
-    - "noprint"
-    - "metadata"
-    - "navbox"
-    - "sistersitebox"
+    - "mw-editsection"          # [编辑] section links
+    - "mw-jump"                 # Jump-to links
+    - "noprint"                 # Print-hidden elements
+    - "metadata"                # Metadata boxes
+    - "navbox"                  # Navigation boxes at bottom
+    - "sistersitebox"           # Sister project boxes
+    - "ambox"                   # Article message boxes (warnings/cleanup notices)
+    - "tmbox"                   # Talk page message boxes
+    - "cmbox"                   # Category message boxes
+    - "ombox"                   # Other page message boxes
+    - "mbox-small"              # Small message boxes
+    - "hatnote"                 # Disambiguation/redirect notices
+    - "dablink"                 # Disambiguation links (older class)
+    - "authority-control"       # 规范控制数据库 section
+    - "catlinks"                # Category links at bottom
+    - "mw-references-wrap"      # Reference list wrapper (keep inline refs, remove list)
+    - "reflist"                 # Reference list
+    - "reference"               # Inline reference markers [1] [2]
+    - "mw-headline-anchor"      # Heading anchor links
+    - "mw-empty-elt"            # Empty placeholder elements
+    - "toc"                     # Table of contents
 
   # ID attributes to remove
   ids_to_remove:
-    - "toc"
-    - "catlinks"
-    - "footer"
+    - "toc"                     # Table of contents
+    - "catlinks"                # Category links
+    - "footer"                  # Page footer
+    - "mw-navigation"           # Navigation sidebar
+    - "siteSub"                 # Site subtitle ("维基百科，自由的百科全书")
+    - "contentSub"              # Content subtitle
+    - "jump-to-nav"             # Jump to navigation link
 
 # ============================================================================
 # SPECIAL HANDLING - Wikipedia-specific
