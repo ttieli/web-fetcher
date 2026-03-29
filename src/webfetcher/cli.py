@@ -383,6 +383,163 @@ def _prepare_and_run(webfetcher_module, url, raw_args_rest, stdout_mode, extra_a
     run_webfetcher(webfetcher_module, cmd_args)
 
 
+def _run_learn(args):
+    """Analyze fetch failure logs and suggest routing rules.
+
+    Usage:
+        wf learn                  # Show failure analysis + routing suggestions
+        wf learn --since 7d       # Only analyze last 7 days
+        wf learn --apply          # Auto-append suggestions to routing.yaml
+    """
+    import json
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+    from urllib.parse import urlparse
+
+    log_path = Path.home() / '.wf' / 'fetch_failures.jsonl'
+    if not log_path.exists():
+        print("No failure log found (~/.wf/fetch_failures.jsonl)")
+        print("Run wf to fetch some pages first — failures are logged automatically.")
+        return
+
+    # Parse --since argument
+    since = None
+    apply_mode = '--apply' in args
+    for i, arg in enumerate(args):
+        if arg == '--since' and i + 1 < len(args):
+            val = args[i + 1]
+            days = int(val.rstrip('d')) if val.endswith('d') else int(val)
+            since = datetime.now() - timedelta(days=days)
+
+    # Read and parse log entries
+    entries = []
+    for line in log_path.read_text().strip().split('\n'):
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+            if since:
+                ts = datetime.fromisoformat(entry.get('ts', ''))
+                if ts < since:
+                    continue
+            entries.append(entry)
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    if not entries:
+        print("No failure entries found" + (f" since {since.date()}" if since else "") + ".")
+        return
+
+    # Aggregate by domain
+    domain_stats = defaultdict(lambda: {'count': 0, 'types': defaultdict(int), 'reasons': defaultdict(int)})
+    for entry in entries:
+        url = entry.get('url', '')
+        domain = urlparse(url).netloc or url
+        stats = domain_stats[domain]
+        stats['count'] += 1
+        stats['types'][entry.get('failure_type', 'unknown')] += 1
+        stats['reasons'][entry.get('failure_reason', 'unknown')] += 1
+
+    # Sort by failure count descending
+    sorted_domains = sorted(domain_stats.items(), key=lambda x: x[1]['count'], reverse=True)
+
+    # Display analysis
+    print(f"\n📊 Fetch Failure Analysis ({len(entries)} failures, {len(sorted_domains)} domains)")
+    print("=" * 70)
+
+    suggestions = []
+    for domain, stats in sorted_domains:
+        count = stats['count']
+        top_reason = max(stats['reasons'], key=stats['reasons'].get)
+        top_type = max(stats['types'], key=stats['types'].get)
+        print(f"\n  {domain}: {count} failures")
+        print(f"    Type: {top_type} | Reason: {top_reason}")
+
+        # Generate routing suggestion for domains with 3+ failures
+        if count >= 3:
+            if 'spa_shell' in top_reason:
+                fetcher = 'cdp'
+                reason = 'SPA shell detected, needs JS rendering'
+            elif 'antibot' in top_reason:
+                fetcher = 'selenium'
+                reason = 'Anti-bot detected, needs stealth browser'
+            elif 'too_short' in top_reason:
+                fetcher = 'cdp'
+                reason = 'Content too short, likely needs JS rendering'
+            elif 'ssl' in top_reason.lower() or 'SSL' in str(stats['reasons']):
+                fetcher = 'selenium'
+                reason = 'SSL issues, use browser fallback'
+            else:
+                fetcher = 'cdp'
+                reason = f'Frequent failures ({count}x): {top_reason}'
+
+            suggestions.append({
+                'domain': domain,
+                'fetcher': fetcher,
+                'reason': reason,
+                'count': count,
+            })
+
+    # Display suggestions
+    if suggestions:
+        print(f"\n\n💡 Routing Suggestions ({len(suggestions)} domains)")
+        print("=" * 70)
+        for s in suggestions:
+            print(f"\n  - name: \"{s['domain']} - Auto-learned\"")
+            print(f"    priority: 80")
+            print(f"    conditions:")
+            print(f"      domain: \"{s['domain']}\"")
+            print(f"    action:")
+            print(f"      fetcher: \"{s['fetcher']}\"")
+            print(f"      reason: \"{s['reason']}\"")
+
+        if apply_mode:
+            # Find routing.yaml
+            routing_paths = [
+                Path.home() / '.config' / 'webfetcher' / 'routing.yaml',
+                Path(__file__).parent.parent.parent / 'config' / 'routing.yaml',
+            ]
+            routing_path = None
+            for p in routing_paths:
+                if p.exists():
+                    routing_path = p
+                    break
+
+            if routing_path:
+                import yaml
+                with open(routing_path, 'r') as f:
+                    config = yaml.safe_load(f) or {}
+
+                rules = config.get('rules', [])
+                existing_domains = {r.get('conditions', {}).get('domain', '') for r in rules}
+                added = 0
+                for s in suggestions:
+                    if s['domain'] not in existing_domains:
+                        rules.append({
+                            'name': f"{s['domain']} - Auto-learned",
+                            'priority': 80,
+                            'conditions': {'domain': s['domain']},
+                            'action': {'fetcher': s['fetcher'], 'reason': s['reason']},
+                        })
+                        added += 1
+
+                if added:
+                    config['rules'] = rules
+                    with open(routing_path, 'w') as f:
+                        yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+                    print(f"\n✅ Added {added} rules to {routing_path}")
+                else:
+                    print(f"\nAll suggested domains already have rules in {routing_path}")
+            else:
+                print("\n⚠️  No routing.yaml found. Create one at ~/.config/webfetcher/routing.yaml")
+        else:
+            print(f"\n\nRun `wf learn --apply` to auto-add these rules to routing.yaml")
+    else:
+        print("\n\nNo domains with 3+ failures — no routing suggestions yet.")
+
+    print()
+
+
 def main():
     # Check for updates (async, non-blocking)
     try:
@@ -417,7 +574,7 @@ def main():
     extraction_performed = False
 
     # Skip extraction for known commands
-    skip_commands = ['help', '-h', '--help', 'fast', 'full', 'site', 'raw', 'batch']
+    skip_commands = ['help', '-h', '--help', 'fast', 'full', 'site', 'raw', 'batch', 'v1', 'v2', 'learn', 'diagnose']
 
     if cmd not in skip_commands:
         # Attempt to extract URL from mixed text
@@ -533,6 +690,28 @@ def main():
         url = _prepare_url('Raw模式', raw_args[1])
         _prepare_and_run(webfetcher_module, url, raw_args[2:], stdout_mode, ['--raw'])
 
+    # V1引擎模式（显式降级）
+    elif cmd == 'v1':
+        if len(raw_args) < 2:
+            print("错误: v1模式需要提供URL")
+            print("用法: wf v1 <URL> [输出目录]")
+            print("\nV1引擎为原始解析器（降级使用）")
+            return
+        url = _prepare_url('V1模式', raw_args[1])
+        _prepare_and_run(webfetcher_module, url, raw_args[2:], stdout_mode,
+                         extra_args=['--engine', 'v1'])
+
+    # V2引擎模式（显式指定，等价于默认）
+    elif cmd == 'v2':
+        if len(raw_args) < 2:
+            print("错误: v2模式需要提供URL")
+            print("用法: wf v2 <URL> [输出目录]")
+            print("\nV2引擎使用多策略竞赛提取 + 质量检测 + 域名记忆")
+            return
+        url = _prepare_url('V2模式', raw_args[1])
+        _prepare_and_run(webfetcher_module, url, raw_args[2:], stdout_mode,
+                         extra_args=['--engine', 'v2'])
+
     # 批量抓取
     elif cmd == 'batch':
         if stdout_mode:
@@ -560,6 +739,10 @@ def main():
             if not url.startswith('http'):
                 url = f'https://{url}'
             run_webfetcher(webfetcher_module, [url, '-o', output_dir] + remaining_args)
+
+    # 失败日志分析 + 路由学习
+    elif cmd == 'learn':
+        _run_learn(raw_args[1:])
 
     # 诊断系统
     elif cmd == 'diagnose' or cmd == '--diagnose':
@@ -647,6 +830,8 @@ wf - WebFetcher便捷命令
   wf fast URL [输出目录]            # 快速模式（不渲染JS）
   wf full URL [输出目录]            # 完整模式（含资源）
   wf raw URL [输出目录]             # Raw模式（完整内容）
+  wf v1 URL [输出目录]              # V1引擎（原始解析器，降级使用）
+  wf v2 URL [输出目录]              # V2引擎（竞赛提取+域名记忆，等价于默认）
   wf site URL [输出目录]            # 整站爬虫
   wf batch urls.txt [输出目录]     # 批量抓取
   wf diagnose                       # 系统诊断（含ChromeDriver检查）
