@@ -3,6 +3,7 @@
 CDP (Chrome DevTools Protocol) Fetcher
 使用Chrome远程调试协议进行网页采集
 """
+import os
 import time
 import json
 import logging
@@ -79,20 +80,20 @@ class CDPFetcher:
     - 可执行自定义JS
     """
 
-    def __init__(self, host="127.0.0.1", port=9222):
+    def __init__(self, host="127.0.0.1", port=None):
         """
         初始化CDP客户端
 
         Args:
             host: Chrome调试服务器地址
-            port: Chrome调试端口（默认9222）
+            port: Chrome调试端口（默认从CDP_PORT环境变量或9222）
         """
         if not CDP_AVAILABLE:
             raise ImportError("pychrome is required for CDP fetcher. Install with: pip install pychrome")
 
         self.host = host
-        self.port = port
-        self.url = f"http://{host}:{port}"
+        self.port = port or int(os.environ.get('CDP_PORT', 9222))
+        self.url = f"http://{host}:{self.port}"
         self.browser = None
         self.current_tab = None
 
@@ -414,19 +415,20 @@ class CDPFetcher:
 # 简化的函数接口（兼容现有fetcher模式）
 # ============================================================================
 
-def fetch_with_cdp(url: str, wait_time: float = 15.0, **kwargs) -> Tuple[str, str, dict]:
+def fetch_with_cdp(url: str, wait_time: float = 15.0, port: int = None, **kwargs) -> Tuple[str, str, dict]:
     """
     使用CDP采集网页（简化接口）
 
     Args:
         url: 目标URL
         wait_time: 等待时间
+        port: Chrome debug port (default: None, uses CDPFetcher default)
         **kwargs: 其他参数
 
     Returns:
         Tuple[html, final_url, metadata]
     """
-    fetcher = CDPFetcher()
+    fetcher = CDPFetcher(port=port)
     result = fetcher.fetch(url, wait_time=wait_time)
 
     metadata = {

@@ -9,6 +9,12 @@ try:
 except ImportError:
     SELENIUM_AVAILABLE = False
 
+try:
+    from .headless_manager import HeadlessChromeManager, ensure_headless_chrome
+    HEADLESS_MANAGER_AVAILABLE = True
+except ImportError:
+    HEADLESS_MANAGER_AVAILABLE = False
+
 __all__ = []
 if SELENIUM_AVAILABLE:
     __all__.extend([
@@ -16,3 +22,5 @@ if SELENIUM_AVAILABLE:
         'ChromeConnectionError', 'SeleniumFetchError',
         'SeleniumTimeoutError', 'SeleniumNotAvailableError'
     ])
+if HEADLESS_MANAGER_AVAILABLE:
+    __all__.extend(['HeadlessChromeManager', 'ensure_headless_chrome'])

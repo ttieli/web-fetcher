@@ -68,6 +68,13 @@ except ImportError as e:
     CDP_INTEGRATION_AVAILABLE = False
     CDP_AVAILABLE = False
 
+# Headless Chrome manager - auto-launch headless Chrome for CDP
+try:
+    from webfetcher.fetchers.headless_manager import ensure_headless_chrome
+    HEADLESS_MANAGER_AVAILABLE = True
+except ImportError:
+    HEADLESS_MANAGER_AVAILABLE = False
+
 # Chrome error handling (Phase 2.3) - enhanced error messages
 from webfetcher.errors.handler import (
     ChromeDebugError, ChromePortConflictError,
@@ -1926,17 +1933,29 @@ def _try_cdp_fetch(url: str, ua: Optional[str], timeout: int, metrics: FetchMetr
         raise Exception(error_msg)
 
     try:
-        # Auto-start Chrome if needed (similar to Selenium mode)
-        try:
-            ensure_chrome_debug(None)
-        except Exception as e:
-            logging.warning(f"Failed to auto-start Chrome for CDP: {e}")
-            # Continue anyway, maybe it's already running or we can't start it but want to try connecting
+        # Ensure Chrome is available (headless auto-launch or existing session)
+        cdp_port = None
+        headless_mode = getattr(_try_cdp_fetch, '_headless_mode', 'auto')
+        if HEADLESS_MANAGER_AVAILABLE:
+            try:
+                cdp_port = ensure_headless_chrome(mode=headless_mode)
+            except Exception as e:
+                logging.warning(f"Headless Chrome manager failed: {e}")
+                # Fall back to legacy ensure_chrome_debug
+                try:
+                    ensure_chrome_debug(None)
+                except Exception as e2:
+                    logging.warning(f"Legacy Chrome check also failed: {e2}")
+        else:
+            try:
+                ensure_chrome_debug(None)
+            except Exception as e:
+                logging.warning(f"Failed to auto-start Chrome for CDP: {e}")
 
         logging.info(f"🔌 Attempting CDP fetch for {url}")
 
         # Use the simplified fetch_with_cdp interface
-        html, final_url, cdp_metadata = fetch_with_cdp(url, wait_time=wait_time)
+        html, final_url, cdp_metadata = fetch_with_cdp(url, wait_time=wait_time, port=cdp_port)
 
         # Update metrics
         metrics.fetch_duration = time.time() - start_time
@@ -5089,6 +5108,10 @@ def main():
                     help='Parsing engine: v2 (competition + memory, default), v1 (legacy)')
     ap.add_argument('--frontmatter', choices=['none', 'yaml'], default='none',
                     help='Metadata format: none (inline list, default), yaml (YAML front matter)')
+    ap.add_argument('--headless', choices=['auto', 'always', 'never'], default='auto',
+                    help='Headless Chrome for CDP: auto (use existing or launch headless), '
+                         'always (force headless), never (no auto-launch). '
+                         'Only affects --fetch-mode cdp/auto. (default: auto)')
 
     args = ap.parse_args()
     
@@ -5099,7 +5122,10 @@ def main():
         args.fetch_mode = 'selenium'
     elif args.urllib:
         args.fetch_mode = 'urllib'
-    
+
+    # Pass headless mode to CDP fetch function
+    _try_cdp_fetch._headless_mode = getattr(args, 'headless', 'auto')
+
     # Check for legacy mode environment variable
     if os.environ.get('WF_LEGACY_IMAGE_MODE'):
         logging.warning("DEPRECATION: WF_LEGACY_IMAGE_MODE is set. Auto-download behavior will be removed in future versions.")
