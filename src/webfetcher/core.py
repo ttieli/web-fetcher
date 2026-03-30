@@ -9,7 +9,7 @@ Features
 - Clean Markdown output named as: YYYY-MM-DD - 标题.md
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "WebFetcher Team"
 
 import argparse
