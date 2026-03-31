@@ -1472,6 +1472,76 @@ def persist_fetch_failure(
         logging.warning(f"Failed to persist failure log: {e}")
 
 
+# === SUCCESS LOG PERSISTENCE ===
+_HISTORY_LOG_PATH = _FAILURE_LOG_DIR / 'fetch_history.jsonl'
+_HISTORY_LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+_HISTORY_LOG_BACKUP_COUNT = 3
+
+
+def _rotate_history_log():
+    """Rotate history log file when it exceeds max size."""
+    try:
+        if not _HISTORY_LOG_PATH.exists():
+            return
+        if _HISTORY_LOG_PATH.stat().st_size < _HISTORY_LOG_MAX_BYTES:
+            return
+        for i in range(_HISTORY_LOG_BACKUP_COUNT, 0, -1):
+            src = _HISTORY_LOG_PATH.with_suffix(f'.jsonl.{i}')
+            dst = _HISTORY_LOG_PATH.with_suffix(f'.jsonl.{i+1}') if i < _HISTORY_LOG_BACKUP_COUNT else None
+            if src.exists():
+                if dst:
+                    src.rename(dst)
+                else:
+                    src.unlink()
+        _HISTORY_LOG_PATH.rename(_HISTORY_LOG_PATH.with_suffix('.jsonl.1'))
+    except Exception as e:
+        logging.debug(f"History log rotation error (non-fatal): {e}")
+
+
+def persist_fetch_success(
+    url: str, input_url: str, domain: str,
+    fetch_mode: str, primary_method: str,
+    fallback_method: Optional[str],
+    fetchers_tried: list, validation_failures: list,
+    duration_seconds: float, html_size: int,
+    headless_auto_launched: bool,
+    parser: str,
+):
+    """Append a success record to ~/.wf/fetch_history.jsonl.
+
+    Silently degrades on any I/O error — never blocks the main pipeline.
+    """
+    try:
+        _FAILURE_LOG_DIR.mkdir(parents=True, exist_ok=True, mode=0o755)
+        _rotate_history_log()
+
+        record = {
+            'ts': datetime.datetime.now().isoformat(timespec='seconds'),
+            'url': url,
+            'input_url': input_url or url,
+            'domain': domain,
+            'fetch_mode': fetch_mode,
+            'primary_method': primary_method,
+            'fallback_method': fallback_method,
+            'fetchers_tried': fetchers_tried,
+            'validation_failures': validation_failures,
+            'duration_seconds': round(duration_seconds, 2),
+            'html_size': html_size,
+            'headless_auto_launched': headless_auto_launched,
+            'parser': parser,
+            'wf_version': __version__,
+            'hostname': _socket.gethostname(),
+        }
+
+        line = json.dumps(record, ensure_ascii=False) + '\n'
+
+        with open(_HISTORY_LOG_PATH, 'a', encoding='utf-8') as f:
+            f.write(line)
+
+    except Exception as e:
+        logging.warning(f"Failed to persist history log: {e}")
+
+
 _FETCH_TOTAL_DEADLINE = 120  # seconds — hard cap on total fetch time including all fallbacks
 
 
@@ -5623,6 +5693,28 @@ def main():
     if getattr(args, 'frontmatter', 'none') == 'yaml':
         md = apply_yaml_frontmatter(md, url, metadata)
 
+    # Log successful fetch
+    _fetchers_tried = []
+    if fetch_metrics:
+        if fetch_metrics.primary_method:
+            _fetchers_tried.append(fetch_metrics.primary_method)
+        if fetch_metrics.fallback_method and fetch_metrics.fallback_method != fetch_metrics.primary_method:
+            _fetchers_tried.append(fetch_metrics.fallback_method)
+    persist_fetch_success(
+        url=url,
+        input_url=input_url,
+        domain=host,
+        fetch_mode=getattr(args, 'fetch_mode', 'auto'),
+        primary_method=fetch_metrics.primary_method if fetch_metrics else 'unknown',
+        fallback_method=fetch_metrics.fallback_method if fetch_metrics else None,
+        fetchers_tried=_fetchers_tried or [fetch_metrics.primary_method if fetch_metrics else 'unknown'],
+        validation_failures=fetch_metrics.validation_failures if fetch_metrics else [],
+        duration_seconds=fetch_metrics.fetch_duration if fetch_metrics else 0,
+        html_size=len(html) if html else 0,
+        headless_auto_launched=fetch_metrics.chrome_auto_launched if fetch_metrics else False,
+        parser=parser_name if 'parser_name' in dir() else 'unknown',
+    )
+
     if args.stdout:
         print(md)
         return
@@ -5634,7 +5726,7 @@ def main():
     if output_markdown:
         path.write_text(md, encoding='utf-8')
         logging.info(f"Markdown file saved: {path}")
-    
+
     # Write HTML file if requested
     if output_html:
         try:
@@ -5643,7 +5735,7 @@ def main():
             logging.info(f"HTML file saved: {html_path}")
         except Exception as e:
             logging.error(f"Failed to write HTML output: {e}")
-    
+
     # Generate JSON output if requested
     if args.json:
         json_data = {

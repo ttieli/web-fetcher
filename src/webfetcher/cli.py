@@ -383,6 +383,124 @@ def _prepare_and_run(webfetcher_module, url, raw_args_rest, stdout_mode, extra_a
     run_webfetcher(webfetcher_module, cmd_args)
 
 
+def _run_stats(args):
+    """Show fetch statistics from history and failure logs.
+
+    Usage:
+        wf stats                  # Show stats for last 30 days
+        wf stats --since 7d       # Only last 7 days
+        wf stats --all            # All time
+    """
+    import json
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+    from urllib.parse import urlparse
+
+    history_path = Path.home() / '.wf' / 'fetch_history.jsonl'
+    failure_path = Path.home() / '.wf' / 'fetch_failures.jsonl'
+
+    # Parse --since argument (default: 30 days)
+    since = datetime.now() - timedelta(days=30)
+    show_all = '--all' in args
+    if show_all:
+        since = None
+    else:
+        for i, arg in enumerate(args):
+            if arg == '--since' and i + 1 < len(args):
+                val = args[i + 1]
+                days = int(val.rstrip('d')) if val.endswith('d') else int(val)
+                since = datetime.now() - timedelta(days=days)
+
+    def _read_log(path):
+        entries = []
+        if not path.exists():
+            return entries
+        for line in path.read_text(encoding='utf-8').strip().split('\n'):
+            if not line.strip():
+                continue
+            try:
+                entry = json.loads(line)
+                if since:
+                    ts = datetime.fromisoformat(entry.get('ts', ''))
+                    if ts < since:
+                        continue
+                entries.append(entry)
+            except (json.JSONDecodeError, ValueError):
+                continue
+        return entries
+
+    successes = _read_log(history_path)
+    failures = _read_log(failure_path)
+    total = len(successes) + len(failures)
+
+    if total == 0:
+        print("No fetch records found. Run wf to fetch some pages first.")
+        return
+
+    period = "all time" if show_all else f"last {(datetime.now() - since).days}d" if since else "all time"
+    success_rate = len(successes) / total * 100 if total > 0 else 0
+
+    print(f"\n📊 wf 采集统计 ({period})")
+    print("=" * 60)
+    print(f"总采集: {total} 次 | 成功: {len(successes)} ({success_rate:.0f}%) | 失败: {len(failures)} ({100-success_rate:.0f}%)")
+    print()
+
+    # Fetcher usage from successes
+    if successes:
+        method_counts = defaultdict(int)
+        method_durations = defaultdict(list)
+        for s in successes:
+            m = s.get('primary_method', 'unknown')
+            method_counts[m] += 1
+            method_durations[m].append(s.get('duration_seconds', 0))
+
+        print("Fetcher 使用:")
+        max_count = max(method_counts.values()) if method_counts else 1
+        for method, count in sorted(method_counts.items(), key=lambda x: -x[1]):
+            bar_len = int(count / max_count * 20)
+            bar = '█' * bar_len
+            pct = count / len(successes) * 100
+            avg_dur = sum(method_durations[method]) / len(method_durations[method])
+            print(f"  {method:<10}: {bar:<20} {count:>3} ({pct:.0f}%) avg {avg_dur:.1f}s")
+        print()
+
+    # Domain stats from successes
+    if successes:
+        domain_stats = defaultdict(lambda: {'count': 0, 'methods': defaultdict(int), 'durations': []})
+        for s in successes:
+            d = s.get('domain', urlparse(s.get('url', '')).netloc or 'unknown')
+            domain_stats[d]['count'] += 1
+            domain_stats[d]['methods'][s.get('primary_method', 'unknown')] += 1
+            domain_stats[d]['durations'].append(s.get('duration_seconds', 0))
+
+        top_domains = sorted(domain_stats.items(), key=lambda x: -x[1]['count'])[:10]
+        if top_domains:
+            print(f"热门域名 (Top {min(10, len(top_domains))}):")
+            for domain, stats in top_domains:
+                top_method = max(stats['methods'], key=stats['methods'].get)
+                top_pct = stats['methods'][top_method] / stats['count'] * 100
+                avg_dur = sum(stats['durations']) / len(stats['durations'])
+                print(f"  {domain:<30}: {stats['count']:>3} 次 | {top_method} {top_pct:.0f}% | avg {avg_dur:.1f}s")
+            print()
+
+    # Headless Chrome stats
+    headless_launched = sum(1 for s in successes if s.get('headless_auto_launched'))
+    if headless_launched > 0:
+        print(f"Headless Chrome: 自动启动 {headless_launched} 次 / {len(successes)} 次成功采集")
+        print()
+
+    # Top failure reasons
+    if failures:
+        reason_counts = defaultdict(int)
+        for f in failures:
+            reason_counts[f.get('failure_reason', 'unknown')] += 1
+        top_reasons = sorted(reason_counts.items(), key=lambda x: -x[1])[:5]
+        print(f"失败原因 Top {min(5, len(top_reasons))}:")
+        for reason, count in top_reasons:
+            print(f"  {reason:<40}: {count} 次")
+        print()
+
+
 def _run_learn(args):
     """Analyze fetch failure logs and suggest routing rules.
 
@@ -574,7 +692,7 @@ def main():
     extraction_performed = False
 
     # Skip extraction for known commands
-    skip_commands = ['help', '-h', '--help', 'fast', 'full', 'site', 'raw', 'batch', 'v1', 'v2', 'learn', 'diagnose']
+    skip_commands = ['help', '-h', '--help', 'fast', 'full', 'site', 'raw', 'batch', 'v1', 'v2', 'learn', 'stats', 'diagnose']
 
     if cmd not in skip_commands:
         # Attempt to extract URL from mixed text
@@ -744,6 +862,10 @@ def main():
     elif cmd == 'learn':
         _run_learn(raw_args[1:])
 
+    # 采集统计
+    elif cmd == 'stats':
+        _run_stats(raw_args[1:])
+
     # 诊断系统
     elif cmd == 'diagnose' or cmd == '--diagnose':
         diagnose_system()
@@ -887,13 +1009,16 @@ Stdout模式:
   wf -u example.com               # 使用urllib
   wf -s example.com               # 使用Selenium
 
-失败分析与路由学习:
+采集统计与路由学习:
+  wf stats                          # 查看采集统计（成功率/Fetcher/域名/耗时）
+  wf stats --since 7d               # 只看最近7天
+  wf stats --all                    # 查看全部历史
   wf learn                          # 查看采集失败统计（按域名聚合）
   wf learn --apply                  # 一键将建议写入routing.yaml
   wf learn --since 7d               # 只看最近7天
 
-  所有采集失败自动记录到 ~/.wf/fetch_failures.jsonl
-  积累数据后运行 wf learn 可自动发现哪些站需要CDP/Selenium
+  所有采集自动记录到 ~/.wf/（成功: fetch_history.jsonl, 失败: fetch_failures.jsonl）
+  积累数据后运行 wf stats 查看全局概况，wf learn 优化路由规则
 
 原始命令:
   wf [任何webfetcher参数]           # 直接传递给webfetcher.py
