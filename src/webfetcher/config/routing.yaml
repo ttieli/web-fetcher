@@ -25,22 +25,141 @@ rules:
       reason: "Known anti-bot protection requiring manual navigation"
       reason_zh: "已知反爬虫保护，需要手动导航"
 
-  - name: "JavaScript-Heavy Sites"
-    name_zh: "JavaScript重度网站"
-    priority: 50
+  # WeChat Official Accounts: JS-rendered SPA / 微信公众号：JS渲染SPA
+  - name: "WeChat Articles - CDP"
+    name_zh: "微信公众号 - CDP直连"
+    priority: 80
+    enabled: true
+    conditions:
+      domain_list:
+        - "mp.weixin.qq.com"
+        - "weixin.qq.com"
+    action:
+      fetcher: "cdp"
+      config:
+        wait_time: 5
+      reason: "WeChat articles require JS rendering, CDP preserves session state"
+      reason_zh: "微信公众号需要JS渲染，CDP保留会话状态"
+
+  # XiaoHongShu: JS-heavy SPA / 小红书：JS重度SPA
+  - name: "XiaoHongShu - CDP"
+    name_zh: "小红书 - CDP直连"
+    priority: 75
     enabled: true
     conditions:
       domain_list:
         - "xiaohongshu.com"
         - "xhs.com"
-      url_pattern: ".*/(explore|user|note|discovery)/.*"
+        - "xhslink.com"
     action:
-      fetcher: "selenium"
+      fetcher: "cdp"
       config:
         wait_time: 5
-        scroll: true
-      reason: "Requires JavaScript rendering"
-      reason_zh: "需要JavaScript渲染"
+      reason: "XiaoHongShu is a full SPA, requires JS rendering"
+      reason_zh: "小红书为纯SPA，需要JS渲染"
+
+  # Zhihu: JS-rendered content / 知乎：JS渲染内容
+  - name: "Zhihu - CDP"
+    name_zh: "知乎 - CDP直连"
+    priority: 70
+    enabled: true
+    conditions:
+      domain_list:
+        - "zhihu.com"
+        - "www.zhihu.com"
+        - "zhuanlan.zhihu.com"
+    action:
+      fetcher: "cdp"
+      config:
+        wait_time: 3
+      reason: "Zhihu articles and answers require JS rendering"
+      reason_zh: "知乎文章和回答需要JS渲染"
+
+  # Juejin: JS-rendered tech blog / 掘金：JS渲染技术博客
+  - name: "Juejin - CDP"
+    name_zh: "掘金 - CDP直连"
+    priority: 70
+    enabled: true
+    conditions:
+      domain_list:
+        - "juejin.cn"
+        - "juejin.im"
+    action:
+      fetcher: "cdp"
+      config:
+        wait_time: 3
+      reason: "Juejin is a React SPA requiring JS rendering"
+      reason_zh: "掘金为React SPA，需要JS渲染"
+
+  # Dianping: JS + anti-bot / 大众点评：JS渲染+反爬
+  - name: "Dianping - CDP"
+    name_zh: "大众点评 - CDP直连"
+    priority: 70
+    enabled: true
+    conditions:
+      domain_list:
+        - "dianping.com"
+        - "www.dianping.com"
+        - "m.dianping.com"
+    action:
+      fetcher: "cdp"
+      config:
+        wait_time: 5
+      reason: "Dianping requires JS rendering and has anti-bot protection"
+      reason_zh: "大众点评需要JS渲染且有反爬虫保护"
+
+  # Bilibili: JS-rendered video platform / B站：JS渲染视频平台
+  - name: "Bilibili - CDP"
+    name_zh: "B站 - CDP直连"
+    priority: 65
+    enabled: true
+    conditions:
+      domain_list:
+        - "bilibili.com"
+        - "www.bilibili.com"
+        - "b23.tv"
+    action:
+      fetcher: "cdp"
+      config:
+        wait_time: 3
+      reason: "Bilibili article/video pages require JS rendering"
+      reason_zh: "B站文章/视频页面需要JS渲染"
+
+  # Douyin/Toutiao: ByteDance JS apps / 抖音/头条：字节JS应用
+  - name: "ByteDance Apps - CDP"
+    name_zh: "字节跳动应用 - CDP直连"
+    priority: 65
+    enabled: true
+    conditions:
+      domain_list:
+        - "douyin.com"
+        - "toutiao.com"
+        - "www.toutiao.com"
+    action:
+      fetcher: "cdp"
+      config:
+        wait_time: 5
+      reason: "ByteDance apps are fully JS-rendered"
+      reason_zh: "字节系应用为纯JS渲染"
+
+  # Google Search: JavaScript rendering + Anti-bot protection / Google搜索：JavaScript渲染 + 反爬虫
+  - name: "Google Search - CDP Required"
+    name_zh: "Google搜索 - 需要CDP"
+    priority: 95
+    enabled: true
+    conditions:
+      domain_list:
+        - "google.com"
+        - "google.com.hk"
+        - "google.cn"
+      domain_pattern: "^.*\\.google\\.com$"
+      url_pattern: ".*/search.*"
+    action:
+      fetcher: "cdp"
+      config:
+        wait_time: 3
+      reason: "JavaScript rendering required and anti-bot protection"
+      reason_zh: "需要JavaScript渲染且有反爬虫保护"
 
   # Rodong Sinmun: Static content with template-based parsing / 劳动新闻：使用模板解析的静态内容
   - name: "Rodong Sinmun - Static Content"
