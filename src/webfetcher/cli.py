@@ -1009,6 +1009,17 @@ Stdout模式:
   wf -u example.com               # 使用urllib
   wf -s example.com               # 使用Selenium
 
+加速模式:
+  wf example.com --lite --stdout     # 轻量CDP抓取，跳过图片/CSS/字体下载，快3-5x
+  wf example.com --lite -c --stdout  # 同上（显式CDP）
+  --lite 说明：
+    - 拦截image/CSS/font/media的HTTP下载，页面渲染更快
+    - 图片URL仍保留在输出中（只是不下载图片字节）
+    - 适合：AI分析文章内容、快速提取正文
+    - 不适合：需要下载图片保存的场景（用默认模式 + --download-assets）
+    - 仅对CDP/auto模式有效，urllib/selenium模式下自动忽略
+    - --lite + --download-assets 时自动禁用lite
+
 采集统计与路由学习:
   wf stats                          # 查看采集统计（成功率/Fetcher/域名/耗时）
   wf stats --since 7d               # 只看最近7天
