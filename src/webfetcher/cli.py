@@ -995,14 +995,16 @@ Stdout模式:
   wf example.com                    # 自动保存到~/Documents/web-content
 
 抓取方法说明 (Fetch Methods):
-  -m auto / --fetch-mode auto     # urllib→CDP→Selenium智能降级（默认）
-  -m urllib / -u                  # 仅使用urllib（轻量级）
-  -m cdp / -c                     # 仅使用CDP（Chrome DevTools Protocol，保留会话）
-  -m selenium / -s                # 仅使用Selenium（完整浏览器自动化）
+  -m auto / --fetch-mode auto     # urllib→CDP智能降级（默认，已知JS站直接走CDP）
+  -m urllib / -u                  # 仅使用urllib（轻量级，静态站点）
+  -m cdp / -c                     # 仅使用CDP（JS渲染+保留登录态，推荐）
+  -m selenium / -s                # 仅使用Selenium（备选，显式指定时可用）
+  --headless auto/always/never    # Headless Chrome控制（默认auto：按需自动启动）
   --selenium-timeout 30           # Selenium/CDP页面加载超时（秒）
 
-  启动Chrome调试会话: ./config/start_chrome_debug.sh
-  CDP优势：轻量、快速、保留登录状态
+  auto模式降级链: urllib → CDP(自动headless) → 人工兜底
+  已知JS站点(微信/小红书/知乎/掘金/B站等)通过路由表直接走CDP，跳过urllib
+  CDP优势：轻量、快速、保留登录状态、自动启动headless Chrome
 
   快捷示例:
   wf -c example.com               # 使用CDP
