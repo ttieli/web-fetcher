@@ -2,6 +2,41 @@
 
 ## 会话记录
 
+### 2026-04-01 14:30:00 (会话ID: w8f2)
+
+#### ✅ 完成
+
+- **Headless Chrome 自动启动**（v1.1.0, `274c6f9`）— 新建 `headless_manager.py`，CDP 无 Chrome 时自动启动 `--headless=new` 后台 Chrome，atexit+signal 自动清理，PID 文件跨次复用，CLI `--headless` 参数(auto/always/never)
+- **采集日志系统**（v1.2.0, `cc8ead2`）— `persist_fetch_success()` 记录每次成功采集到 `~/.wf/fetch_history.jsonl`，新增 `wf stats` CLI 命令（成功率/fetcher 占比/热门域名/耗时/headless 统计）
+- **--lite 资源拦截加速**（v1.3.0, `13fd2a8`）— CDP Fetch domain 拦截 image/CSS/font/media HTTP 下载，图片 URL 保留在 HTML 中，Markdown 输出不受影响，Fetch Metrics 新增 Mode/Resources Blocked 字段
+- **域名路由表扩展**（`ddece9b`）— routing.yaml 从 7→13 条规则，新增微信/知乎/掘金/B站/大众点评/字节跳动→CDP 直连，跳过 urllib 无效尝试省 2-5s
+- **降级链简化**（`71c8dac`）— auto 模式从 urllib→Playwright→CDP→Selenium→manual_chrome 简化为 urllib→CDP→manual_chrome，去掉能力重叠的 Playwright/Selenium 中间层
+- **help 文本更新**（`63e4909`, `67617ab`）— wf help 新增 --lite 说明、降级链更新、--headless 参数、路由表说明
+- **my-cli-tools skill 更新** — 新增 --lite 模式选择指南、自动路由说明、wf stats 命令、去掉过时的降级建议
+- **pipx 修复** — 修复了 pipx broken symlink（python3.13 路径变更），重新通过 brew 安装 pipx
+
+#### 📋 计划
+
+（无）
+
+#### ⏸️ 未完成
+
+- `wf learn` 增强（读取成功日志优化路由建议）— P2，数据积累后再做
+- 超时容错（超时也取已有内容）— P2，可独立实施
+
+#### ⚠️ 问题
+
+- 小红书 IP 被风控（`IP存在风险`），与代码改动无关，需要切换网络或等待解除
+- `core.py` 中仍有大量硬编码域名判断（微信 UA、下载资源、解析器选择），理想状态是全部迁移到配置驱动，但改动量大，暂不动
+
+#### 💡 备注
+
+- 版本从 1.0.0 → 1.3.0，三次 minor bump
+- 所有改动通过 superpower chain 流程（需求评审/设计探索/代码实施/验证）
+- CDP 拦截关键发现：拦截 HTTP 请求不影响 HTML 属性，图片 URL 保留在 DOM 中
+- Playwright 和 CDP 底层都是 Chrome DevTools Protocol，能力完全重叠，auto 模式不再需要 Playwright
+- routing.yaml 是运行时配置（~/.config/webfetcher/routing.yaml），需同步到源码（src/webfetcher/config/routing.yaml）
+
 ### 2026-02-14 09:30:22 (会话ID: 74gw)
 
 #### ✅ 完成
