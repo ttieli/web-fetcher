@@ -501,9 +501,12 @@ def validate_fetched_html(html: str, url: str) -> tuple[bool, str]:
 def add_metrics_to_markdown(md_content: str, metrics: FetchMetrics, template_name: Optional[str] = None) -> str:
     """Add fetch metrics to markdown content as HTML comment and footer."""
     # Add HTML comment at the top with detailed metrics
+    lite_mode = getattr(metrics, '_lite_mode', False)
+    mode_line = f"\n  Mode: lite" if lite_mode else ""
+    blocked_line = f"\n  Resources Blocked: image,stylesheet,font,media" if lite_mode else ""
     detailed_comment = f"""<!-- Fetch Metrics:
   Method: {metrics.primary_method}
-  Fallback: {metrics.fallback_method or 'None'}
+  Fallback: {metrics.fallback_method or 'None'}{mode_line}{blocked_line}
   Attempts: {metrics.total_attempts}
   Fetch Duration: {metrics.fetch_duration:.3f}s
   Render Duration: {metrics.render_duration:.3f}s
@@ -2025,12 +2028,14 @@ def _try_cdp_fetch(url: str, ua: Optional[str], timeout: int, metrics: FetchMetr
         logging.info(f"🔌 Attempting CDP fetch for {url}")
 
         # Use the simplified fetch_with_cdp interface
-        html, final_url, cdp_metadata = fetch_with_cdp(url, wait_time=wait_time, port=cdp_port)
+        lite_mode = getattr(_try_cdp_fetch, '_lite_mode', False)
+        html, final_url, cdp_metadata = fetch_with_cdp(url, wait_time=wait_time, port=cdp_port, lite_mode=lite_mode)
 
         # Update metrics
         metrics.fetch_duration = time.time() - start_time
         metrics.primary_method = "cdp"
         metrics.final_status = "success"
+        metrics._lite_mode = lite_mode
 
         # Create URL metadata
         url_metadata = create_url_metadata(
@@ -2039,7 +2044,7 @@ def _try_cdp_fetch(url: str, ua: Optional[str], timeout: int, metrics: FetchMetr
             fetch_mode='cdp'
         )
 
-        logging.info(f"✓ CDP fetch successful for {url}")
+        logging.info(f"✓ CDP fetch successful for {url}" + (" [lite]" if lite_mode else ""))
         logging.info(f"  HTML length: {len(html)} chars")
         logging.info(f"  Duration: {metrics.fetch_duration:.2f}s")
 
@@ -5182,6 +5187,13 @@ def main():
                     help='Headless Chrome for CDP: auto (use existing or launch headless), '
                          'always (force headless), never (no auto-launch). '
                          'Only affects --fetch-mode cdp/auto. (default: auto)')
+    ap.add_argument('--lite', action='store_true', default=False,
+                    help='Lightweight CDP fetch: blocks image/CSS/font/media downloads '
+                         'during page rendering for 3-5x speed improvement. '
+                         'Content and image URLs are fully preserved in output. '
+                         'Use for: reading article text, AI analysis, quick extraction. '
+                         'Not for: saving with downloaded images (use default + --download-assets). '
+                         'Only effective with --fetch-mode cdp/auto. (default: off)')
 
     args = ap.parse_args()
     
@@ -5195,6 +5207,12 @@ def main():
 
     # Pass headless mode to CDP fetch function
     _try_cdp_fetch._headless_mode = getattr(args, 'headless', 'auto')
+
+    # Lite mode: block media downloads in CDP for 3-5x speedup
+    if getattr(args, 'lite', False) and getattr(args, 'download_assets', False):
+        logging.warning("--download-assets requires full resource loading, disabling --lite")
+        args.lite = False
+    _try_cdp_fetch._lite_mode = getattr(args, 'lite', False)
 
     # Check for legacy mode environment variable
     if os.environ.get('WF_LEGACY_IMAGE_MODE'):

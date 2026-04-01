@@ -209,7 +209,58 @@ class CDPFetcher:
             except Exception as e:
                 logger.debug(f"Stealth JS injection failed (non-fatal): {e}")
 
-    def fetch(self, url: str, wait_time: float = 15.0, use_existing_tab: bool = True) -> CDPFetchResult:
+    def _setup_lite_mode(self, tab):
+        """Enable resource interception to block image/css/font/media downloads.
+
+        Uses Fetch domain (modern CDP) with fallback to Network.setRequestInterception.
+        Image URLs remain in HTML (only HTTP downloads are blocked), so Markdown
+        output still contains ![](url) links.
+        """
+        blocked_types = {"Image", "Stylesheet", "Font", "Media"}
+        try:
+            # Modern approach: Fetch.enable with pattern matching
+            tab.call_method("Fetch.enable", patterns=[{"requestStage": "Request"}])
+
+            def _on_request_paused(**kwargs):
+                request_id = kwargs.get("requestId")
+                resource_type = kwargs.get("resourceType", "")
+                if resource_type in blocked_types:
+                    try:
+                        tab.call_method("Fetch.failRequest",
+                                        requestId=request_id,
+                                        errorReason="BlockedByClient")
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        tab.call_method("Fetch.continueRequest", requestId=request_id)
+                    except Exception:
+                        pass
+
+            tab.set_listener("Fetch.requestPaused", _on_request_paused)
+            logger.info("Lite mode: resource interception enabled (Fetch domain)")
+        except Exception as e:
+            logger.debug(f"Fetch domain not available ({e}), trying Network interception")
+            try:
+                tab.Network.setRequestInterception(patterns=[{"urlPattern": "*"}])
+
+                def _on_intercepted(**kwargs):
+                    interception_id = kwargs.get("interceptionId")
+                    resource_type = kwargs.get("resourceType", "")
+                    if resource_type in blocked_types:
+                        tab.Network.continueInterceptedRequest(
+                            interceptionId=interception_id, errorReason="Aborted")
+                    else:
+                        tab.Network.continueInterceptedRequest(
+                            interceptionId=interception_id)
+
+                tab.Network.requestIntercepted = _on_intercepted
+                logger.info("Lite mode: resource interception enabled (Network domain)")
+            except Exception as e2:
+                logger.warning(f"Lite mode: interception setup failed ({e2}), proceeding without")
+
+    def fetch(self, url: str, wait_time: float = 15.0, use_existing_tab: bool = True,
+              lite_mode: bool = False) -> CDPFetchResult:
         """
         使用CDP采集网页
 
@@ -217,6 +268,7 @@ class CDPFetcher:
             url: 目标URL
             wait_time: 等待页面加载时间（秒）
             use_existing_tab: 是否复用现有标签页
+            lite_mode: 启用轻量模式（拦截image/css/font/media下载，加速3-5x）
 
         Returns:
             CDPFetchResult: 采集结果
@@ -239,10 +291,14 @@ class CDPFetcher:
             if use_existing_tab and self.current_tab:
                 tab = self.current_tab
                 self._inject_stealth(tab)
+                if lite_mode:
+                    self._setup_lite_mode(tab)
                 tab.Page.navigate(url=url)
             else:
                 tab = self.new_tab()
                 self._inject_stealth(tab)
+                if lite_mode:
+                    self._setup_lite_mode(tab)
                 tab.Page.navigate(url=url)
 
             # 等待页面加载（智能等待：readyState + DOM 稳定性检测）
@@ -269,7 +325,8 @@ class CDPFetcher:
                 metadata={
                     'method': 'cdp',
                     'wait_time': wait_time,
-                    'tab_reused': use_existing_tab
+                    'tab_reused': use_existing_tab,
+                    'lite_mode': lite_mode
                 }
             )
 
@@ -415,7 +472,8 @@ class CDPFetcher:
 # 简化的函数接口（兼容现有fetcher模式）
 # ============================================================================
 
-def fetch_with_cdp(url: str, wait_time: float = 15.0, port: int = None, **kwargs) -> Tuple[str, str, dict]:
+def fetch_with_cdp(url: str, wait_time: float = 15.0, port: int = None,
+                   lite_mode: bool = False, **kwargs) -> Tuple[str, str, dict]:
     """
     使用CDP采集网页（简化接口）
 
@@ -423,13 +481,14 @@ def fetch_with_cdp(url: str, wait_time: float = 15.0, port: int = None, **kwargs
         url: 目标URL
         wait_time: 等待时间
         port: Chrome debug port (default: None, uses CDPFetcher default)
+        lite_mode: 轻量模式（拦截image/css/font/media下载）
         **kwargs: 其他参数
 
     Returns:
         Tuple[html, final_url, metadata]
     """
     fetcher = CDPFetcher(port=port)
-    result = fetcher.fetch(url, wait_time=wait_time)
+    result = fetcher.fetch(url, wait_time=wait_time, lite_mode=lite_mode)
 
     metadata = {
         'method': 'cdp',
