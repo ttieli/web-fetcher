@@ -1571,10 +1571,12 @@ def _try_fallback_for_invalid_content(
     best_metrics = metrics
     best_url_metadata = create_url_metadata(input_url=input_url or url, final_url=url, fetch_mode='urllib')
 
+    # Simplified fallback chain: CDP → manual_chrome
+    # Selenium removed from auto fallback — CDP covers the same capability
+    # (both use Chrome for JS rendering, but CDP reuses sessions/headless).
+    # Selenium is still available via explicit --fetch-mode selenium.
     fallback_chain = [
         ('cdp', _try_cdp_fetch, CDP_INTEGRATION_AVAILABLE),
-        ('selenium', lambda u, ua, t, m, st, iu: _try_selenium_fetch(u, ua, t, m, st, force_chrome, iu),
-         SELENIUM_INTEGRATION_AVAILABLE),
         ('manual_chrome', lambda u, ua, t, m, st, iu: _try_manual_chrome_fallback(
             u, m, st, f"Content invalid: {validation_reason}", iu),
          MANUAL_CHROME_AVAILABLE and manual_chrome_helper is not None),
@@ -1910,12 +1912,14 @@ def _try_cdp_fallback_after_urllib_failure(url: str, ua: Optional[str], timeout:
                                            urllib_error: str, input_url: str = None,
                                            force_chrome: bool = False) -> tuple[str, FetchMetrics, dict]:
     """
-    Try CDP fallback after urllib failure, with Selenium as secondary fallback.
+    Try CDP fallback after urllib failure, with manual Chrome as last resort.
 
-    Fallback chain:
-    1. Try CDP (lightweight, session-preserving)
-    2. If CDP fails, try Selenium
-    3. If Selenium fails, try manual Chrome
+    Simplified fallback chain (v1.3+):
+    1. Try CDP (lightweight, session-preserving, auto-headless)
+    2. If CDP fails, try manual Chrome (human-assisted)
+
+    Selenium removed from auto fallback — CDP covers the same capability.
+    Selenium still available via explicit --fetch-mode selenium.
 
     Args:
         url: Target URL
@@ -1933,8 +1937,8 @@ def _try_cdp_fallback_after_urllib_failure(url: str, ua: Optional[str], timeout:
     logging.info(f"urllib failed for {url}, attempting CDP fallback...")
 
     if not CDP_INTEGRATION_AVAILABLE:
-        logging.info("CDP integration not available, falling back to Selenium")
-        return _try_selenium_fallback_after_urllib_failure(
+        logging.info("CDP not available, falling back to manual Chrome")
+        return _try_manual_chrome_or_fail(
             url, ua, timeout, metrics, start_time, urllib_error, input_url, force_chrome
         )
 
@@ -1948,8 +1952,8 @@ def _try_cdp_fallback_after_urllib_failure(url: str, ua: Optional[str], timeout:
         if not is_valid:
             logging.warning(f"CDP fallback content validation failed for {url}: {reason}")
             metrics.validation_failures.append(('cdp', reason))
-            # Continue to Selenium fallback
-            return _try_selenium_fallback_after_urllib_failure(
+            # Skip Selenium, go directly to manual Chrome
+            return _try_manual_chrome_or_fail(
                 url, ua, timeout, metrics, start_time,
                 f"urllib failed: {urllib_error}. CDP content invalid: {reason}",
                 input_url, force_chrome
@@ -1962,14 +1966,38 @@ def _try_cdp_fallback_after_urllib_failure(url: str, ua: Optional[str], timeout:
 
     except Exception as cdp_error:
         logging.warning(f"CDP fallback failed: {cdp_error}")
-        logging.info("Falling back to Selenium after CDP failure")
+        logging.info("Falling back to manual Chrome after CDP failure")
 
-        # CDP failed - try Selenium as next fallback
-        return _try_selenium_fallback_after_urllib_failure(
+        # CDP failed - skip Selenium, go to manual Chrome
+        return _try_manual_chrome_or_fail(
             url, ua, timeout, metrics, start_time,
             f"urllib failed: {urllib_error}. CDP failed: {cdp_error}",
             input_url, force_chrome
         )
+
+
+def _try_manual_chrome_or_fail(url: str, ua: Optional[str], timeout: int,
+                               metrics: FetchMetrics, start_time: float,
+                               error_context: str, input_url: str = None,
+                               force_chrome: bool = False) -> tuple[str, FetchMetrics, dict]:
+    """Try manual Chrome as last resort, or fail with a clear error.
+
+    This replaces the old Selenium fallback path — CDP now covers JS rendering,
+    so we skip Selenium and go directly to manual Chrome (human-assisted).
+    """
+    if MANUAL_CHROME_AVAILABLE and manual_chrome_helper is not None:
+        try:
+            return _try_manual_chrome_fallback(
+                url, metrics, start_time, error_context, input_url
+            )
+        except Exception as e:
+            logging.error(f"Manual Chrome also failed: {e}")
+
+    # Everything failed
+    metrics.fetch_duration = time.time() - start_time
+    metrics.final_status = "failed"
+    metrics.error_message = error_context
+    raise Exception(error_context)
 
 
 def _try_cdp_fetch(url: str, ua: Optional[str], timeout: int, metrics: FetchMetrics, start_time: float, input_url: str = None, wait_time: float = 3.0) -> tuple[str, FetchMetrics, dict]:
@@ -5470,9 +5498,11 @@ def main():
             logging.info("Fetch decision: Manual Chrome mode")
             should_render = False  # Skip Playwright rendering in manual Chrome mode
         else:
-            # Auto or urllib mode - use Playwright rendering logic
-            # Auto 或 urllib 模式 - 使用 Playwright 渲染逻辑
-            should_render = (args.render == 'always') or (args.render == 'auto' and ('xiaohongshu.com' in host or 'xhslink.com' in original_host or 'dianping.com' in host))
+            # Auto or urllib mode - Playwright rendering only when explicitly requested
+            # Auto 或 urllib 模式 - Playwright 渲染仅在显式请求时触发
+            # Note: JS-heavy sites (WeChat, XHS, Zhihu, etc.) are now routed directly
+            # to CDP via routing.yaml, so hardcoded domain checks are no longer needed.
+            should_render = (args.render == 'always')
             logging.info(f"Render decision: {'will render' if should_render else 'static fetch only'}")
 
         if should_render:
