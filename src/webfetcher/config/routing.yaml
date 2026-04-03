@@ -8,6 +8,10 @@ global:
   cache_ttl: 3600
   enable_logging: true
 
+# Fallback Chain (auto mode) / 降级链（auto 模式）
+# urllib → CDP (headless Chrome) → manual_chrome (用户本地 Chrome)
+# 每级失败或内容验证不通过时自动降级到下一级
+
 # Routing Rules / 路由规则
 # Rules are evaluated in priority order (higher number = higher priority)
 # 规则按优先级顺序评估（数字越大优先级越高）
@@ -25,7 +29,9 @@ rules:
       reason: "Known anti-bot protection requiring manual navigation"
       reason_zh: "已知反爬虫保护，需要手动导航"
 
-  # WeChat Official Accounts: JS-rendered SPA / 微信公众号：JS渲染SPA
+  # WeChat Official Accounts / 微信公众号
+  # 降级链: urllib(反爬拦截) → CDP(✅ 稳定可用) → manual_chrome
+  # urllib 经常触发"环境异常"反爬页，CDP headless 可正常渲染
   - name: "WeChat Articles - CDP"
     name_zh: "微信公众号 - CDP直连"
     priority: 80
@@ -41,7 +47,10 @@ rules:
       reason: "WeChat articles require JS rendering, CDP preserves session state"
       reason_zh: "微信公众号需要JS渲染，CDP保留会话状态"
 
-  # XiaoHongShu: JS-heavy SPA / 小红书：JS重度SPA
+  # XiaoHongShu / 小红书
+  # 降级链: urllib(纯SPA无内容) → CDP(IP风控拦截,error_code=300012) → manual_chrome(需用户本地已登录Chrome)
+  # headless Chrome 被小红书 IP+指纹检测拦截，需要用户浏览器的登录态和 cookie
+  # 短链 xhslink.com 通过 GET 请求解析重定向到 xiaohongshu.com
   - name: "XiaoHongShu - CDP"
     name_zh: "小红书 - CDP直连"
     priority: 75
@@ -55,8 +64,8 @@ rules:
       fetcher: "cdp"
       config:
         wait_time: 5
-      reason: "XiaoHongShu is a full SPA, requires JS rendering"
-      reason_zh: "小红书为纯SPA，需要JS渲染"
+      reason: "XiaoHongShu is a full SPA, requires JS rendering. CDP may be IP-blocked (300012), fallback to manual_chrome needed"
+      reason_zh: "小红书为纯SPA，需要JS渲染。CDP可能被IP风控(300012)，需降级到manual_chrome"
 
   # Zhihu: JS-rendered content / 知乎：JS渲染内容
   - name: "Zhihu - CDP"

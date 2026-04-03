@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "webfetcher"
-version = "1.2.0"
+version = "1.3.1"
 description = "智能网页内容抓取工具，支持微信公众号、小红书等多种网站的内容提取和Markdown转换"
 readme = "README.md"
 requires-python = ">=3.7"

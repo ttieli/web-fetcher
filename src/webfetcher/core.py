@@ -1700,13 +1700,12 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
                 if not is_valid:
                     logging.warning(f"Config-driven Selenium content validation failed: {reason}")
                     metrics.validation_failures.append(('selenium', reason))
-                    persist_fetch_failure(
-                        url=url, input_url=input_url or url,
-                        fetchers_tried=['selenium'], failure_type='content_invalid',
-                        failure_reason=reason, last_error='',
-                        html_size=len(html) if html else 0,
-                        validation_details=[f'selenium:{reason}'],
-                        fetch_mode='selenium_direct', duration_seconds=time.time() - start_time,
+                    # Try fallback chain (skip selenium, CDP may still help)
+                    logging.info(f"Config-driven Selenium fallback: trying CDP/manual_chrome for {url}")
+                    return _try_fallback_for_invalid_content(
+                        url, html, reason, ua, timeout, metrics, start_time,
+                        input_url=input_url, force_chrome=force_chrome,
+                        tried_fetchers={'selenium'},
                     )
                 return html, metrics, url_metadata
             except Exception as e:
@@ -1726,13 +1725,12 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
                 if not is_valid:
                     logging.warning(f"Config-driven CDP content validation failed: {reason}")
                     metrics.validation_failures.append(('cdp', reason))
-                    persist_fetch_failure(
-                        url=url, input_url=input_url or url,
-                        fetchers_tried=['cdp'], failure_type='content_invalid',
-                        failure_reason=reason, last_error='',
-                        html_size=len(html) if html else 0,
-                        validation_details=[f'cdp:{reason}'],
-                        fetch_mode='cdp_direct', duration_seconds=time.time() - start_time,
+                    # Try fallback chain (skip CDP since we already tried it)
+                    logging.info(f"Config-driven CDP fallback: trying manual_chrome for {url}")
+                    return _try_fallback_for_invalid_content(
+                        url, html, reason, ua, timeout, metrics, start_time,
+                        input_url=input_url, force_chrome=force_chrome,
+                        tried_fetchers={'cdp'},
                     )
                 return html, metrics, url_metadata
             except Exception as e:

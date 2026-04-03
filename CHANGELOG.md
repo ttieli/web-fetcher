@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.1] - 2026-04-03
+
+### Fixed
+- **Config-driven routing 降级链修复**: CDP/Selenium 路由验证失败后现在正确降级到 manual_chrome，而非直接返回无效内容
+  - 修复 `fetch_html_with_retry()` 中 config-driven CDP 分支（原 L1737）和 Selenium 分支（原 L1711）的无条件 return
+  - 通过 `tried_fetchers` 参数防止降级链中重复尝试已失败的 fetcher
+  - 影响：小红书等被 IP 风控拦截的站点现在可以正确触发 manual_chrome 降级
+
+### Changed
+- **路由配置注释增强**: routing.yaml 新增降级链说明，微信和小红书规则标注实际降级路径和已知风控状态
+
+## [1.2.0] - 2026-02-20
+
+### Added
+- **YAML Front Matter 输出**: `--frontmatter yaml` 参数，将内嵌元数据转换为标准 YAML front matter 格式
+  - 兼容 Hugo / Jekyll / Obsidian 等工具
+  - 支持单页模式和爬虫模式
+  - 默认行为不变（`--frontmatter none`）
+
 ## [1.1.0] - 2025-11-18
 
 ### Added
