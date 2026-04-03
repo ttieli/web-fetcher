@@ -30,10 +30,11 @@ rules:
       reason_zh: "已知反爬虫保护，需要手动导航"
 
   # WeChat Official Accounts / 微信公众号
-  # 降级链: urllib(反爬拦截) → CDP(✅ 稳定可用) → manual_chrome
-  # urllib 经常触发"环境异常"反爬页，CDP headless 可正常渲染
-  - name: "WeChat Articles - CDP"
-    name_zh: "微信公众号 - CDP直连"
+  # urllib + 微信专用 UA 即可采集（core.py 硬编码 MicroMessenger UA）
+  # 降级链: urllib(✅ 稳定可用，2s) → CDP(备选，12s) → manual_chrome
+  # 注：之前误判为"需要CDP"，实测 urllib 正常工作且更快
+  - name: "WeChat Articles - urllib"
+    name_zh: "微信公众号 - urllib直连"
     priority: 80
     enabled: true
     conditions:
@@ -41,18 +42,17 @@ rules:
         - "mp.weixin.qq.com"
         - "weixin.qq.com"
     action:
-      fetcher: "cdp"
-      config:
-        wait_time: 5
-      reason: "WeChat articles require JS rendering, CDP preserves session state"
-      reason_zh: "微信公众号需要JS渲染，CDP保留会话状态"
+      fetcher: "urllib"
+      reason: "WeChat articles work with urllib + WeChat UA, faster than CDP"
+      reason_zh: "微信公众号 urllib + 微信UA即可采集，比CDP快"
 
   # XiaoHongShu / 小红书
-  # 降级链: urllib(纯SPA无内容) → CDP(IP风控拦截,error_code=300012) → manual_chrome(需用户本地已登录Chrome)
-  # headless Chrome 被小红书 IP+指纹检测拦截，需要用户浏览器的登录态和 cookie
+  # urllib 可采集标题+正文+图片（通过 SSR/meta 标签），速度快（~1s）
+  # 降级链: urllib(✅ 可用) → CDP(IP风控可能拦截,error_code=300012) → manual_chrome
   # 短链 xhslink.com 通过 GET 请求解析重定向到 xiaohongshu.com
-  - name: "XiaoHongShu - CDP"
-    name_zh: "小红书 - CDP直连"
+  # 注：之前误判为"纯SPA无内容"，实测 urllib 可提取内容
+  - name: "XiaoHongShu - urllib"
+    name_zh: "小红书 - urllib直连"
     priority: 75
     enabled: true
     conditions:
@@ -61,11 +61,9 @@ rules:
         - "xhs.com"
         - "xhslink.com"
     action:
-      fetcher: "cdp"
-      config:
-        wait_time: 5
-      reason: "XiaoHongShu is a full SPA, requires JS rendering. CDP may be IP-blocked (300012), fallback to manual_chrome needed"
-      reason_zh: "小红书为纯SPA，需要JS渲染。CDP可能被IP风控(300012)，需降级到manual_chrome"
+      fetcher: "urllib"
+      reason: "XiaoHongShu SSR provides title/content/images via urllib, faster than CDP"
+      reason_zh: "小红书 SSR 提供标题/正文/图片，urllib 可直接采集，比CDP快"
 
   # Zhihu: JS-rendered content / 知乎：JS渲染内容
   - name: "Zhihu - CDP"
