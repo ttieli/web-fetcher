@@ -2,6 +2,31 @@
 
 ## 会话记录
 
+### 2026-04-03 12:15:00 (会话ID: k7m2)
+
+#### ✅ 完成
+
+- **Config-driven routing 降级链修复**（v1.3.1, `9850116`）— CDP/Selenium 路由验证失败后现在正确调用 `_try_fallback_for_invalid_content()` 降级到 manual_chrome，通过 `tried_fetchers` 防止重复尝试
+- **路由配置注释增强** — routing.yaml 顶部新增降级链说明（urllib→CDP→manual_chrome），微信和小红书规则标注实际降级路径和已知风控状态
+- **三份 routing.yaml 同步** — 运行时（~/.config/webfetcher/）、源码（src/webfetcher/config/）、项目根（config/）三份配置统一
+- **Superpower Chain Pipeline A 完整执行** — A1问题记录→A2分析→A3评审（3专家全🔴确认）→A4修复方案→A5实施评审（2专家全🟢）→A6实施→A7版本bump→A8归档
+
+#### ⏸️ 未完成
+
+- 小红书采集仍依赖 manual_chrome（用户本地已登录 Chrome），当前环境 manual_chrome helper 未配置，降级链触发但跳过
+- wf 尚无连接用户已运行 Chrome（debug 端口模式）的能力，需要新功能开发
+
+#### ⚠️ 问题
+
+- 小红书 IP 风控（error_code=300012）持续生效，headless Chrome 被拦截，需用户浏览器登录态
+- manual_chrome helper 依赖 Selenium 连接用户 Chrome debug 端口，当前环境未安装/配置
+
+#### 💡 备注
+
+- 通过 Claude-in-Chrome 连接用户本地 Chrome 可成功采集小红书内容（验证了登录态+cookie 绕过风控的可行性）
+- Surge 代理配置：系统 HTTP proxy 开启（127.0.0.1:6152），增强模式（TUN）已启用，FINAL 规则走 Proxy，小红书无专用规则
+- 容错专家评审发现关键约束：修复时必须传入 tried_fetchers 防止 fallback_chain 重复调用已失败的 fetcher
+
 ### 2026-04-01 14:30:00 (会话ID: w8f2)
 
 #### ✅ 完成
