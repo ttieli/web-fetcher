@@ -1,0 +1,72 @@
+# Regression Test URL Suite (auto-generated from history)
+# ============================================================
+#
+# Generated: 2026-05-13 10:52
+# Source: ~/.config/webfetcher/extraction_log.jsonl + ~/.wf/fetch_history.jsonl
+#
+# Format: <url> | <description> | <expected_strategy> | <tags>
+#
+# Categories tagged for filtering:
+#   v2-fallback-fix  - URLs touching V2 fallback fix (spa-stuck/raw-md)
+#   short-circuit    - plain-text URLs that should bypass competition
+#   fallback-rescue  - urllib fails, cdp/selenium rescues
+#   spa              - SPA sites (slow)
+#   template         - site-specific template path
+#   static           - basic static sites
+#   fast / slow      - speed hints for CI filtering
+#
+# ============================================================
+
+# urllib 直接拿到高分（静态页/快路径）
+# ------------------------------------------------------------
+https://docs.python.org/3/library/asyncio.html | docs.python.org - urllib OK (score=0.80) | urllib | en,fast,static
+https://www.ruanyifeng.com/blog/2024/01/weekly-issue-288.html | ruanyifeng.com - urllib OK (score=0.95) | urllib | en,fast,static
+https://github.com/nicehash/NiceHashQuickMiner | github.com - urllib OK (score=1.00) | urllib | en,fast,static
+https://blog.cloudflare.com/workers-ai/ | blog.cloudflare.com - urllib OK (score=0.95) | urllib | en,fast,static
+https://docs.python.org/3/library/json.html | docs.python.org - urllib OK (score=1.00) | urllib | en,fast,static
+https://sspai.com/post/73427 | sspai.com - urllib OK (score=0.97) | urllib | en,fast,static
+https://kb.nssurge.com/surge-knowledge-base/zh/guidelines/ponte | kb.nssurge.com - urllib OK (score=0.74) | urllib | en,fast,static
+https://kb.nssurge.com/surge-knowledge-base/license/ios-faq | kb.nssurge.com - urllib OK (score=1.00) | urllib | en,fast,static
+
+# 站点特化 template 路径
+# ------------------------------------------------------------
+https://m.douban.com/movie/subject/1818330/reviews | m.douban.com - site-specific template path | auto | en,fast,template
+
+# urllib 失败 → cdp/selenium 救回
+# ------------------------------------------------------------
+https://m.toutiao.com/is/D2ZGJTfqwEM/ | m.toutiao.com - urllib failed, cdp rescued (score=0.65) | auto | en,fallback-rescue,slow
+https://nssurge.com/buy_now | nssurge.com - urllib failed, cdp rescued (score=0.70) | auto | en,fallback-rescue,slow
+https://x.com/mrryanchi/status/2031292099384008810?s=46 | x.com - urllib failed, cdp rescued (score=0.62) | auto | en,fallback-rescue,slow
+https://www.baidu.com/s?wd=%E8%87%A7%E4%BC%9F+%E6%A0%A1%E5%A4%96%E5%9F%B9%E8%AE%AD%E7%9B%91%E7%AE%A1%E5%8F%B8 | baidu.com - urllib failed, cdp rescued (score=0.56) | auto | cn,fallback-rescue,slow
+https://sipeed.com/nanokvm | sipeed.com - urllib failed, cdp rescued (score=0.76) | auto | en,fallback-rescue,slow
+https://movie.douban.com/review/15637842/ | movie.douban.com - urllib failed, cdp rescued (score=0.57) | auto | en,fallback-rescue,slow
+https://movie.douban.com/review/12501055/ | movie.douban.com - urllib failed, cdp rescued (score=0.65) | auto | en,fallback-rescue,slow
+https://www.google.com/search?q=%E8%82%A1%E4%BB%BD%E5%88%B6%E9%93%B6%E8%A1%8C2025%E5%B9%B4%E6%8A%A5+%E6%A0%B8%E5%BF%83%E8%B4%A2%E5%8A%A1%E6%95%B0%E6%8D%AE+%E8%90%A5%E4%B8%9A%E6%94%B6%E5%85%A5+%E5%87%80%E5%88%A9%E6%B6%A6+%E5%87%80%E6%81%AF%E5%B7%AE | google.com - urllib failed, cdp rescued (score=0.75) | auto | en,fallback-rescue,slow
+
+# 本次 V2 修复关注：SPA 站升级链验证
+# ------------------------------------------------------------
+https://www.linkedin.com/pulse/its-official-world-order-has-broken-down-ray-dalio-cuofe | linkedin.com - SPA stuck on selenium (score=0.49) | auto | en,slow,spa,v2-fallback-fix
+https://www.tianyancha.com/search?key=%E7%94%B5%E7%A7%91%E5%AE%A1%E8%AE%A1%E6%9C%89%E9%99%90%E8%B4%A3%E4%BB%BB%E5%85%AC%E5%8F%B8 | tianyancha.com - SPA stuck on cdp (score=0.39) | auto | cn,slow,spa,v2-fallback-fix
+https://www.qcc.com/search?key=%E7%94%B5%E7%A7%91%E5%AE%A1%E8%AE%A1%E6%9C%89%E9%99%90%E8%B4%A3%E4%BB%BB%E5%85%AC%E5%8F%B8 | qcc.com - SPA stuck on cdp (score=0.29) | auto | cn,slow,spa,v2-fallback-fix
+https://displaymaid.app | displaymaid.app - SPA stuck on cdp (score=0.49) | auto | en,slow,spa,v2-fallback-fix
+https://post.smzdm.com/p/a0xm5znw/ | post.smzdm.com - SPA stuck on cdp (score=0.34) | auto | en,slow,spa,v2-fallback-fix
+https://post.smzdm.com/p/a26w8mlq/ | post.smzdm.com - SPA stuck on cdp (score=0.34) | auto | en,slow,spa,v2-fallback-fix
+https://cloud.siliconflow.cn/sft-siliconflow/models?types=to-image | cloud.siliconflow.cn - SPA stuck on cdp (score=0.42) | auto | cn,slow,spa,v2-fallback-fix
+https://www.reddit.com/r/ollama/search/?q=image+generation&sort=new | reddit.com - SPA stuck on selenium (score=0.49) | auto | en,slow,spa,v2-fallback-fix
+
+# 本次 V2 修复关注：plain text 短路
+# ------------------------------------------------------------
+https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md | github.com - raw markdown/text resource | urllib | en,fast,markdown,short-circuit,v2-fallback-fix
+https://raw.githubusercontent.com/teorth/erdosproblems/main/README.md | raw.githubusercontent.com - raw markdown/text resource | urllib | en,fast,markdown,short-circuit,v2-fallback-fix
+https://raw.githubusercontent.com/camel-ai/oasis/main/data/reddit/user_data_36.json | raw.githubusercontent.com - raw markdown/text resource | urllib | en,fast,markdown,short-circuit,v2-fallback-fix
+https://github.com/openai/skills/blob/main/skills/.system/imagegen/SKILL.md | github.com - raw markdown/text resource | urllib | en,fast,markdown,short-circuit,v2-fallback-fix
+
+# 历史持续失败 URL（标识真实失败 vs 修复后救回）
+# ------------------------------------------------------------
+https://nitter.net/mrryanchi/status/2031292099384008810 | nitter.net - terminal failure (empty extraction) | auto | en,failure,slow
+https://arxiv.org/pdf/2207.12906 | arxiv.org - terminal failure (empty extraction) | auto | en,failure,slow
+https://ricerca.unich.it/retrieve/handle/11564/662642/250737/parma16-postprint.pdf | ricerca.unich.it - terminal failure (empty extraction) | auto | en,failure,slow
+https://httpbin.org/html | httpbin.org - terminal failure (empty extraction) | auto | en,failure,slow
+https://stockn.xueqiu.com/SH601818/20250328760632.pdf | stockn.xueqiu.com - terminal failure (empty extraction) | auto | cn,failure,slow
+https://nitter.net/sitinme/status/2039156523751117146 | nitter.net - terminal failure (empty extraction) | auto | en,failure,slow
+
