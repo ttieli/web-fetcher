@@ -9,7 +9,7 @@ Features
 - Clean Markdown output named as: YYYY-MM-DD - 标题.md
 """
 
-__version__ = "1.3.4"
+__version__ = "1.3.5"
 __author__ = "WebFetcher Team"
 
 import argparse
@@ -59,7 +59,7 @@ except ImportError as e:
 try:
     from webfetcher.fetchers.cdp_fetcher import CDPFetcher, fetch_with_cdp, CDP_AVAILABLE
     if CDP_AVAILABLE:
-        logging.info("CDP fetcher available")
+        logging.debug("CDP fetcher available")
         CDP_INTEGRATION_AVAILABLE = True
     else:
         CDP_INTEGRATION_AVAILABLE = False
@@ -90,7 +90,7 @@ try:
     from webfetcher.routing import RoutingEngine, RoutingDecision
     routing_engine = RoutingEngine()
     ROUTING_ENGINE_AVAILABLE = True
-    logging.info("Config-driven routing system initialized")
+    logging.debug("Config-driven routing system initialized")
 except ImportError as e:
     logging.debug(f"Routing engine not available: {e}")
     ROUTING_ENGINE_AVAILABLE = False
@@ -1818,7 +1818,15 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
 
             if ERROR_CLASSIFIER_AVAILABLE and error_classifier:
                 classification = error_classifier.classify_error(e, url)
-                logging.info(f"Error classified as {classification.error_type.value}: {classification.reason}")
+                # B3: 分类为 unknown 时改人类可读，避免开发内部术语吓到用户
+                if classification.error_type == ErrorType.UNKNOWN:
+                    logging.info(
+                        f"未知错误（重试策略分类器未识别），原始: {type(e).__name__}: {e}; "
+                        f"将按保守策略重试")
+                else:
+                    logging.info(
+                        f"Error classified as {classification.error_type.value}: "
+                        f"{classification.reason}")
 
                 # Handle permanent errors
                 if classification.error_type == ErrorType.PERMANENT:
@@ -1887,6 +1895,14 @@ def fetch_html_with_retry(url: str, ua: Optional[str] = None, timeout: int = 30,
     metrics.fetch_duration = time.time() - start_time
     metrics.final_status = "failed"
     metrics.error_message = str(last_exception)
+    # B4: 重试终结时打一行结构化总结（AI 在长日志里能 grep 抓结论）
+    try:
+        from webfetcher.errors.user_facing import classify_user_error, format_retry_summary
+        _err = classify_user_error(last_exception)
+        logging.error(format_retry_summary(MAX_RETRIES + 1, _err.category, _err.explanation))
+    except Exception:
+        # 兜底：分类失败也不阻塞，保留原有日志
+        pass
     logging.error(f"All {MAX_RETRIES + 1} attempts failed for {url}, giving up")
     raise last_exception
 
@@ -5161,7 +5177,8 @@ def main():
     ap.add_argument('--assets-root', default='assets', help='Assets root directory name (default: assets)')
     ap.add_argument('--save-html', nargs='?', const=True, help='Save fetched/rendered HTML snapshot before parsing (optional path).')
     ap.add_argument('--json', action='store_true', help='Output structured JSON alongside Markdown')
-    ap.add_argument('--verbose', action='store_true', help='Enable verbose logging (INFO level)')
+    ap.add_argument('-v', '--verbose', action='store_true', help='Enable verbose logging (INFO level, shows startup banner)')
+    ap.add_argument('--debug', action='store_true', help='Enable debug logging + show Python traceback on error')
     ap.add_argument('--filter', choices=['none', 'safe', 'moderate', 'aggressive'], default='safe',
                     help='Content filtering level: none (no filtering), safe (remove scripts/ads), moderate (+ navigation), aggressive (+ metadata) (default: safe)')
     ap.add_argument('--crawl-site', action='store_true',

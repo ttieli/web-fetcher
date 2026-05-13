@@ -119,7 +119,7 @@ class ConfigLoader:
             if config is None:
                 raise ConfigurationError("Configuration file is empty")
 
-            logger.info(f"Loaded configuration from: {self.config_path}")
+            logger.debug(f"Loaded configuration from: {self.config_path}")
 
             # Validate against schema
             if JSONSCHEMA_AVAILABLE:

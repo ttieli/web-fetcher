@@ -96,7 +96,7 @@ class RoutingEngine:
                     # Store rule with its compiled matcher
                     self._compiled_rules.append((rule, matcher))
 
-                logger.info(f"Compiled {len(self._compiled_rules)} routing rules")
+                logger.debug(f"Compiled {len(self._compiled_rules)} routing rules")
 
             except Exception as e:
                 logger.error(f"Failed to compile rules: {e}")

@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.5] - 2026-05-13
+
+### Added — AI agent 友好输出优化（来自 AI agent 使用反馈清单）
+
+- **结构化错误输出**（替代 Python traceback）
+  - 新增 `src/webfetcher/errors/user_facing.py` 模块
+  - `UserErrorCategory` enum 9 种：URL_INVALID / DNS_FAILURE / SSL_ERROR / HTTP_4XX / HTTP_5XX / TIMEOUT / CDP_LAUNCH_FAILED / CONFIG_ERROR / UNKNOWN
+  - `classify_user_error()` 自动从 Python exception 推断分类（按 type + message 正则）
+  - `format_user_error()` 输出三段式："错误类型 / 说明 / 建议"
+  - cli.py 顶层 try/except 改用结构化输出，默认隐藏 traceback
+- **`--debug` 标志**：仅 debug 模式打 Python traceback + DEBUG 级日志（含启动横幅）
+- **`-v/--verbose` 标志**（与既有保持一致）：INFO 级日志
+- **重试失败终结摘要行**：`format_retry_summary()` 在 fetch_html_with_retry 重试耗尽时打一行 "重试 N 次仍失败，最终错误: <CATEGORY> — <explanation>"，让 AI 在长日志里能 grep 抓结论
+- **`wf --help` 增强**：
+  - 新增"AI agent 场景速查"段（按场景列命令）
+  - 新增"错误输出（AI 友好）"段（说明三段式格式 + 9 种分类）
+  - 新增"日志级别"段（默认 / -v / --debug）
+  - 新增"陷阱与限制"段（--lite + 图片 / 微信小红书自动路由 / batch + stdout 冲突等）
+
+### Changed
+
+- **启动横幅静默化**：4 处 module-level `logger.info` → `logger.debug`
+  - core.py: `"CDP fetcher available"` / `"Config-driven routing system initialized"`
+  - routing/config_loader.py: `"Loaded configuration from: ..."`
+  - routing/engine.py: `"Compiled N routing rules"`
+  - 业务级 logger.info（V2 升级链、短路、路由决策）保持不变，AI 仍能从日志读到关键事件
+- **未知错误日志改人类可读**：core.py:1821 内部 `"Error classified as unknown"` 改为 `"未知错误（重试策略分类器未识别），原始: <type>: <msg>; 将按保守策略重试"`
+- **环境变量支持**：`WF_DEBUG=1` / `WF_VERBOSE=1` 等价于 CLI flag
+
+### Tests
+
+- 新增 `tests/unit/test_user_errors.py` 18 个用例覆盖 9 种分类 + 格式化 + retry summary
+
+### Verified
+
+- 单元测试：29 个全 PASS
+- V2 行为回归：short-circuit 2/2 + spa-stuck 6/6 + fallback-rescue 6/6 = 14/14 PASS
+- smoke 回归：fast tag 子集（13 URL）全 PASS
+
+### Note
+
+- CLI 调用方式完全不变；只是错误输出格式更友好 + 日志噪音降低
+- 接口完全向后兼容（既有 `--verbose` 仍可用）
+
 ## [1.3.4] - 2026-05-13
 
 ### Changed

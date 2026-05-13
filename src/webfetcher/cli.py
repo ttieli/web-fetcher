@@ -56,12 +56,25 @@ PROJECT_ROOT = get_project_root()
 DEFAULT_OUTPUT_DIR = "./output"
 
 # Configure logging for user feedback
+# A1: 默认 INFO（保留路由决策/V2 升级/短路等业务日志）；
+#     启动横幅（CDP fetcher available 等 4 处）单独降为 DEBUG，配合 --debug 才显示
+#     --debug / WF_DEBUG=1 → DEBUG 级（含启动横幅 + traceback）
+_debug_env = bool(int(os.environ.get('WF_DEBUG', '0') or '0'))
+_verbose_env = bool(int(os.environ.get('WF_VERBOSE', '0') or '0'))
+_debug_flag = ('--debug' in sys.argv) or _debug_env
+_verbose_flag = ('-v' in sys.argv or '--verbose' in sys.argv) or _verbose_env
+_default_level = logging.DEBUG if _debug_flag else logging.INFO
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=_default_level,
     format='%(message)s',
     handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger('wf')
+
+# Expose flags for downstream modules / top-level error handler
+DEBUG_MODE = _debug_flag
+VERBOSE_MODE = _verbose_flag
 
 def parse_output_dir(args):
     """
@@ -897,13 +910,21 @@ def run_webfetcher(webfetcher_module, args):
             sys.argv = original_argv
 
     except KeyboardInterrupt:
-        print("\n已取消")
-        sys.exit(1)
+        print("\n已取消", file=sys.stderr)
+        sys.exit(130)
+    except SystemExit:
+        # argparse / explicit sys.exit() — 透传退出码
+        raise
     except Exception as e:
-        print(f"错误: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+        # B1+B2+B5: 结构化错误输出，默认不显示 traceback；--debug 才打
+        from webfetcher.errors.user_facing import classify_user_error, format_user_error
+        err = classify_user_error(e)
+        print(format_user_error(err), file=sys.stderr)
+        if DEBUG_MODE:
+            import traceback
+            print("\n--- traceback (--debug) ---", file=sys.stderr)
+            traceback.print_exc()
+        sys.exit(err.exit_code)
 
 def print_help():
     # 获取当前环境变量
@@ -911,6 +932,39 @@ def print_help():
 
     print(f"""
 wf - WebFetcher便捷命令
+
+AI agent 场景速查（按场景选命令，比按参数堆更友好）:
+  含 URL 的混合文本（自动提取）:  wf "<原文 + URL>" --stdout
+  读文章正文（最常用 stdout）:    wf <URL> --stdout
+  读文章正文 + 加速（拦截图片）:   wf <URL> --stdout --lite
+  存网页含图（含资源）:           wf <URL> -o ./out/
+  静态站快速模式:                 wf fast <URL> --stdout
+  批量抓取（不支持 stdout）:      wf batch urls.txt -o ./out/
+  原始 HTML（不解析）:            wf raw <URL> -o ./out/
+
+错误输出（AI 友好）:
+  默认错误是三段式（错误类型/说明/建议），无 Python traceback。
+  错误分类示例：URL_INVALID / DNS_FAILURE / SSL_ERROR / HTTP_4XX / HTTP_5XX
+                / TIMEOUT / CDP_LAUNCH_FAILED / CONFIG_ERROR / UNKNOWN
+  按"建议:"字段路由下一步操作即可。
+  调试需要看 traceback：加 --debug
+
+日志级别:
+  默认       静默（仅警告/错误）
+  -v/--verbose   显示 INFO 级（含启动横幅、路由决策）
+  --debug    显示 DEBUG 级 + 失败时打 traceback
+
+陷阱与限制（避开常见误用）:
+  --lite 拦截图片资源 → 想存图就别加 --lite
+  微信/小红书自动走 CDP → 用户不需手动加，路由表会处理
+  登录态站点 → 需要 manual_chrome（chrome 已登录的本机会话）
+  --stdout + batch 模式 = 冲突（batch 写文件，不输 stdout）
+  selenium/manual_chrome 依赖本机 Chrome；未装时会自动 skip
+
+输出目录指定方式（按优先级排序）:
+  1. 使用 -o 参数（最明确，推荐用于复杂URL）:
+     wf example.com/path -o ~/Desktop/
+     wf -o ~/Desktop/ example.com/path
 
 输出目录指定方式（按优先级排序）:
   1. 使用 -o 参数（最明确，推荐用于复杂URL）:
