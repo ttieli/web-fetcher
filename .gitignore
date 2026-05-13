@@ -30,3 +30,39 @@ archive/
 # Output (keep structure but ignore content)
 output/*
 !output/.gitkeep
+
+# Sample data (含真实抓取样本，可能涉个人/工作数据，不入库)
+sample/
+
+# Tests competition results (含真实抓取过的 URL，不入库)
+tests/competition_results/
+
+# 备份文件（机器特定）
+*.backup
+*.backup-*
+*.original_test
+config/routing.yaml.backup
+config/selenium_defaults.yaml.backup-*
+config/selenium_defaults.yaml.original_test
+
+# 机器特定 Chrome 调试脚本（含本机绝对路径）
+config/chrome-debug*.sh
+config/ensure-chrome-debug.sh
+config/manual_chrome_config.yaml
+scripts/start_chrome.sh
+
+# iCloud 冲突副本（"README 4.md" 等带数字后缀文件）
+docs/README\ [0-9]*.md
+
+# Claude Code 项目级配置（个人偏好/会话历史/agents/skills 不入库）
+.claude/agents/
+.claude/skills/
+.claude/sessions/
+.claude/archive/
+.claude/project-memory.md
+.claude/settings.local.json
+
+# 网页测试脚本/工具（暂保留本地，按需入库）
+tests/test_extraction_competition.py
+tests/compare_urllib_cdp.py
+tests/diagnose_cdp.py

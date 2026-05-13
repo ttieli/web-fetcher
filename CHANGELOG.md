@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.4] - 2026-05-13
+
+### Changed
+- **公有 repo 准备**：移除 `tests/url_suite.txt` 中 4 个含个人工作查询关键词的搜索引擎 URL（baidu/google/tianyancha/qcc 的 search? URL）
+- `scripts/build_regression_suite.py` 新增 `_is_search_query_url()` 隐私过滤：再生成 url_suite.txt 时自动跳过含搜索 query 的 URL，防止泄露查询关键词
+- 扩展 `.gitignore`：`sample/`（含真实抓取数据）、`*.backup`、机器特定 Chrome 启动脚本、`.claude/{agents,skills,sessions,archive,project-memory.md,settings.local.json}`（个人 Claude Code 配置不入库）
+
+### Added
+- `config/routing_schema.json` 入库（routing.yaml 的 JSON Schema 验证）
+- `scripts/{routing_ctl.py,run_regression_suite.py,template_tool.py}` 入库（公共开发工具）
+
+### Note
+- 接口完全不变；本机使用无感知
+- 准备公有 repo 发布前的最后一次清理
+
 ## [1.3.3] - 2026-05-13
 
 ### Fixed

@@ -64,6 +64,25 @@ def group_by_url(records: list, ts_key: str = 'ts'):
     return groups
 
 
+# 隐私过滤：跳过含搜索词 query 参数的 URL（可能含工作/个人查询关键词）
+# 普通文章 URL 路径 OK，仅命中 search engine + query 模式
+_PRIVACY_BLOCK_PATTERNS = (
+    'baidu.com/s?',
+    'google.com/search?',
+    'bing.com/search?',
+    'tianyancha.com/search?',
+    'qcc.com/search?',
+    'sogou.com/web?',
+    'so.com/s?',
+)
+
+
+def _is_search_query_url(url: str) -> bool:
+    """识别可能含工作/个人查询关键词的搜索引擎 query URL。"""
+    url_low = url.lower()
+    return any(p in url_low for p in _PRIVACY_BLOCK_PATTERNS)
+
+
 def classify(extraction_groups: dict, history_groups: dict):
     """
     根据历史决定每个 URL 的类别 + 标签。
@@ -73,6 +92,9 @@ def classify(extraction_groups: dict, history_groups: dict):
     classified = {}
 
     for url, ext_records in extraction_groups.items():
+        # 隐私过滤：搜索 query URL 跳过（避免泄露查询关键词）
+        if _is_search_query_url(url):
+            continue
         latest = ext_records[-1]
         domain = latest.get('domain', '')
         fetcher = latest.get('fetcher', 'urllib')
