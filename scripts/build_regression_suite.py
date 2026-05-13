@@ -90,11 +90,15 @@ def classify(extraction_groups: dict, history_groups: dict):
         description = f"{domain} - "
 
         # --- 1. raw markdown / plain text 资源 ---
+        # 仅 raw 服务（raw.githubusercontent.com/gist）或后缀类原始资源
+        # github.com/.../blob/.../*.md 是 GitHub UI HTML，不算 raw（不会短路）
         url_low = url.lower()
         path = url_low.split('?')[0].split('#')[0]
-        if (path.endswith(('.md', '.txt', '.rst', '.markdown')) or
-                'raw.githubusercontent.com' in url_low or
-                'gist.githubusercontent.com' in url_low):
+        is_github_blob_html = ('github.com' in url_low and '/blob/' in url_low)
+        is_raw_service = ('raw.githubusercontent.com' in url_low or
+                          'gist.githubusercontent.com' in url_low)
+        has_text_suffix = path.endswith(('.md', '.txt', '.rst', '.markdown'))
+        if is_raw_service or (has_text_suffix and not is_github_blob_html):
             category = 'raw-markdown'
             tags.update(['markdown', 'short-circuit', 'fast', 'v2-fallback-fix'])
             description += "raw markdown/text resource"

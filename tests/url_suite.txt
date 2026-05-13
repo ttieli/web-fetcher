@@ -1,7 +1,7 @@
 # Regression Test URL Suite (auto-generated from history)
 # ============================================================
 #
-# Generated: 2026-05-13 10:52
+# Generated: 2026-05-13 10:59
 # Source: ~/.config/webfetcher/extraction_log.jsonl + ~/.wf/fetch_history.jsonl
 #
 # Format: <url> | <description> | <expected_strategy> | <tags>
@@ -56,10 +56,8 @@ https://www.reddit.com/r/ollama/search/?q=image+generation&sort=new | reddit.com
 
 # 本次 V2 修复关注：plain text 短路
 # ------------------------------------------------------------
-https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md | github.com - raw markdown/text resource | urllib | en,fast,markdown,short-circuit,v2-fallback-fix
 https://raw.githubusercontent.com/teorth/erdosproblems/main/README.md | raw.githubusercontent.com - raw markdown/text resource | urllib | en,fast,markdown,short-circuit,v2-fallback-fix
 https://raw.githubusercontent.com/camel-ai/oasis/main/data/reddit/user_data_36.json | raw.githubusercontent.com - raw markdown/text resource | urllib | en,fast,markdown,short-circuit,v2-fallback-fix
-https://github.com/openai/skills/blob/main/skills/.system/imagegen/SKILL.md | github.com - raw markdown/text resource | urllib | en,fast,markdown,short-circuit,v2-fallback-fix
 
 # 历史持续失败 URL（标识真实失败 vs 修复后救回）
 # ------------------------------------------------------------
