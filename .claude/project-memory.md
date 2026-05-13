@@ -1,6 +1,38 @@
 # 项目记忆 — Web_Fetcher
 
+## Superpower Chain
+
+本项目已启用 superpower-chain（项目级 skill 在 `.claude/skills/superpower-chain/`）。触发方式：
+- Bug 修复：说"按流程修复"或"启动修复链"
+- 需求开发：说"按流程开发"或"启动开发链"
+- 精简版：加 `--lite`（如"按流程修复 --lite"），或说"快速修复/精简流程/轻量chain"
+- 恢复中断：说"继续 chain"或"恢复链"
+- 全自动：加 `--auto`
+- 中途切换：在任意检查点说"切精简"或"切增强"
+
+文档目录：`docs/10_分析/` → `docs/20_设计/` → `docs/30_计划/` → `docs/80_归档/`（方案 C 编码）
+活跃 chain 状态：`docs/0_chain/state.md`；历史索引：`docs/0_chain/history.md`
+
 ## 会话记录
+
+### 2026-05-13 10:22 (chain 1 · superpower-chain Pipeline A · enhanced)
+
+#### ✅ 完成
+
+- **wf V2 fallback 机制三处缺陷修复 → 1.3.2**（5 commits: 07dd9a2/b73a30e/ca3e153/711c81c/b395c54）
+  - Bug 1（core.py）：升级判定从 `len(html2) > len(html)` 改为提取 score 比较；`new_score >= 0.5` 才停止升级
+  - Bug 2（engine_v2.py）：质量字段（`_v2_quality_low/_v2_score/_v2_current_fetcher`）写入解耦 `_v2_no_upgrade` 标志，所有 return 路径统一 `metadata.update(v2_state)`
+  - 问题 3（extractors.py）：`.md/.txt/.rst` 后缀 + `raw.githubusercontent.com` 路径短路 + `<html><body><pre>...</pre></body></html>` 解包（raw github 对部分 UA 返回此包壳）
+  - `args._v2_no_upgrade` 用 try/finally 保护防异常路径泄漏
+- **新增 11 个 unit tests**：`tests/unit/test_v2_fallback.py`（4 个）+ `tests/unit/test_extractors_plaintext.py`（7 个）
+- **E2E 实测 3 个关键 URL 全过**：raw github CHANGELOG 短路 / carnoc urllib→cdp 救回 / interconnects.ai 完整升级到 manual_chrome
+
+#### 💡 备注 / 教训
+
+- **`example.com` 在 V2 引擎里有特化 template 拦截**：测试 fixture 不能用 `example.com/*`，会绕过 generic_v2 主路径走 TemplateParser；用 `no-template-match-xyz789.test/*` 之类避免
+- **raw.githubusercontent.com 对部分 UA 返回 HTML 包壳**：`<html><head>...</head><body><pre style="white-space: pre-wrap;">RAW_MARKDOWN</pre></body></html>`，简单"`<` 检测"无法识别为 plain text；解药是先识别包壳形式并解包内部 `<pre>` 内容
+- **pipx editable 安装路径**：webfetcher 装在 `<HOME>/.local/pipx/venvs/webfetcher/`，pytest 通过 `~/.local/pipx/venvs/webfetcher/bin/python -m pytest` 调用；改源码后无需 reinstall（editable）
+- **score_extraction 是双刃剑**：给主函数加 plain-text 宽容路径会让所有提取输出走宽容分支抬高全局阈值，必须用独立 helper（`score_extraction_plaintext`），仅短路分支调用
 
 ### 2026-04-03 15:50:00 (会话ID: k7m2)
 
