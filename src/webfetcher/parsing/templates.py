@@ -556,6 +556,85 @@ def _build_generic_output(
 
 
 # ============================================================================
+# YAML FRONT MATTER CONVERSION
+# ============================================================================
+
+def apply_yaml_frontmatter(md: str, url: str, metadata: dict) -> str:
+    """将内嵌元数据替换为标准 YAML front matter 格式。
+
+    Converts inline metadata lines (- 标题/作者/发布时间/来源/抓取时间: value)
+    into a standard YAML front matter block (--- delimited) compatible with
+    Hugo, Jekyll, Obsidian, etc. Other content (Fetch Metrics comment,
+    Fetch Information section, body) is preserved.
+
+    Args:
+        md: Markdown content with inline metadata
+        url: Source URL
+        metadata: Metadata dictionary from the parser
+
+    Returns:
+        Markdown with YAML front matter prepended and inline metadata removed
+    """
+    lines = md.split('\n')
+    if not lines:
+        return md
+
+    # Known inline metadata keys to strip
+    _META_KEYS = re.compile(
+        r'^- (?:标题|作者|发布时间|来源|抓取时间|视频链接)\s*[:：]'
+    )
+
+    # Step 1: Extract title from the first `# ` heading
+    title = ''
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('# '):
+            title = stripped[2:].strip()
+            break
+
+    # Step 2: Remove inline metadata lines and surrounding blank lines
+    filtered = []
+    i = 0
+    while i < len(lines):
+        if _META_KEYS.match(lines[i].strip()):
+            # Skip this metadata line and any immediately following blank line
+            i += 1
+            while i < len(lines) and not lines[i].strip():
+                i += 1
+            continue
+        filtered.append(lines[i])
+        i += 1
+
+    # Step 3: Build YAML front matter block
+    fm = ['---']
+
+    if title:
+        fm.append(f'title: "{title}"')
+
+    author = metadata.get('author', '')
+    if author:
+        fm.append(f'author: "{author}"')
+
+    publish_time = metadata.get('publish_time', '')
+    if publish_time:
+        fm.append(f'date: "{publish_time}"')
+
+    if url:
+        fm.append(f'url: "{url}"')
+
+    fm.append(f'scraped_at: "{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"')
+
+    template_used = metadata.get('template_used', '')
+    if template_used:
+        fm.append(f'template: "{template_used}"')
+
+    fm.append('---')
+
+    # Step 4: Prepend frontmatter to the cleaned content
+    return '\n'.join(fm) + '\n\n' + '\n'.join(filtered)
+
+
+# ============================================================================
 # LIST CONTENT EXTRACTION (Reuse legacy for now)
 # ============================================================================
 

@@ -152,7 +152,7 @@ class ConfigLoader:
         # Load schema if not cached
         if self._schema is None:
             if not self.schema_path.exists():
-                logger.warning(f"Schema file not found: {self.schema_path}, skipping validation")
+                logger.debug(f"Schema file not found: {self.schema_path}, skipping validation")
                 return
 
             try:

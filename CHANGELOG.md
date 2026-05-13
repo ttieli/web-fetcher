@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.3] - 2026-05-13
+
+### Fixed
+- **补提交工作树中长期未入库的核心依赖**（git 状态修复，影响其他机器装 wheel）
+  - `src/webfetcher/memory.py` 入库：V2 引擎的 `DomainMemory` + `ExtractionLogger` 核心依赖（`engine_v2.py:92` 一直 import 它）
+  - `src/webfetcher/parsing/templates.py` 中 `apply_yaml_frontmatter()` 函数入库：`--frontmatter yaml` CLI 参数的实现（`core.py:159/5418/5769` 一直 import 它）
+  - **影响**：之前 1.3.0/1.3.1 的 wheel 在非 editable 安装时缺这两处实际依赖，V2 引擎和 `--frontmatter yaml` 都会 ImportError；本机 editable 安装因为读源码树看不到这个问题
+
+### Changed
+- `qcc_com/template.yaml` 中 `version: 1.0` → `"1.0"`，避免 YAML 解析为 float 导致精度截断
+- `routing/config_loader.py` 中 schema 文件不存在的日志从 `warning` 降为 `debug`（schema 文件本来就是可选的，不应每次都报警）
+
+### Note
+- 调用方接口完全不变（CLI 参数、输出格式、Python API 都无变化）
+- 已通过 11 unit tests + V2 fallback verify (short-circuit/spa-stuck/fallback-rescue 各 2/2 + 8/8 + 8/8)
+
 ## [1.3.2] - 2026-05-13
 
 ### Fixed
