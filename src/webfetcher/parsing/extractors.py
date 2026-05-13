@@ -46,6 +46,27 @@ def _looks_like_plain_text(text: str) -> bool:
     return not _HTML_TAG_RE.search(text[:1000])
 
 
+# raw.githubusercontent.com 等服务端对部分 UA 会把 plain text 包一层 <html><body><pre>...</pre></body></html>
+# 用此正则提取 <pre>...</pre> 内的真实内容。
+_PRE_WRAPPED_RE = re.compile(
+    r'^\s*<html[^>]*>.*?<body[^>]*>\s*<pre[^>]*>(?P<inner>.*?)</pre>\s*</body>\s*</html>\s*$',
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _unwrap_pre_html(text: str) -> str | None:
+    """如果 text 是 <html><body><pre>...</pre></body></html> 形式，返回 pre 内文本；否则返回 None。"""
+    if not text:
+        return None
+    m = _PRE_WRAPPED_RE.match(text)
+    if not m:
+        return None
+    import html as _html_mod
+    inner = m.group('inner')
+    # HTML 实体反转（&amp; → &, &lt; → < 等）
+    return _html_mod.unescape(inner)
+
+
 def score_extraction_plaintext(text: str) -> float:
     """专用于 plain-text 资源（markdown/txt/rst）的宽容评分函数。
 
@@ -368,20 +389,32 @@ def run_competition(html: str, url: str, hint_strategy: str = None) -> list[Extr
     Returns:
         按分数降序排列的 ExtractionResult 列表
     """
-    # L1 短路：URL 看起来就是纯文本资源 + HTML 确实无标签起始字符
-    # 双重保护：任一条件不满足都走原竞赛路径
-    if _is_plain_text_url(url) and _looks_like_plain_text(html):
-        content = (html or '').strip()
-        score = score_extraction_plaintext(content)
-        # 短路结果至少给 0.9 score（避免 plain text 段落质量因子误伤）
-        final_score = max(score, 0.9)
-        logger.info(f"V2 competition short-circuit: plain-text URL "
-                     f"({len(content)} chars, score={final_score:.3f})")
-        return [ExtractionResult(
-            strategy='plaintext_passthrough',
-            content=content,
-            score=final_score,
-        )]
+    # L1 短路：URL 看起来就是纯文本资源
+    # - 如果 HTML 确实是纯文本（无标签起始字符），直接短路
+    # - 如果 HTML 是 <html><body><pre>raw_text</pre></body></html> 形式
+    #   （raw.githubusercontent.com 服务端包壳），解包后短路
+    if _is_plain_text_url(url) and html:
+        content = None
+        if _looks_like_plain_text(html):
+            content = html.strip()
+        else:
+            unwrapped = _unwrap_pre_html(html)
+            if unwrapped is not None and _looks_like_plain_text(unwrapped):
+                content = unwrapped.strip()
+                logger.info(f"V2 plain-text URL: unwrapped <pre>-wrapped HTML "
+                             f"({len(html)} → {len(content)} chars)")
+
+        if content is not None:
+            score = score_extraction_plaintext(content)
+            # 短路结果至少给 0.9 score（避免 plain text 段落质量因子误伤）
+            final_score = max(score, 0.9)
+            logger.info(f"V2 competition short-circuit: plain-text URL "
+                         f"({len(content)} chars, score={final_score:.3f})")
+            return [ExtractionResult(
+                strategy='plaintext_passthrough',
+                content=content,
+                score=final_score,
+            )]
 
     strategies = [
         extract_trafilatura,

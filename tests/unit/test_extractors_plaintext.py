@@ -76,6 +76,47 @@ def test_score_extraction_plaintext_helper_is_lenient():
         f"long plain-text markdown should score >= 0.6 (lenient helper), got {score}")
 
 
+def test_pre_wrapped_raw_markdown_unwraps_and_short_circuits():
+    """raw.githubusercontent.com 服务端对部分 UA 会把 plain text 包一层
+    <html><head>...</head><body><pre>raw_markdown</pre></body></html>。
+    短路逻辑应解包后识别为 plain text 并跳过竞赛。"""
+    wrapped = (
+        '<html><head><meta name="color-scheme" content="light dark"></head>'
+        '<body><pre style="word-wrap: break-word; white-space: pre-wrap;">'
+        '# Changelog\n\n## 1.0\n\n- Initial release\n- Add feature X\n'
+        '</pre></body></html>'
+    )
+    results = run_competition(
+        wrapped,
+        'https://raw.githubusercontent.com/example/repo/main/CHANGELOG.md')
+
+    assert len(results) >= 1
+    winner = results[0]
+    assert winner.strategy == 'plaintext_passthrough', (
+        f"expected plaintext_passthrough after unwrap, got {winner.strategy}")
+    assert winner.score >= 0.8
+    # 解包后的内容不应再含 <html> / <pre> 标签
+    assert '<pre' not in winner.content
+    assert '<html' not in winner.content
+    assert '# Changelog' in winner.content
+
+
+def test_pre_wrapped_with_html_entities_unescaped():
+    """<pre> 内的 HTML 实体（&amp;, &lt;, &gt;）应正确反转。"""
+    wrapped = (
+        '<html><body><pre>'
+        '# Test\n\nUse `if a &lt; b &amp;&amp; c &gt; 0` syntax.'
+        '</pre></body></html>'
+    )
+    results = run_competition(
+        wrapped,
+        'https://raw.githubusercontent.com/example/repo/main/notes.md')
+    winner = results[0]
+    assert winner.strategy == 'plaintext_passthrough'
+    assert 'if a < b && c > 0' in winner.content, (
+        f"HTML entities should be unescaped; got: {winner.content!r}")
+
+
 def test_score_extraction_main_function_unchanged():
     """主 score_extraction 行为不变（防止全局阈值漂移）。
 
