@@ -5634,19 +5634,34 @@ def main():
                                 f"V2 quality low (score={prev_score:.3f})",
                                 input_url=input_url,
                             )
-                            if html2 and len(html2) > len(html):
+                            if not html2:
+                                logging.warning("V2 auto-upgrade: manual_chrome returned no HTML")
+                                continue
+
+                            # 解析 html2 拿 new_score（_v2_no_upgrade=True 防递归升级）
+                            # try/finally 保护：generic_v2 抛异常时也要恢复标志位
+                            args._v2_no_upgrade = True
+                            try:
+                                new_date, new_md, new_meta = generic_v2(
+                                    html2, url, url_metadata=um2, args=args)
+                            finally:
+                                args._v2_no_upgrade = False
+                            new_score = new_meta.get('_v2_score', 0)
+
+                            if new_score >= prev_score:
+                                # 接受换 fetcher
                                 html = html2
                                 fetch_metrics = fm2
                                 url_metadata = um2
-                                args._v2_no_upgrade = True
-                                date_only, md, metadata = generic_v2(
-                                    html, url, url_metadata=url_metadata, args=args)
-                                args._v2_no_upgrade = False
+                                date_only, md, metadata = new_date, new_md, new_meta
                                 logging.info(f"V2 auto-upgrade success: manual_chrome, "
-                                             f"HTML={len(html)} chars")
+                                             f"score: {prev_score:.3f} → {new_score:.3f}")
+                                # manual_chrome 是最后一级，无论 score 多少都 break
                                 break
                             else:
-                                logging.warning("V2 auto-upgrade: manual_chrome returned no improvement")
+                                logging.warning(
+                                    f"V2 auto-upgrade: manual_chrome score {new_score:.3f} "
+                                    f"< prev {prev_score:.3f}, rejected")
                         except Exception as e:
                             logging.warning(f"V2 auto-upgrade manual_chrome failed: {e}")
                         continue
@@ -5658,24 +5673,38 @@ def main():
                             fetch_mode=next_mode, force_chrome=True,
                             input_url=input_url,
                         )
-                        if html2 and len(html2) > len(html):
+                        if not html2:
+                            logging.warning(f"V2 auto-upgrade: {next_mode} returned no HTML, trying next")
+                            continue
+
+                        # 解析 html2 拿 new_score（用 score 而非 len(html2) 做判定）
+                        # try/finally 保护：generic_v2 抛异常时也要恢复标志位
+                        args._v2_no_upgrade = True
+                        try:
+                            new_date, new_md, new_meta = generic_v2(
+                                html2, url, url_metadata=um2, args=args)
+                        finally:
+                            args._v2_no_upgrade = False
+                        new_score = new_meta.get('_v2_score', 0)
+
+                        if new_score >= prev_score:
+                            # 接受换 fetcher：score 不退步就推进
                             html = html2
                             fetch_metrics = fm2
                             url_metadata = um2
-                            # 重新解析（禁止再次触发升级）
-                            args._v2_no_upgrade = True
-                            date_only, md, metadata = generic_v2(
-                                html, url, url_metadata=url_metadata, args=args)
-                            args._v2_no_upgrade = False
-                            logging.info(f"V2 auto-upgrade success: {next_mode}, "
+                            date_only, md, metadata = new_date, new_md, new_meta
+                            logging.info(f"V2 auto-upgrade accepted: {next_mode}, "
+                                         f"score: {prev_score:.3f} → {new_score:.3f}, "
                                          f"HTML={len(html)} chars")
-                            # 质量已经改善，停止升级
-                            if not metadata.get('_v2_quality_low'):
+                            # 链终止判定：score 足够高才停止升级
+                            if new_score >= 0.5:
+                                logging.info(f"V2 auto-upgrade complete: score {new_score:.3f} >= 0.5, stop")
                                 break
+                            # 否则继续升下一级，prev_score 已通过 metadata 更新
                         else:
-                            logging.warning(f"V2 auto-upgrade: {next_mode} "
-                                            f"returned {len(html2) if html2 else 0} chars "
-                                            f"(not better than {len(html)}), trying next")
+                            logging.warning(
+                                f"V2 auto-upgrade: {next_mode} score {new_score:.3f} "
+                                f"< prev {prev_score:.3f}, rejected (keep prev html)")
                     except Exception as e:
                         logging.warning(f"V2 auto-upgrade {next_mode} failed: {e}, trying next")
                         continue
