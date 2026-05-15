@@ -361,12 +361,14 @@ def wechat_to_markdown(html: str, url: str, url_metadata: dict = None) -> tuple[
 
         # WeChat image-set articles store images in <div data-src> and
         # <li style="background-image:url(...)"> instead of <img> tags.
+        # is_gallery 严格由 js_image_content 容器存在性判定，不能用"提取到图片"反推
+        # （因为 _extract_wechat_gallery_images 的 og:image fallback 对任何文章都会命中封面图）
         is_gallery = 'js_image_content' in html
         if not images:
             images = _extract_wechat_gallery_images(html)
             if images:
-                is_gallery = True
-                logger.info(f"Extracted {len(images)} images from WeChat gallery format")
+                source = "gallery" if is_gallery else "og:image fallback"
+                logger.info(f"Extracted {len(images)} images from WeChat ({source})")
 
         # Clean content: remove WeChat UI noise (赞赏弹窗, 数字键盘, etc.)
         content = result.content or ''

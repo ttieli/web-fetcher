@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.6] - 2026-05-15
+
+### Fixed
+- **微信公众号正文被错误清空 bug**（影响：任何"模板提取到正文但 metadata.images 为空"的微信文章）
+  - 位置：`src/webfetcher/parsing/templates.py:317-377` `wechat_to_markdown()`
+  - 现象：抓取微信文章只返回标题/作者/封面图，正文为空
+  - 根因：`_extract_wechat_gallery_images()` 的 og:image fallback 对**任何微信文章**都会命中封面图（因为 og:image 是标配 meta）；该 fallback 拿到图后，主函数错误地把 `is_gallery = True` 反推回去 → 触发 `if is_gallery and images: content = ''` 强制清空正文
+  - 修复：移除 line 367 的 `is_gallery = True` 反推逻辑。`is_gallery` 严格由 `'js_image_content' in html` 判定（这才是真正的图集容器标志）
+  - 实测复现 URL：`https://mp.weixin.qq.com/s/teDI2pT7DODpZbpKaBETKQ`（"Claude Code教程：如何做一个Agent Team（九）"）—— 修复前 49 行输出（无正文），修复后正文完整
+
+### Added
+- `tests/unit/test_wechat_parser.py` 3 个用例守护回归：
+  - `test_wechat_normal_article_preserves_body` — 普通文章 + og:image，正文不能被清空
+  - `test_wechat_real_gallery_still_gets_gallery_treatment` — 真正图集仍走 gallery 路径
+  - `test_wechat_no_images_no_gallery` — 纯文字文章
+
 ## [1.3.5] - 2026-05-13
 
 ### Added — AI agent 友好输出优化（来自 AI agent 使用反馈清单）
