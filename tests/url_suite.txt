@@ -1,7 +1,7 @@
 # Regression Test URL Suite (auto-generated from history)
 # ============================================================
 #
-# Generated: 2026-05-13 10:59
+# Generated: 2026-05-15 11:46
 # Source: ~/.config/webfetcher/extraction_log.jsonl + ~/.wf/fetch_history.jsonl
 #
 # Format: <url> | <description> | <expected_strategy> | <tags>
@@ -31,24 +31,29 @@ https://kb.nssurge.com/surge-knowledge-base/license/ios-faq | kb.nssurge.com - u
 # 站点特化 template 路径
 # ------------------------------------------------------------
 https://m.douban.com/movie/subject/1818330/reviews | m.douban.com - site-specific template path | auto | en,fast,template
+https://mp.weixin.qq.com/s/teDI2pT7DODpZbpKaBETKQ | mp.weixin.qq.com - WeChat 普通文章正文不能空（防 1.3.6 og:image 反推 gallery 回归） | urllib | cn,fast,regression-1.3.6,template,wechat
 
 # urllib 失败 → cdp/selenium 救回
 # ------------------------------------------------------------
-https://m.toutiao.com/is/D2ZGJTfqwEM/ | m.toutiao.com - urllib failed, cdp rescued (score=0.65) | auto | en,fallback-rescue,slow
+https://m.toutiao.com/is/D2ZGJTfqwEM/ | m.toutiao.com - urllib failed, cdp rescued (score=0.55) | auto | en,fallback-rescue,slow
 https://nssurge.com/buy_now | nssurge.com - urllib failed, cdp rescued (score=0.70) | auto | en,fallback-rescue,slow
-https://x.com/mrryanchi/status/2031292099384008810?s=46 | x.com - urllib failed, cdp rescued (score=0.62) | auto | en,fallback-rescue,slow
 https://sipeed.com/nanokvm | sipeed.com - urllib failed, cdp rescued (score=0.76) | auto | en,fallback-rescue,slow
 https://movie.douban.com/review/15637842/ | movie.douban.com - urllib failed, cdp rescued (score=0.57) | auto | en,fallback-rescue,slow
 https://movie.douban.com/review/12501055/ | movie.douban.com - urllib failed, cdp rescued (score=0.65) | auto | en,fallback-rescue,slow
+https://www.reddit.com/r/ollama/search/?q=image+generation&sort=new | reddit.com - urllib failed, cdp rescued (score=0.51) | auto | en,fallback-rescue,slow
+https://github.com/nicholasgasior/OfficeCLI | github.com - urllib failed, cdp rescued (score=0.53) | auto | en,fallback-rescue,slow
+https://www.bbc.com/news | bbc.com - urllib failed, cdp rescued (score=0.56) | auto | en,fallback-rescue,slow
 
 # 本次 V2 修复关注：SPA 站升级链验证
 # ------------------------------------------------------------
 https://www.linkedin.com/pulse/its-official-world-order-has-broken-down-ray-dalio-cuofe | linkedin.com - SPA stuck on selenium (score=0.49) | auto | en,slow,spa,v2-fallback-fix
 https://displaymaid.app | displaymaid.app - SPA stuck on cdp (score=0.49) | auto | en,slow,spa,v2-fallback-fix
-https://post.smzdm.com/p/a0xm5znw/ | post.smzdm.com - SPA stuck on cdp (score=0.34) | auto | en,slow,spa,v2-fallback-fix
-https://post.smzdm.com/p/a26w8mlq/ | post.smzdm.com - SPA stuck on cdp (score=0.34) | auto | en,slow,spa,v2-fallback-fix
-https://cloud.siliconflow.cn/sft-siliconflow/models?types=to-image | cloud.siliconflow.cn - SPA stuck on cdp (score=0.42) | auto | cn,slow,spa,v2-fallback-fix
-https://www.reddit.com/r/ollama/search/?q=image+generation&sort=new | reddit.com - SPA stuck on selenium (score=0.49) | auto | en,slow,spa,v2-fallback-fix
+https://post.smzdm.com/p/a0xm5znw/ | post.smzdm.com - SPA stuck on selenium (score=0.34) | auto | en,slow,spa,v2-fallback-fix
+https://post.smzdm.com/p/a26w8mlq/ | post.smzdm.com - SPA stuck on selenium (score=0.34) | auto | en,slow,spa,v2-fallback-fix
+https://cloud.siliconflow.cn/sft-siliconflow/models?types=to-image | cloud.siliconflow.cn - SPA stuck on selenium (score=0.42) | auto | cn,slow,spa,v2-fallback-fix
+https://github.com/ollama/ollama/issues/786 | github.com - SPA stuck on selenium (score=0.43) | auto | en,slow,spa,v2-fallback-fix
+https://cj.sina.com.cn/articles/view/6380817686/17c538d16001019ndo | cj.sina.com.cn - SPA stuck on cdp (score=0.48) | auto | cn,slow,spa,v2-fallback-fix
+https://github.com/wass08/r3f-sims-online-final | github.com - SPA stuck on cdp (score=0.49) | auto | en,slow,spa,v2-fallback-fix
 
 # 本次 V2 修复关注：plain text 短路
 # ------------------------------------------------------------

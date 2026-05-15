@@ -76,6 +76,19 @@ _PRIVACY_BLOCK_PATTERNS = (
     'so.com/s?',
 )
 
+# 必含的回归测试 URL（即使历史日志没记录也强制入选）
+# 用于守护已修复 bug 的回归
+_PINNED_URLS = [
+    {
+        'url': 'https://mp.weixin.qq.com/s/teDI2pT7DODpZbpKaBETKQ',
+        'description': 'mp.weixin.qq.com - WeChat 普通文章正文不能空（防 1.3.6 og:image 反推 gallery 回归）',
+        'expected_strategy': 'urllib',
+        'tags': {'cn', 'fast', 'template', 'wechat', 'regression-1.3.6'},
+        'category': 'template',
+        'domain': 'mp.weixin.qq.com',
+    },
+]
+
 
 def _is_search_query_url(url: str) -> bool:
     """识别可能含工作/个人查询关键词的搜索引擎 query URL。"""
@@ -293,7 +306,16 @@ def main():
     }
 
     selected = select_per_category(classified, per_cat_target)
-    print(f"\nSelected {len(selected)} URLs for regression suite", file=sys.stderr)
+
+    # 合并必含 URL（去重：以 URL 为 key）
+    selected_urls = {url for url, _ in selected}
+    pinned_added = 0
+    for pinned in _PINNED_URLS:
+        if pinned['url'] not in selected_urls:
+            selected.append((pinned['url'], pinned))
+            pinned_added += 1
+    print(f"\nSelected {len(selected)} URLs for regression suite "
+          f"({pinned_added} pinned regression URLs added)", file=sys.stderr)
 
     write_suite(selected)
 
