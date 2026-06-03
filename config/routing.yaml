@@ -16,18 +16,6 @@ global:
 # Rules are evaluated in priority order (higher number = higher priority)
 # 规则按优先级顺序评估（数字越大优先级越高）
 rules:
-  # High Priority: Known problematic sites / 高优先级：已知问题网站
-  - name: "CEB Bank Anti-Bot Protection"
-    name_zh: "光大银行反爬虫保护"
-    priority: 100
-    enabled: true
-    conditions:
-      domain: "cebbank.com.cn"
-      url_pattern: ".*/(site|zhpd)/.*"
-    action:
-      fetcher: "manual_chrome"
-      reason: "Known anti-bot protection requiring manual navigation"
-      reason_zh: "已知反爬虫保护，需要手动导航"
 
   # WeChat Official Accounts / 微信公众号
   # urllib + 微信专用 UA 即可采集（core.py 硬编码 MicroMessenger UA）

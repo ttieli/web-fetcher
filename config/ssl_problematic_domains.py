@@ -26,14 +26,7 @@ import logging
 
 # Immediate problematic domains that must use Selenium
 # 必须使用Selenium的问题域名
-SSL_PROBLEMATIC_DOMAINS: Set[str] = {
-    # Chinese Banks - UNSAFE_LEGACY_RENEGOTIATION_DISABLED
-    # 中国银行 - SSL遗留重协商禁用问题
-    'cebbank.com.cn',  # 中国光大银行 - Confirmed SSL error
-    'icbc.com.cn',     # 中国工商银行 - Potential SSL issues
-    'ccb.com',         # 中国建设银行 - Potential SSL issues
-    'boc.cn',          # 中国银行 - Potential SSL issues
-}
+SSL_PROBLEMATIC_DOMAINS: Set[str] = set()  # 域名清单已移除
 
 
 def should_use_selenium_directly(url: str) -> bool:

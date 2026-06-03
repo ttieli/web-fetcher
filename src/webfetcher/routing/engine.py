@@ -115,7 +115,7 @@ class RoutingEngine:
 
         Example:
             >>> engine = RoutingEngine()
-            >>> decision = engine.evaluate("https://www.cebbank.com.cn/site/test")
+            >>> decision = engine.evaluate("https://example.com/site/test")
             >>> print(decision.fetcher)  # "manual_chrome"
             >>> print(decision.rule_name)  # "CEB Bank Anti-Bot Protection"
         """
